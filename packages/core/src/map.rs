@@ -1,0 +1,232 @@
+use std::collections::BTreeMap;
+use std::io::Read;
+use std::path::{Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
+
+use crate::ops::DbOp;
+use crate::{Error, Result, io_err};
+
+pub const MANIFEST_FILE: &str = "manifest.json";
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TrackPackage {
+    pub track_code: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub track_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub author_name: Option<String>,
+    pub erp: String,
+    #[serde(default)]
+    pub activation: Activation,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub ers: BTreeMap<String, serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub copy_directories: Vec<CopyDirectory>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ui: Option<TrackUi>,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct Activation {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub copy_from_track: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub copy_slot: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub overrides: Vec<Override>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub track_overrides: Vec<Override>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Override {
+    pub path: String,
+    pub value: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub datasets: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CopyDirectory {
+    pub source: String,
+    pub destination: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TrackUi {
+    #[serde(default)]
+    pub schema_version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub images_file: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub minimap_file: Option<String>,
+}
+
+impl TrackPackage {
+    pub fn parse(json: &[u8]) -> Result<Self> {
+        let p: Self = serde_json::from_slice(json).map_err(|e| Error::Map(e.to_string()))?;
+        p.validate()?;
+        Ok(p)
+    }
+
+    pub fn validate(&self) -> Result<()> {
+        let code_ok = !self.track_code.is_empty()
+            && self
+                .track_code
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-');
+        if !code_ok {
+            return Err(Error::Map(format!(
+                "track_code {:?} is not a plain identifier",
+                self.track_code
+            )));
+        }
+        let paths = std::iter::once(&self.erp).chain(self.copy_directories.iter().map(|c| &c.source));
+        let ui = self
+            .ui
+            .iter()
+            .flat_map(|u| u.images_file.iter().chain(u.minimap_file.iter()));
+        if let Some(p) = paths
+            .chain(ui)
+            .find(|p| !crate::manifest::relative_inside(p.trim_end_matches('/')))
+        {
+            return Err(Error::Map(format!(
+                "{p} must be a relative path inside the package"
+            )));
+        }
+        Ok(())
+    }
+
+    pub fn display_name(&self) -> &str {
+        self.track_name.as_deref().unwrap_or(&self.track_code)
+    }
+
+    pub fn db_ops(&self) -> Vec<DbOp> {
+        let track = |o: &Override| DbOp::Set {
+            select: format!("tracks.Track[instanceName={}]", self.track_code),
+            field: o.path.clone(),
+            value: Some(o.value.clone()),
+            value_from: None,
+            datasets: o.datasets.clone(),
+            create: false,
+            tag: None,
+        };
+        self.activation.track_overrides.iter().map(track).collect()
+    }
+}
+
+pub fn read_zip_manifest(zip_path: &Path) -> Result<TrackPackage> {
+    let file = std::fs::File::open(zip_path).map_err(io_err(zip_path))?;
+    let mut zip = zip::ZipArchive::new(file)?;
+    let mut json = Vec::new();
+    zip.by_name(MANIFEST_FILE)
+        .map_err(|_| {
+            Error::Map(format!(
+                "{} has no {MANIFEST_FILE} at its root",
+                zip_path.display()
+            ))
+        })?
+        .read_to_end(&mut json)
+        .map_err(io_err(zip_path))?;
+    let pkg = TrackPackage::parse(&json)?;
+    if zip.by_name(&pkg.erp).is_err() {
+        return Err(Error::Map(format!(
+            "{} is missing {}",
+            zip_path.display(),
+            pkg.erp
+        )));
+    }
+    Ok(pkg)
+}
+
+pub fn extract_zip(zip_path: &Path, dest: &Path) -> Result<TrackPackage> {
+    let pkg = read_zip_manifest(zip_path)?;
+    let file = std::fs::File::open(zip_path).map_err(io_err(zip_path))?;
+    let mut zip = zip::ZipArchive::new(file)?;
+    for i in 0..zip.len() {
+        let mut entry = zip.by_index(i)?;
+        let Some(rel) = entry.enclosed_name() else {
+            return Err(Error::Map(format!(
+                "{}: unsafe entry {}",
+                zip_path.display(),
+                entry.name()
+            )));
+        };
+        let out: PathBuf = dest.join(rel);
+        if entry.is_dir() {
+            std::fs::create_dir_all(&out).map_err(io_err(&out))?;
+            continue;
+        }
+        if let Some(dir) = out.parent() {
+            std::fs::create_dir_all(dir).map_err(io_err(dir))?;
+        }
+        let mut f = std::fs::File::create(&out).map_err(io_err(&out))?;
+        std::io::copy(&mut entry, &mut f).map_err(io_err(&out))?;
+    }
+    Ok(pkg)
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+
+    pub const OKAYAMA_LIKE: &str = r#"{
+      "track_code": "testring", "track_name": "Test Ring", "version": "0.1.0", "author_name": "tester",
+      "erp": "testring.erp",
+      "activation": {
+        "copy_from_track": "melbourne", "copy_slot": "melbourne",
+        "overrides": [{ "datasets": ["f1_2025"], "path": "TyreData_0.compound_harder", "value": "C3" }],
+        "track_overrides": [{ "path": "allow_night_start", "value": "False" }]
+      },
+      "ers": { "HotLapDeployFactor": 0.7 },
+      "copy_directories": [{ "source": "mipmaps/", "destination": "asset_groups/environment_package/tracks/testring/mipmaps/" }],
+      "ui": { "schema_version": 1, "images_file": "ui/images.json", "minimap_file": "ui/minimap.json" }
+    }"#;
+
+    pub fn write_zip(path: &Path, manifest: &str, with_erp: bool) {
+        let f = std::fs::File::create(path).unwrap();
+        let mut z = zip::ZipWriter::new(f);
+        let opts = zip::write::SimpleFileOptions::default();
+        z.start_file(MANIFEST_FILE, opts).unwrap();
+        std::io::Write::write_all(&mut z, manifest.as_bytes()).unwrap();
+        if with_erp {
+            z.start_file("testring.erp", opts).unwrap();
+            std::io::Write::write_all(&mut z, b"ERPK placeholder").unwrap();
+        }
+        z.start_file("ui/images.json", opts).unwrap();
+        std::io::Write::write_all(&mut z, b"{}").unwrap();
+        z.finish().unwrap();
+    }
+
+    #[test]
+    fn parses_ego_manifest() {
+        let p = TrackPackage::parse(OKAYAMA_LIKE.as_bytes()).unwrap();
+        assert_eq!(p.display_name(), "Test Ring");
+        assert_eq!(p.activation.overrides[0].datasets, ["f1_2025"]);
+        assert_eq!(p.db_ops().len(), 1);
+    }
+
+    #[test]
+    fn rejects_escaping_paths() {
+        let bad = OKAYAMA_LIKE.replace("testring.erp", "../x.erp");
+        assert!(TrackPackage::parse(bad.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn zip_needs_its_erp() {
+        let dir = std::env::temp_dir().join(format!("swofty-map-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let good = dir.join("good.zip");
+        let bad = dir.join("bad.zip");
+        write_zip(&good, OKAYAMA_LIKE, true);
+        write_zip(&bad, OKAYAMA_LIKE, false);
+        assert_eq!(read_zip_manifest(&good).unwrap().track_code, "testring");
+        assert!(read_zip_manifest(&bad).is_err());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+}

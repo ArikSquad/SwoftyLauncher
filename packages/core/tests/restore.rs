@@ -1,0 +1,234 @@
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+
+use swofty_core::baseline::{Identity, sha256_bytes};
+use swofty_core::install::{Drift, Game, Installer, OVERRIDE_HEADER, Plan};
+use swofty_core::journal::{Journal, Op, State};
+
+const GVDB: &str = "game_package/gamedatabases/gamedatabases.2025.bin";
+const UI: &str = "2025_asset_groups/ui_package/flow_frontend.erp";
+const CORE: &str = "swofty/mods/core/swofty_core.dll";
+const REG: &str = "WINE REGISTRY Version 2\n;; All keys relative to \\\\User\n\n[Software\\\\Wine] 1700000000\n\"Version\"=\"win10\"\n";
+
+struct Fixture {
+    root: PathBuf,
+    game: PathBuf,
+    data: PathBuf,
+    reg: PathBuf,
+    src: PathBuf,
+}
+
+impl Fixture {
+    fn new(name: &str) -> Self {
+        let root = std::env::temp_dir().join(format!("swofty-restore-{name}-{}", std::process::id()));
+        std::fs::remove_dir_all(&root).ok();
+        let f = Self {
+            game: root.join("game"),
+            data: root.join("data"),
+            reg: root.join("pfx/user.reg"),
+            src: root.join("src"),
+            root,
+        };
+        for (rel, body) in [
+            ("F1_25.exe", "exe-v1"),
+            (GVDB, "db-v1"),
+            (UI, "ui-v1"),
+            ("readme.txt", "r-v1"),
+        ] {
+            write(&f.game.join(rel), body);
+        }
+        write(&f.reg, REG);
+        for (name, body) in [
+            ("dbA", "db-A"),
+            ("dbB", "db-B"),
+            ("uiB", "ui-B"),
+            ("proxy", "proxy"),
+            ("core", "core"),
+        ] {
+            write(&f.src.join(name), body);
+        }
+        f
+    }
+
+    fn game(&self, build: &str) -> Game {
+        Game {
+            dir: self.game.clone(),
+            user_reg: Some(self.reg.clone()),
+            identity: Identity::detect(&self.game, Some(build.parse().unwrap())).unwrap(),
+        }
+    }
+
+    fn plan(&self, profile: &str) -> Plan {
+        let mut data = BTreeMap::from([(
+            GVDB.to_owned(),
+            self.src.join(if profile == "a" { "dbA" } else { "dbB" }),
+        )]);
+        if profile == "b" {
+            data.insert(UI.into(), self.src.join("uiB"));
+        }
+        Plan {
+            profile: profile.into(),
+            data,
+            loader: BTreeMap::from([
+                ("version.dll".to_owned(), self.src.join("proxy")),
+                (CORE.to_owned(), self.src.join("core")),
+            ]),
+            registry_override: true,
+        }
+    }
+
+    fn snapshot(&self) -> BTreeMap<String, String> {
+        let mut out = BTreeMap::new();
+        walk(&self.game, &self.game, &mut out);
+        out.insert(
+            "<user.reg>".into(),
+            sha256_bytes(&std::fs::read(&self.reg).unwrap()),
+        );
+        out
+    }
+
+    fn read(&self, rel: &str) -> String {
+        std::fs::read_to_string(self.game.join(rel)).unwrap()
+    }
+}
+
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        std::fs::remove_dir_all(&self.root).ok();
+    }
+}
+
+fn write(path: &Path, body: &str) {
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, body).unwrap();
+}
+
+fn walk(base: &Path, dir: &Path, out: &mut BTreeMap<String, String>) {
+    for e in std::fs::read_dir(dir).unwrap().flatten() {
+        let rel = e
+            .path()
+            .strip_prefix(base)
+            .unwrap()
+            .to_string_lossy()
+            .replace('\\', "/");
+        if e.path().is_dir() {
+            out.insert(format!("{rel}/"), "dir".into());
+            walk(base, &e.path(), out);
+        } else {
+            out.insert(rel, sha256_bytes(&std::fs::read(e.path()).unwrap()));
+        }
+    }
+}
+
+#[test]
+fn profile_switches_return_to_the_baseline() {
+    let f = Fixture::new("switch");
+    let original = f.snapshot();
+    let game = f.game("1");
+    let inst = Installer::new(&f.data, &game);
+
+    inst.apply(&f.plan("a")).unwrap();
+    assert_eq!(f.read(GVDB), "db-A");
+    assert_eq!(f.read("version.dll"), "proxy");
+    assert!(std::fs::read_to_string(&f.reg).unwrap().contains(OVERRIDE_HEADER));
+
+    inst.apply(&f.plan("b")).unwrap();
+    assert_eq!(f.read(GVDB), "db-B");
+    assert_eq!(f.read(UI), "ui-B");
+    assert_eq!(Journal::open(&f.data).unwrap().len(), 1);
+
+    inst.apply(&Plan::vanilla()).unwrap();
+    assert_eq!(f.snapshot(), original);
+    assert!(Journal::open(&f.data).unwrap().is_empty());
+    assert_eq!(inst.verify().unwrap(), []);
+    assert_eq!(inst.restore().unwrap(), []);
+    assert_eq!(f.snapshot(), original);
+}
+
+#[test]
+fn a_kill_between_any_two_steps_rolls_back_to_the_baseline() {
+    let total = 7;
+    for k in 0..=total {
+        let f = Fixture::new(&format!("kill{k}"));
+        let original = f.snapshot();
+        let game = f.game("1");
+        let mut inst = Installer::new(&f.data, &game);
+        inst.stop_after = Some(k);
+        let result = inst.apply(&f.plan("a"));
+        assert_eq!(result.is_ok(), k == total, "k={k}");
+
+        let open = Journal::open(&f.data).unwrap();
+        assert_eq!(open.len(), 1, "k={k}");
+        if let Some(e) = open[0].entries.last().filter(|e| e.state == State::Pending) {
+            match e.op {
+                Op::ReplaceFile | Op::CreateFile => write(&f.game.join(&e.path), "partial"),
+                Op::CreateDir => std::fs::create_dir_all(f.game.join(&e.path)).unwrap(),
+                Op::RegistryOverride => {
+                    let mut t = std::fs::read_to_string(&f.reg).unwrap();
+                    t.push_str(&format!("\n{OVERRIDE_HEADER}\n"));
+                    std::fs::write(&f.reg, t).unwrap();
+                }
+            }
+        }
+
+        let restarted = Installer::new(&f.data, &game);
+        assert_eq!(restarted.recover().unwrap(), [], "k={k}");
+        assert_eq!(f.snapshot(), original, "k={k}");
+        assert_eq!(restarted.verify().unwrap(), [], "k={k}");
+    }
+}
+
+#[test]
+fn a_game_update_in_between_never_restores_old_originals() {
+    let f = Fixture::new("update");
+    let game1 = f.game("1");
+    Installer::new(&f.data, &game1).apply(&f.plan("a")).unwrap();
+    assert_eq!(f.read(GVDB), "db-A");
+
+    for (rel, body) in [("F1_25.exe", "exe-v2"), (GVDB, "db-v2"), ("readme.txt", "r-v2")] {
+        write(&f.game.join(rel), body);
+    }
+    let game2 = f.game("2");
+    let inst = Installer::new(&f.data, &game2);
+    let report = inst.restore().unwrap();
+    assert!(report.contains(&Drift::LeftInPlace(GVDB.into())), "{report:?}");
+    assert_eq!(f.read(GVDB), "db-v2");
+    assert!(!f.game.join("version.dll").exists());
+    assert!(!f.game.join("swofty").exists());
+
+    let updated = f.snapshot();
+    assert_eq!(updated["<user.reg>"], sha256_bytes(REG.as_bytes()));
+
+    inst.apply(&f.plan("a")).unwrap();
+    assert_eq!(f.read(GVDB), "db-A");
+    assert_eq!(
+        inst.baseline().unwrap().files[GVDB].sha256,
+        sha256_bytes(b"db-v2")
+    );
+    inst.apply(&Plan::vanilla()).unwrap();
+    assert_eq!(f.snapshot(), updated);
+    assert_eq!(inst.verify().unwrap(), []);
+}
+
+#[test]
+fn drift_from_outside_is_reported_and_restored() {
+    let f = Fixture::new("drift");
+    let original = f.snapshot();
+    let game = f.game("1");
+    let inst = Installer::new(&f.data, &game);
+    inst.apply(&f.plan("a")).unwrap();
+    inst.apply(&Plan::vanilla()).unwrap();
+
+    write(&f.game.join(GVDB), "edited by another tool");
+    write(&f.game.join("version.dll"), "someone else's proxy");
+    let drift = inst.verify().unwrap();
+    assert!(drift.contains(&Drift::Changed(GVDB.into())), "{drift:?}");
+    assert!(
+        drift.contains(&Drift::Addition("version.dll".into())),
+        "{drift:?}"
+    );
+    assert!(inst.apply(&f.plan("a")).is_err());
+
+    assert_eq!(inst.restore().unwrap(), []);
+    assert_eq!(f.snapshot(), original);
+}
