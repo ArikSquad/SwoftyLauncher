@@ -1,0 +1,36 @@
+[workspace]
+resolver = "3"
+members = ["apps/cli", "apps/launcher", "packages/core", "packages/formats", "packages/sdk"]
+default-members = ["apps/cli", "packages/core", "packages/formats", "packages/sdk"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/Swofty-Developments/F1ModManager"
+
+[workspace.dependencies]
+swofty-core = { path = "packages/core" }
+swofty-formats = { path = "packages/formats" }
+swofty-sdk = { path = "packages/sdk" }
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+md-5 = "0.10"
+semver = { version = "1", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+zstd = "0.13"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.release]
+lto = "thin"
+strip = true
