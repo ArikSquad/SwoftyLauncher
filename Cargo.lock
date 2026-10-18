@@ -6330,6 +6330,14 @@ name = "swofty-sdk"
 version = "0.2.9"
 
 [[package]]
+name = "swofty-simplified-helper"
+version = "0.2.9"
+dependencies = [
+ "swofty-addon",
+ "swofty-addon-simplified",
+]
+
+[[package]]
 name = "syn"
 version = "2.0.119"
 source = "registry+https://github.com/rust-lang/crates.io-index"
