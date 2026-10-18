@@ -53,6 +53,7 @@ Tell the launcher where to find your plugin with `launcher.program`. It maps eac
 | `imports` | `[string]` | Extensions your plugin claims when a file is dropped. Leave out the dot. |
 | `build` | `bool` | Set to `true` if your plugin answers `build`. |
 | `commands` | `[CommandSpec]` | `swofty` subcommands. |
+| `claims` | `bool` | Set to `true` to decide yourself which dropped files and folders you import ([Importers](#importers-and-drag-and-drop)). |
 
 ### 3. Implement the methods
 
@@ -120,7 +121,7 @@ plugin    {"id":1,"result":{"subtitle":"1 item, 1 on","body":{"list":{"rows":[],
 | `view` | `{ section }` | a [View](#views) |
 | `event` | `{ section, event }` | an [Effect](#events-and-effects) |
 | `import` | `{ paths }` | `[string]` — lines to show |
-| `build` | `{ options, features }` | `{ ops, lines, warnings }` ([build reply](#the-build-reply)) |
+| `build` | `{ options, features }` | `{ ops, items, lines, warnings }` ([build reply](#the-build-reply)) |
 | `command` | `{ path, args }` | a string to print |
 | `summary` | — | `{ label, items }` or `null` |
 
@@ -347,6 +348,7 @@ Return your addon's asset ops from `build`, along with lines and warnings:
 - Write each op exactly as you would in an [op file](./asset-api#op-files): set the `op` field to `<kind>.<name>`, such as `file.put`, `db.set`, `erp.patch-pkg`, `lang.set` or `warn`.
 - For a `source` inside the addon folder, use a relative path (`"art/okayama.dds"`). Use `{ "root": "data" | "cache", "path": "…" }` to read from `data_dir` or `cache_dir`.
 - The launcher tags every op with this addon's id as its origin, routes them like declared ops, and reports conflicts by origin ([Asset API](./asset-api#deliveries)).
+- If your addon loads several items, such as the mods in a library, you can add `items`: the item each op comes from, by position in `ops`, with `null` for an op that belongs to no item. The launcher adds the item to the op's origin, so each item gets its own runtime overlay archive and conflicts name it. Leave `items` out, or shorter than `ops`, and the remaining ops have no item.
 - Check `features.stable` and `features.experimental` before returning ops. They list the op `kind`s the installed loader supports: `group`, `erp`, `db`, `lang`, `file`. Drop any ops it cannot apply.
 - The build calls `build` for each enabled addon in load order, after that addon's declared ops. It prints `lines` and `warnings` with the addon id as a prefix.
 
@@ -369,8 +371,10 @@ fn build(&self, host: &mut Host) -> Result<Value, String> {
 List your file extensions in `imports` to claim dropped files that match. The launcher routes each drop in this order:
 
 1. The launcher claims addons first: a folder with `swofty.json`, a `.swoftyaddon` file (or a legacy `.swoftymod`), or a zip that holds an addon. Those install as addons.
-2. It checks every plugin with `imports`, in registry order, and claims a file when its extension matches.
+2. It checks every plugin with `imports` or `claims`, in registry order. A plugin with `imports` claims a file when its extension matches. A plugin with `claims` decides for itself (see below).
 3. A claimed file goes to that plugin's `import`. An unclaimed one is reported: `No addon imports <file>`.
+
+Matching extensions can't tell a mod's zip from any other zip, and can't claim a folder. To decide for yourself, set `claims` to `true`. The launcher then runs your program on its own for each drop, as `<program> claims <path>`, and reads one line: `yes`, `maybe` or `no`. A `maybe` wins only when no other plugin says `yes` or `maybe`. Answer within 5 seconds, without the protocol: there is no `hello` and no profile. If your program fails, stalls or prints anything else, the launcher falls back to `imports`. A Rust helper that uses `swofty_addon::helper::run_helper` answers from its `Importer::claims` for you.
 
 You'll receive files routed to your plugin together in one `import` call. Return one line per file and report `progress` as you work:
 

@@ -13,10 +13,19 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::helper::{API_VERSION, Built, Call, HostCall, Reply, Request, Welcome};
-use crate::launcher::{Addon, BuildCx, Cx, GameFiles, ProfileInfo, Progress, StateStore};
+use crate::launcher::{Addon, BuildCx, Claim, Cx, GameFiles, ProfileInfo, Progress, StateStore};
 use crate::{Error, Result};
 
 pub fn run_helper(addon: Arc<dyn Addon>) {
+    if let [verb, path] = std::env::args().skip(1).collect::<Vec<_>>().as_slice()
+        && verb == "claims"
+    {
+        let claim = addon
+            .importer()
+            .map_or(Claim::No, |i| i.claims(std::path::Path::new(path)));
+        println!("{}", claim_word(claim));
+        return;
+    }
     let host = Host::new();
     let mut session: Option<Session> = None;
     while let Some(Request { id, call }) = host.next_call() {
@@ -59,12 +68,15 @@ fn dispatch(
     let session = session
         .as_ref()
         .ok_or_else(|| "the host spoke before saying hello".to_string())?;
+    // The host answers game calls with errors when it has no game at hand, such as
+    // a command run without one, so the addon sees no game then, as a built-in would.
+    let game = (!host.build_key().is_empty()).then_some(host as &dyn GameFiles);
     let cx = Cx::new(
         &session.addon,
         &session.profile,
         &session.data_dir,
         &session.cache_dir,
-        Some(host as &dyn GameFiles),
+        game,
         host as &dyn StateStore,
     );
     match call {
@@ -84,8 +96,13 @@ fn dispatch(
                     features: &features,
                 })
                 .map_err(text)?;
+            let items = match batch.ops.iter().any(|op| op.origin.item.is_some()) {
+                true => batch.ops.iter().map(|op| op.origin.item.clone()).collect(),
+                false => Vec::new(),
+            };
             json(Built {
                 ops: batch.ops.into_iter().map(|op| op.op).collect(),
+                items,
                 lines: batch.lines,
                 warnings: batch.warnings,
             })
@@ -93,6 +110,15 @@ fn dispatch(
         Call::Command { path, args } => addon.command(&cx, &path, &args).map_err(text).and_then(json),
         Call::Summary => json(addon.summary(&cx)),
         Call::Hello(_) | Call::Profile(_) => unreachable!("handled above"),
+    }
+}
+
+// What `<program> claims <path>` prints; core's HelperAddon reads it back.
+pub fn claim_word(claim: Claim) -> &'static str {
+    match claim {
+        Claim::Yes => "yes",
+        Claim::Maybe => "maybe",
+        Claim::No => "no",
     }
 }
 

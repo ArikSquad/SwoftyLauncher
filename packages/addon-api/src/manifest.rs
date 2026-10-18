@@ -56,6 +56,10 @@ pub struct Launcher {
     pub build: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub commands: Vec<CommandSpec>,
+    // Ask the helper which dropped files and folders it takes, by running it as
+    // `<program> claims <path>`, instead of matching `imports` against extensions.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub claims: bool,
 }
 
 impl Launcher {

@@ -152,6 +152,46 @@ impl HelperAddon {
         swofty_addon::Error::Other(e)
     }
 
+    // Runs `<program> claims <path>` on its own, apart from the live session, since
+    // a drop is routed before any profile is at hand. None when it fails or stalls,
+    // and the extensions in imports decide instead.
+    fn ask_claims(&self, path: &Path) -> Option<Claim> {
+        let program = self.dir.join(self.spec.program()?);
+        executable(&program).ok()?;
+        let mut command = Command::new(&program);
+        command
+            .arg("claims")
+            .arg(path)
+            .current_dir(&self.dir)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x0800_0000);
+        }
+        let mut child = command.spawn().ok()?;
+        let stdout = child.stdout.take()?;
+        let (tx, rx) = channel();
+        std::thread::spawn(move || {
+            let mut line = String::new();
+            BufReader::new(stdout).read_line(&mut line).ok();
+            tx.send(line).ok();
+        });
+        let line = rx.recv_timeout(self.timeouts.quick);
+        if line.is_err() {
+            child.kill().ok();
+        }
+        child.wait().ok();
+        match line.ok()?.trim() {
+            "yes" => Some(Claim::Yes),
+            "maybe" => Some(Claim::Maybe),
+            "no" => Some(Claim::No),
+            _ => None,
+        }
+    }
+
     fn start(&self, cx: &Cx) -> std::result::Result<Live, String> {
         let rel = self
             .spec
@@ -385,7 +425,7 @@ impl Addon for HelperAddon {
     }
 
     fn importer(&self) -> Option<&dyn Importer> {
-        (!self.spec.imports.is_empty()).then_some(self as &dyn Importer)
+        (self.spec.claims || !self.spec.imports.is_empty()).then_some(self as &dyn Importer)
     }
 
     fn build(&self, cx: &BuildCx) -> Result<AssetBatch> {
@@ -397,17 +437,17 @@ impl Addon for HelperAddon {
             features: cx.features.clone(),
         };
         let built: Built = self.call(&cx.cx, call, self.timeouts.long, None)?;
-        let origin = Origin {
-            addon: self.manifest.id.clone(),
-            item: None,
-        };
+        let mut items = built.items.into_iter();
         Ok(AssetBatch {
             ops: built
                 .ops
                 .into_iter()
                 .map(|op| Op {
                     op,
-                    origin: origin.clone(),
+                    origin: Origin {
+                        addon: self.manifest.id.clone(),
+                        item: items.next().flatten(),
+                    },
                 })
                 .collect(),
             lines: built.lines,
@@ -444,6 +484,11 @@ impl Addon for HelperAddon {
 
 impl Importer for HelperAddon {
     fn claims(&self, path: &Path) -> Claim {
+        if self.spec.claims
+            && let Some(claim) = self.ask_claims(path)
+        {
+            return claim;
+        }
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or_default();
         if path.is_file() && self.spec.imports.iter().any(|i| i.eq_ignore_ascii_case(ext)) {
             Claim::Yes
@@ -567,7 +612,7 @@ answer '{"id":1,"result":{"subtitle":"s","body":{"blocks":[]}}}'
 answer '{"method":"progress","params":{"done":0.5,"text":"half"}}'
 echo '{"id":2,"result":["imported a.exmod"]}'
 read -r l; echo "$l" >> received
-answer '{"id":3,"result":{"ops":[{"op":"file.put","source":"a.dds","target":"b.dds"}],"lines":["one"]}}'
+answer '{"id":3,"result":{"ops":[{"op":"file.put","source":"a.dds","target":"b.dds"},{"op":"file.put","source":"c.dds","target":"d.dds"}],"items":["mod.a"],"lines":["one"]}}'
 answer '{"id":4,"error":"nope"}'
 read -r l
 "#;
@@ -609,6 +654,8 @@ read -r l
             .unwrap();
         assert!(matches!(batch.ops[0].op, AssetOp::File(_)));
         assert_eq!(batch.ops[0].origin.addon, "t.helper");
+        assert_eq!(batch.ops[0].origin.item.as_deref(), Some("mod.a"));
+        assert_eq!(batch.ops[1].origin.item, None);
         assert_eq!(batch.lines, ["one"]);
         let e = h.command(&cx, &["x".into()], &[]).unwrap_err();
         assert_eq!(e.to_string(), "Helper: nope");
@@ -728,6 +775,40 @@ read -r l
                 .unwrap()
                 .running()
         );
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn asks_a_helper_that_claims_about_each_drop() {
+        let root = tmp("claims");
+        let dir = root.join("addon");
+        let script = r#"case "$1:$2" in
+  claims:*.serps|claims:*/mod) echo yes ;;
+  claims:*.zip) echo maybe ;;
+  claims:*.slow) exec sleep 5 ;;
+  claims:*) echo no ;;
+esac"#;
+        addon(&dir, script);
+        let manifest = MANIFEST.replace(r#""imports":["exmod"]"#, r#""imports":["exmod"],"claims":true"#);
+        std::fs::write(dir.join("swofty.json"), manifest).unwrap();
+        let h = helper(&dir);
+        let file = |name: &str| {
+            let p = root.join(name);
+            std::fs::write(&p, "x").unwrap();
+            p
+        };
+        assert_eq!(h.claims(&file("a.serps")), Claim::Yes);
+        assert_eq!(h.claims(&file("a.zip")), Claim::Maybe);
+        assert_eq!(h.claims(&file("a.txt")), Claim::No);
+        std::fs::create_dir_all(root.join("mod")).unwrap();
+        assert_eq!(h.claims(&root.join("mod")), Claim::Yes);
+        assert_eq!(h.claims(&file("a.exmod")), Claim::No, "the helper's answer wins");
+        assert_eq!(
+            h.claims(&file("b.slow")),
+            Claim::No,
+            "a stalled helper claims nothing"
+        );
+        assert!(!h.running(), "claims runs apart from the live session");
         std::fs::remove_dir_all(&root).ok();
     }
 

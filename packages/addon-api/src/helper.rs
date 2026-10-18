@@ -8,7 +8,7 @@ use crate::asset::{AssetOp, Features};
 use crate::launcher::ProfileInfo;
 use crate::view::Event;
 
-pub use crate::run_helper::run_helper;
+pub use crate::run_helper::{claim_word, run_helper};
 
 pub const API_VERSION: u32 = 1;
 pub const RESTART: &str = "swofty.restart";
@@ -92,6 +92,10 @@ pub struct Welcome {
 pub struct Built {
     #[serde(default)]
     pub ops: Vec<AssetOp>,
+    // The item each op comes from, by position in ops, such as one mod of the
+    // addon's library. Core builds one runtime overlay archive per item.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub items: Vec<Option<String>>,
     #[serde(default)]
     pub lines: Vec<String>,
     #[serde(default)]
@@ -248,6 +252,23 @@ mod tests {
             &built.ops[0],
             AssetOp::File(FileOp::Put { source: Source { path, .. }, .. }) if path == "a.dds"
         ));
+        assert!(built.items.is_empty());
+        let built: Built = serde_json::from_value(json!({"ops": [
+            {"op": "file.put", "source": {"root": "data", "path": "a.dds"}, "target": "b.dds"},
+            {"op": "file.put", "source": {"root": "data", "path": "c.dds"}, "target": "d.dds"}
+        ], "items": ["mod.a", null]}))
+        .unwrap();
+        assert_eq!(built.items, [Some("mod.a".to_owned()), None]);
+        assert_eq!(
+            serde_json::to_value(&built).unwrap()["items"],
+            json!(["mod.a", null])
+        );
+        assert!(
+            serde_json::to_value(Built::default())
+                .unwrap()
+                .get("items")
+                .is_none()
+        );
         assert_eq!(
             serde_json::from_str::<Incoming>(r#"{"id": 7, "method": "get_state", "params": null}"#).unwrap(),
             Incoming::Call(Request {

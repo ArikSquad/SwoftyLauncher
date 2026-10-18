@@ -144,6 +144,7 @@ To add sidebar pages, an importer, a build hook and commands, name a [launcher p
 | `imports` | string[] | List file extensions without the dot. When someone drops a file with one of these extensions, the launcher routes it to your plugin. |
 | `build` | boolean | Set to `true` when your plugin answers the `build` call. Defaults to `false`. |
 | `commands` | `[CommandSpec]` | `swofty` subcommands — `{ name, about, args, subcommands }`. |
+| `claims` | boolean | Set to `true` to decide yourself which dropped files and folders you import: the launcher runs `<program> claims <path>` and reads `yes`, `maybe` or `no` ([Importers](./launcher-api#importers-and-drag-and-drop)). Defaults to `false`. |
 
 ## Paths and validation
 
