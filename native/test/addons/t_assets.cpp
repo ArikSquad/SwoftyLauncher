@@ -1,9 +1,17 @@
 #include "wine_test.hpp"
 #include <swofty/assets.hpp>
+#include <swofty/db.hpp>
+#include <swofty/events.hpp>
 #include <swofty/storage.hpp>
 
 namespace assets = swofty::assets;
 namespace storage = swofty::storage;
+#include <swofty/telemetry.hpp>
+
+namespace assets = swofty::assets;
+namespace tel = swofty::telemetry;
+namespace events = swofty::events;
+namespace db = swofty::db;
 
 namespace {
 
@@ -11,6 +19,14 @@ bool on()
 {
     char v[4] = {};
     return GetEnvironmentVariableA("SWOFTY_TEST_ASSETS", v, sizeof v) && v[0] == '1';
+}
+
+void on_session(const SwoftyEvent *, void *)
+{
+}
+
+void on_tick(double, void *)
+{
 }
 
 }
@@ -69,6 +85,20 @@ SWOFTY_ON_LOAD
     swofty::log("[t_assets] storage missing %s", storage::name(sm));
     swofty::log("[t_assets] storage remove %s", storage::name(srm));
     swofty::log("[t_assets] storage remove-again %s", storage::name(srm2));
+
+    uint32_t etok = 0;
+    events::Result esub = events::subscribe(SWOFTY_EVENT_SESSION_START, on_session, nullptr, &etok);
+    events::Result efrm = events::on_frame(on_tick, nullptr, nullptr);
+    events::Result ebad = events::subscribe("not.an.event", on_session, nullptr, nullptr);
+    events::Result euns = events::unsubscribe(etok);
+    events::Result euns2 = events::unsubscribe(etok);
+    swofty::log("[t_assets] events available %d", events::available());
+    swofty::log("[t_assets] events subscribe %s on_frame %s unknown %s unsubscribe %s unsubscribe-again %s",
+                events::name(esub), events::name(efrm), events::name(ebad), events::name(euns), events::name(euns2));
+
+    SwoftyDbValue dv{};
+    db::Result dget = db::get("entrants.teams.team.t_assets", &dv);
+    swofty::log("[t_assets] db available %d get %s", db::available(), db::name(dget));
 }
 
 extern "C" __declspec(dllexport) void t_assets_late()
@@ -78,6 +108,14 @@ extern "C" __declspec(dllexport) void t_assets_late()
     assets::Fragment frags[] = {{"erp/frag.bin"}};
     swofty::log("[t_assets] late put_resource: %s",
                 assets::name(assets::put_resource("eaid://t_assets/late.tif.image", frags)));
+
+    tel::SessionState ss = {};
+    tel::CarState cs = {};
+    swofty::log("[t_assets] telemetry: available %d, session %s, car0 %s, car99 %s", tel::available(),
+                tel::name(tel::session(&ss)), tel::name(tel::car(0, &cs)), tel::name(tel::car(99, &cs)));
+    const char *feed = nullptr;
+    tel::Result sm = tel::shared_memory(&feed);
+    swofty::log("[t_assets] telemetry: shared_memory %s name=%s", tel::name(sm), feed ? feed : "(none)");
 }
 
 SWOFTY_ADDON()

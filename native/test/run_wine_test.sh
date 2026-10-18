@@ -84,7 +84,7 @@ json.dump({'schema': 1, 'profile': 'wine-test',
            'addons': [{'id': 'example.sample-mod', 'dlls': ['t_assets.dll'], 'options': []}],
            'plugins': ['addons/example.sample-mod/native/t_assets.dll']},
           open(os.path.join(root, 'settings.json'), 'w'))
-json.dump({'features': ['file']}, open(os.path.join(root, 'assets.json'), 'w'))
+json.dump({'features': ['file', 'telemetry']}, open(os.path.join(root, 'assets.json'), 'w'))
 EOF
     gl_level=; gl_rate=
     [[ $mode == gamelog_off ]] && gl_level=off
@@ -178,6 +178,18 @@ EOF
         once "storage: remove deletes the file" "$sapi remove save/state\.txt -> ok[[:space:]]*\$"
         once "storage: remove of a gone file is invalid" "$sapi remove save/state\.txt -> invalid: swofty/addons/example\.sample-mod/save/state\.txt is missing"
         check "storage: the plugin sees remove then missing" '\[t_assets\] storage remove-again invalid'
+        once "telemetry: setup wired through ready() when the feature is on" '\[telemetry\] on; frame tick '
+        once "telemetry: reads are gated off outside a session" '\[t_assets\] telemetry: available 0, session unavailable, car0 unavailable, car99 invalid'
+        once "telemetry: an addon opens the shared feed" '\[t_assets\] telemetry: shared_memory ok name=Local.SwoftyTelemetry'
+        once "telemetry: the shared feed mapping is created" '\[telemetry\] shared_memory: Local.SwoftyTelemetry mapped, 6920 bytes'
+        eapi='\[events\]'
+        once "events: the plugin's session.start subscription is accepted" "$eapi subscribe session\.start by example\.sample-mod -> ok token [0-9]+[[:space:]]*\$"
+        once "events: the plugin's on_frame callback is accepted" "$eapi on_frame by example\.sample-mod -> ok token"
+        once "events: an unknown event name is rejected" "$eapi subscribe not\.an\.event by example\.sample-mod -> invalid[[:space:]]*\$"
+        once "events: unsubscribe of a live token succeeds" "$eapi unsubscribe token [0-9]+ -> ok[[:space:]]*\$"
+        once "events: unsubscribe of an already-dropped token is invalid" "$eapi unsubscribe token [0-9]+ -> invalid[[:space:]]*\$"
+        check "events: the plugin sees ok/ok/invalid/ok/invalid through the wrapper" '\[t_assets\] events subscribe ok on_frame ok unknown invalid unsubscribe ok unsubscribe-again invalid'
+        check "db: read reports unavailable until the database pointer resolves on this build" '\[t_assets\] db available 0 get unavailable'
         continue
     fi
     count "$mode: no SDK calls, no api lines" 0 '\[assets\] api:'

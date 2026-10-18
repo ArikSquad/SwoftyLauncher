@@ -96,10 +96,16 @@ outside paint) and draw by id, multiplied by a tint (`0xffffffff` for none).
 Accept point: `on_paint`, `remove` and `load_image` are accepted at any time. Draw calls are valid
 only inside a paint callback, with that callback's `paint` handle.
 
-Hooks: the lane finds and hooks the Direct3D 12 swapchain present path (`d3d12core.dll`); there is
-no present hook in the knowledge base yet.
+Hooks: the overlay reaches the Direct3D 12 present path through the stable COM vtable ABI, not
+through a game address. At arm time it reads `IDXGISwapChain::Present` (vtable slot 8),
+`IDXGISwapChain::ResizeBuffers` (slot 13) and `ID3D12CommandQueue::ExecuteCommandLists` (slot 10,
+to capture the game's direct queue) from a throwaway probe swapchain and installs safetyhook inline
+hooks on them. See the `render` subsystem in the knowledge base.
 
-Status: stub. `native/src/core/hud.cpp` returns `unavailable` and the draw calls do nothing.
+Status: implemented, experimental. `native/src/core/hud.cpp` arms the present hook when the
+`overlay` feature is on and paints the frame's filled rectangles, outlines and lines; text and
+image commands are recorded but not yet painted. The draw-list and registration logic is in
+`native/src/core/hud_drawlist.hpp` and covered by `native/test/hud_test.cpp`.
 
 ## 3. Telemetry
 
@@ -144,7 +150,11 @@ Hooks: session and participant data come from the session witnesses `Sess_Veh_Up
 `Sess_Startup_VehicleAiLoop` 0x142505f30 and `Game_GameModule_OnSessionEnter` 0x14080c300. The
 per-car physics/telemetry struct is not catalogued yet; the lane finds it.
 
-Status: stub. `native/src/core/telemetry.cpp` returns `unavailable` from every call.
+Status: experimental. `native/src/core/telemetry.cpp` implements the feed, the seqlock, the
+`shared_memory` mapping and the gated accessors, and mid-hooks `Vm_Update_FlowStateMachine`,
+`Game_GameModule_OnSessionEnter` and `Game_SessionStateFinaliseResultsSync_OnResultsFinalised`
+to drive the frame counter, session clock and the `available()` gate. The per-car physics struct
+is not catalogued, so the car and participant fields read back zero until it is reverse-engineered.
 
 ## 4. Database read
 
