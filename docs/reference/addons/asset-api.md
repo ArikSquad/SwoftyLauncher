@@ -138,7 +138,7 @@ The build writes `swofty/assets.json` and its files into the loader folder `swof
 | Kind | `swofty/assets.json` | Files |
 |---|---|---|
 | `group` | `asset_groups`: `group`, `erps`, `deps`, `template`, `origin` | |
-| `erp` | `resource_erps`: one overlay archive per set of target archives, as `file` and target `erps` | `assets/resources/<n>.erp` |
+| `erp` | `resource_erps`: one overlay archive per origin (an addon, or an item such as a mod inside one), numbered in load order, as `file`, the target `erps` it writes and its `origin` | `assets/resources/<n>.erp` |
 | `db` | `db_edits`: each record that differs from the database after track activation, as `hash`, `type` and `value`, and `"early_stage": true` | |
 | `lang` | `lang.<code>.table`, and `lang."*".table` for every language | `assets/lang/<code>.lng`, `assets/lang/all.lng` |
 | `file` | `"overlay": true`, and `"file"` in `features` | `overlay/<target>` |

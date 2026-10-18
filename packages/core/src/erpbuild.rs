@@ -62,6 +62,10 @@ impl Archive {
 pub struct ErpBuild<'a> {
     original: &'a dyn Fn(&str) -> PathBuf,
     erps: BTreeMap<String, Archive>,
+    // The origin of the op that last wrote each resource, by archive and name,
+    // and the origins in the order their ops came.
+    writers: HashMap<(String, String), String>,
+    origins: Vec<String>,
     sources: HashMap<SourceKey, Node>,
     archives: HashMap<PathBuf, ErpFile>,
     mipmaps: BTreeMap<String, PathBuf>,
@@ -118,6 +122,8 @@ impl<'a> ErpBuild<'a> {
         Self {
             original,
             erps: BTreeMap::new(),
+            writers: HashMap::new(),
+            origins: Vec::new(),
             sources: HashMap::new(),
             archives: HashMap::new(),
             mipmaps: BTreeMap::new(),
@@ -132,6 +138,51 @@ impl<'a> ErpBuild<'a> {
             self.erps.insert(rel.to_owned(), Archive { file, slots });
         }
         Ok(self.erps.get_mut(rel).expect("inserted above"))
+    }
+
+    // Applies an op for an origin, such as an addon or a mod inside one. The
+    // runtime route puts each origin's resources in an overlay archive of its own.
+    pub fn apply_for(
+        &mut self,
+        op: &ErpOp,
+        origin: &str,
+        resolve: &dyn Fn(&Source) -> Result<PathBuf>,
+    ) -> Result<()> {
+        self.apply(op, resolve)?;
+        let written = match op {
+            ErpOp::PatchPkg { erp, resource, .. }
+            | ErpOp::ReplaceResource { erp, resource, .. }
+            | ErpOp::AddResource { erp, resource, .. } => Some((erp, resource.as_str())),
+            ErpOp::CopyResource {
+                erp,
+                resource,
+                rename,
+                ..
+            }
+            | ErpOp::PutResource {
+                erp,
+                resource,
+                rename,
+                ..
+            } => Some((erp, rename.as_deref().unwrap_or(resource))),
+            ErpOp::RemoveResource { erp, resource } => {
+                self.writers.remove(&(erp.clone(), resource.clone()));
+                None
+            }
+            ErpOp::AddMipmaps { .. } => None,
+        };
+        if let Some((erp, name)) = written {
+            self.writers
+                .insert((erp.clone(), name.to_owned()), origin.to_owned());
+            if !self.origins.iter().any(|o| o == origin) {
+                self.origins.push(origin.to_owned());
+            }
+        }
+        Ok(())
+    }
+
+    pub fn origins(&self) -> &[String] {
+        &self.origins
     }
 
     pub fn apply(&mut self, op: &ErpOp, resolve: &dyn Fn(&Source) -> Result<PathBuf>) -> Result<()> {
@@ -339,10 +390,16 @@ impl<'a> ErpBuild<'a> {
         Ok(Some(Pkg::parse(&frag.data()?)?))
     }
 
-    pub fn resources(&self) -> impl Iterator<Item = (&str, &Resource, &Erp)> {
-        self.erps.iter().flat_map(|(rel, a)| {
+    pub fn resources(&self) -> impl Iterator<Item = (&str, &Resource, &Erp, &str)> {
+        self.erps.iter().flat_map(move |(rel, a)| {
             a.slots.iter().filter_map(move |s| match s {
-                Slot::Owned(r) => Some((rel.as_str(), r, &a.file.erp)),
+                Slot::Owned(r) => {
+                    let origin = self
+                        .writers
+                        .get(&(rel.clone(), r.name.clone()))
+                        .map_or("", String::as_str);
+                    Some((rel.as_str(), r, &a.file.erp, origin))
+                }
                 Slot::Stock(_) => None,
             })
         })
@@ -449,6 +506,97 @@ mod tests {
             resources,
         }
         .to_bytes()
+    }
+
+    #[test]
+    fn each_origin_gets_an_overlay_archive_of_its_own() {
+        let root = std::env::temp_dir().join(format!("swofty-erpbuild-origins-{}", std::process::id()));
+        std::fs::remove_dir_all(&root).ok();
+        let (game, addon) = (root.join("game"), root.join("addon"));
+        std::fs::create_dir_all(game.join("ui")).unwrap();
+        std::fs::create_dir_all(addon.join("mods")).unwrap();
+        let body = |s: &str| layer(&[s]);
+        std::fs::write(game.join("ui/a.erp"), erp(&[("eaid://stock", body("stock"))])).unwrap();
+        std::fs::write(game.join("ui/boot.erp"), erp(&[("eaid://boot", body("boot"))])).unwrap();
+        std::fs::write(
+            addon.join("mods/a.erp"),
+            erp(&[("eaid://one", body("a1")), ("eaid://shared", body("from a"))]),
+        )
+        .unwrap();
+        std::fs::write(
+            addon.join("mods/b.erp"),
+            erp(&[("eaid://two", body("b2")), ("eaid://shared", body("from b"))]),
+        )
+        .unwrap();
+        let put = |res: &str, from: &str| {
+            format!(
+                r#"{{"op":"put-resource","erp":"ui/a.erp","resource":"{res}","source":"mods/{from}.erp"}}"#
+            )
+        };
+        let ops = |list: &[String]| erp_ops(&format!(r#"{{"schema_version":1,"ops":[{}]}}"#, list.join(",")));
+        let original = |rel: &str| game.join(rel);
+        let mut b = ErpBuild::new(&original);
+        let resolve = |s: &Source| Ok(s.resolve(&addon)?);
+        for op in ops(&[put("eaid://one", "a"), put("eaid://shared", "a")]) {
+            b.apply_for(&op, "mods (a)", &resolve).unwrap();
+        }
+        let to_boot =
+            r#"{"op":"put-resource","erp":"ui/boot.erp","resource":"eaid://three","source":"mods/b3.erp"}"#;
+        std::fs::write(addon.join("mods/b3.erp"), erp(&[("eaid://three", body("b3"))])).unwrap();
+        for op in ops(&[
+            put("eaid://two", "b"),
+            put("eaid://shared", "b"),
+            to_boot.to_owned(),
+        ]) {
+            b.apply_for(&op, "mods (b)", &resolve).unwrap();
+        }
+        assert_eq!(b.origins(), ["mods (a)", "mods (b)"]);
+        let overlay = root.join("overlay");
+        let mut rt = Runtime::new(Vec::new());
+        assert!(
+            rt.resources(b.resources(), b.origins(), &overlay)
+                .unwrap()
+                .is_empty()
+        );
+        let rt = rt.finish(&overlay).unwrap().unwrap();
+        let erps: Vec<(&str, &str, Vec<String>)> = rt
+            .assets
+            .resource_erps
+            .iter()
+            .map(|e| {
+                let file = Erp::parse(&std::fs::read(overlay.join("swofty").join(&e.file)).unwrap()).unwrap();
+                let names = file.resources.iter().map(|r| r.name.clone()).collect();
+                (e.file.as_str(), e.origin.as_str(), names)
+            })
+            .collect();
+        assert_eq!(
+            erps,
+            [
+                (
+                    "assets/resources/0.erp",
+                    "mods (a)",
+                    vec!["eaid://one".to_owned()]
+                ),
+                (
+                    "assets/resources/1.erp",
+                    "mods (b)",
+                    vec![
+                        "eaid://shared".to_owned(),
+                        "eaid://three".to_owned(),
+                        "eaid://two".to_owned()
+                    ]
+                ),
+            ]
+        );
+        let targets: Vec<&Vec<String>> = rt.assets.resource_erps.iter().map(|e| &e.erps).collect();
+        assert_eq!(
+            targets,
+            [
+                &vec!["ui/a.erp".to_owned()],
+                &vec!["ui/a.erp".to_owned(), "ui/boot.erp".to_owned()]
+            ]
+        );
+        std::fs::remove_dir_all(&root).ok();
     }
 
     #[test]
@@ -791,7 +939,11 @@ mod tests {
         apply(&mut b, &runtime_ops, &addon).unwrap();
         let overlay = root.join("overlay");
         let mut rt = Runtime::new(Vec::new());
-        assert!(rt.resources(b.resources(), &overlay).unwrap().is_empty());
+        assert!(
+            rt.resources(b.resources(), b.origins(), &overlay)
+                .unwrap()
+                .is_empty()
+        );
         let rt = rt.finish(&overlay).unwrap().unwrap();
         assert_eq!(rt.assets.resource_erps.len(), 1);
         assert_eq!(rt.assets.resource_erps[0].erps, ["ui/a.erp"]);

@@ -51,6 +51,8 @@ pub struct Group {
 pub struct ResErp {
     pub file: String,
     pub erps: Vec<String>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub origin: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -230,9 +232,12 @@ impl Runtime {
         Ok(())
     }
 
+    // One overlay archive for each origin and set of target archives, in the
+    // order of `origins`, so that each addon or mod has its own.
     pub fn resources<'r>(
         &mut self,
-        resources: impl IntoIterator<Item = (&'r str, &'r Resource, &'r Erp)>,
+        resources: impl IntoIterator<Item = (&'r str, &'r Resource, &'r Erp, &'r str)>,
+        origins: &[String],
         out: &Path,
     ) -> Result<Vec<String>> {
         let stale = out.join(SWOFTY).join(RESOURCES_DIR);
@@ -240,25 +245,38 @@ impl Runtime {
             std::fs::remove_dir_all(&stale).map_err(io_err(&stale))?;
         }
         let mut warnings = Vec::new();
-        let mut by_uri: BTreeMap<&str, (&Resource, &Erp, BTreeSet<&str>)> = BTreeMap::new();
-        for (erp, res, stock) in resources {
+        let rank = |origin: &str| origins.iter().position(|o| o == origin).unwrap_or(origins.len());
+        type Written<'w> = (&'w Resource, &'w Erp, BTreeSet<&'w str>);
+        let mut by_uri: BTreeMap<(usize, &str, &str), Written> = BTreeMap::new();
+        for (erp, res, stock, origin) in resources {
             if let Some(why) = layout_change(res, stock) {
                 warnings.push(format!("runtime: {} in {erp} is left out: {why}", res.name));
                 continue;
             }
-            let e = by_uri.entry(&res.name).or_insert((res, stock, BTreeSet::new()));
+            let e = by_uri
+                .entry((rank(origin), origin, &res.name))
+                .or_insert((res, stock, BTreeSet::new()));
             e.0 = res;
             e.1 = stock;
             e.2.insert(erp);
         }
-        let mut sets: BTreeMap<Vec<&str>, (Vec<Resource>, &Erp)> = BTreeMap::new();
-        for (res, stock, erps) in by_uri.into_values() {
-            let set = sets
-                .entry(erps.into_iter().collect())
-                .or_insert((Vec::new(), stock));
+        // An origin's resources share one archive, which lists every target the
+        // origin writes; only a second archive version splits it. Resources
+        // without an origin keep one archive per set of targets.
+        type Set<'s> = (Vec<Resource>, &'s Erp, BTreeSet<&'s str>);
+        let mut sets: BTreeMap<(usize, &str, u32, Vec<&str>), Set> = BTreeMap::new();
+        for ((n, origin, _), (res, stock, erps)) in by_uri {
+            let split = match origin.is_empty() {
+                true => erps.iter().copied().collect(),
+                false => Vec::new(),
+            };
+            let set =
+                sets.entry((n, origin, stock.version, split))
+                    .or_insert((Vec::new(), stock, BTreeSet::new()));
             set.0.push(res.clone());
+            set.2.extend(erps);
         }
-        for (n, (targets, (resources, stock))) in sets.into_iter().enumerate() {
+        for (n, ((_, origin, _, _), (resources, stock, targets))) in sets.into_iter().enumerate() {
             let rel = format!("{RESOURCES_DIR}/{n}.erp");
             let path = out.join(SWOFTY).join(&rel);
             let dir = path.parent().expect("has parent");
@@ -274,6 +292,7 @@ impl Runtime {
             self.assets.resource_erps.push(ResErp {
                 file: rel,
                 erps: targets.into_iter().map(str::to_owned).collect(),
+                origin: origin.to_owned(),
             });
         }
         Ok(warnings)
@@ -433,11 +452,12 @@ mod tests {
         let warnings = rt
             .resources(
                 [
-                    (boot, &replaced, &stock),
-                    (other, &replaced, &stock),
-                    (boot, &resized, &stock),
-                    (boot, &added, &stock),
+                    (boot, &replaced, &stock, ""),
+                    (other, &replaced, &stock, ""),
+                    (boot, &resized, &stock, ""),
+                    (boot, &added, &stock, ""),
                 ],
+                &[],
                 &out,
             )
             .unwrap();

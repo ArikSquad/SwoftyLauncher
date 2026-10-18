@@ -540,7 +540,7 @@ pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
             let resolve = |s: &Source| Ok(s.resolve(&source_dir(store, id, s.root))?);
             match &op.op {
                 AssetOp::Erp(erp) => erps
-                    .apply(erp, &resolve)
+                    .apply_for(erp, &op.origin.to_string(), &resolve)
                     .map_err(|e| Error::Other(format!("applying {}: {e}", op.origin)))?,
                 AssetOp::Warn { message } => built.warnings.push(format!("{}: {message}", op.origin)),
                 _ => {}
@@ -551,7 +551,7 @@ pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
             built.lines.push(format!("erp: {note}"));
         }
         if planner.route(Kind::Erp) == Route::Runtime {
-            let notes = runtime.resources(erps.resources(), &built.overlay)?;
+            let notes = runtime.resources(erps.resources(), erps.origins(), &built.overlay)?;
             built.warnings.extend(notes);
         } else {
             for rel in erps.write(&built.overlay)? {
