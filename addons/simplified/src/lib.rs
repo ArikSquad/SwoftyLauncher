@@ -522,6 +522,7 @@ fn row(p: &Package, shown: Shown) -> Row {
             enabled: switchable,
         }),
         detail,
+        menu: Vec::new(),
     }
 }
 

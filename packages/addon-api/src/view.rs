@@ -49,6 +49,8 @@ pub struct Row {
     pub trailing: Option<Control>,
     #[serde(default)]
     pub detail: Vec<Block>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub menu: Vec<Button>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -243,6 +245,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_row_menu_is_optional_in_json() {
+        let plain: Row = serde_json::from_str(r#"{"id":"a","title":"A","subtitle":""}"#).unwrap();
+        assert!(plain.menu.is_empty());
+        assert!(!serde_json::to_string(&plain).unwrap().contains("menu"));
+        let with: Row = serde_json::from_str(
+            r#"{"id":"a","title":"A","subtitle":"","menu":[
+                {"id":"remove:a","label":"Remove","style":"danger",
+                 "kind":{"confirm":{"title":"Remove A?","text":"It is deleted."}}}]}"#,
+        )
+        .unwrap();
+        assert_eq!(with.menu.len(), 1);
+        assert_eq!(with.menu[0].style, Style::Danger);
+        assert!(matches!(with.menu[0].kind, ButtonKind::Confirm { .. }));
+    }
+
+    #[test]
     fn views_round_trip_through_json() {
         let view = View {
             subtitle: "1 in library".into(),
@@ -277,6 +295,7 @@ mod tests {
                         enabled: true,
                     }),
                     detail: vec![Block::Stats(vec![Fact::new("Version", "1.0")])],
+                    menu: Vec::new(),
                 }],
                 reorder: true,
             },

@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants};
-use gpui_kit::component::menu::{DropdownMenu, PopupMenuItem};
+use gpui_kit::component::menu::{ContextMenuExt, DropdownMenu, PopupMenuItem};
 use gpui_kit::component::notification::Notification;
 use gpui_kit::component::switch::Switch;
 use gpui_kit::component::{Disableable, Icon, Sizable, WindowExt, h_flex, v_flex};
@@ -477,6 +477,34 @@ impl Shell {
                 this.open_row = (this.open_row.as_ref() != Some(&toggle_key)).then(|| toggle_key.clone());
                 cx.notify();
             }));
+        let head = match r.menu.is_empty() {
+            true => head.into_any_element(),
+            false => {
+                let shell = cx.entity().downgrade();
+                let (addon, section, items, key) =
+                    (addon.to_owned(), section.to_owned(), r.menu.clone(), key.clone());
+                head.context_menu(move |mut menu, _, _| {
+                    for b in &items {
+                        let (shell, addon, section, b) =
+                            (shell.clone(), addon.clone(), section.clone(), b.clone());
+                        let control = format!("{key}/menu-{}", b.id);
+                        let mut item = PopupMenuItem::new(b.label.clone());
+                        if let Some(i) = b.icon {
+                            item = item.icon(icon(i));
+                        }
+                        menu = menu.item(item.on_click(move |_, window, cx| {
+                            shell
+                                .update(cx, |this, cx| {
+                                    this.press(&addon, &section, control.clone(), &b, window, cx)
+                                })
+                                .ok();
+                        }));
+                    }
+                    menu
+                })
+                .into_any_element()
+            }
+        };
         let moves = reorder.then(|| {
             let mv = |label: &'static str, ic: IconName, to: usize, enabled: bool, cx: &mut Context<Self>| {
                 let (addon, section, row) = (addon.to_owned(), section.to_owned(), r.id.clone());
@@ -692,72 +720,82 @@ impl Shell {
         if let Some(i) = b.icon {
             button = button.icon(icon(i));
         }
-        let (addon, section, kind, id) = (addon.to_owned(), section.to_owned(), b.kind.clone(), b.id.clone());
+        let (addon, section, b) = (addon.to_owned(), section.to_owned(), b.clone());
         button
             .on_click(cx.listener(move |this, _, window, cx| {
                 cx.stop_propagation();
-                let click = Event::Click { id: id.clone() };
-                match &kind {
-                    ButtonKind::Event => this.send(&addon, &section, control.clone(), click, window, cx),
-                    ButtonKind::Confirm { title, text } => {
-                        let shell = cx.entity().downgrade();
-                        let (title, text) = (
-                            SharedString::from(title.clone()),
-                            SharedString::from(text.clone()),
-                        );
-                        let (addon, section, control, id) =
-                            (addon.clone(), section.clone(), control.clone(), id.clone());
-                        window.open_alert_dialog(cx, move |alert, _, _| {
-                            let (shell, addon, section, control, id) = (
-                                shell.clone(),
-                                addon.clone(),
-                                section.clone(),
-                                control.clone(),
-                                id.clone(),
-                            );
-                            alert
-                                .title(title.clone())
-                                .description(text.clone())
-                                .show_cancel(true)
-                                .on_ok(move |_, window, cx| {
-                                    let click = Event::Click { id: id.clone() };
-                                    shell
-                                        .update(cx, |this, cx| {
-                                            this.send(&addon, &section, control.clone(), click, window, cx)
-                                        })
-                                        .ok();
-                                    true
-                                })
-                        });
-                    }
-                    ButtonKind::Pick {
-                        title,
-                        folders,
-                        multiple,
-                        ..
-                    } => {
-                        let rx = cx.prompt_for_paths(PathPromptOptions {
-                            files: true,
-                            directories: *folders,
-                            multiple: *multiple,
-                            prompt: Some(SharedString::from(title.clone())),
-                        });
-                        let (addon, section, control, id) =
-                            (addon.clone(), section.clone(), control.clone(), id.clone());
-                        cx.spawn_in(window, async move |this, cx| {
-                            if let Ok(Ok(Some(paths))) = rx.await {
-                                this.update_in(cx, |s, window, cx| {
-                                    let event = Event::Picked { id, paths };
-                                    s.send(&addon, &section, control, event, window, cx)
-                                })
-                                .ok();
-                            }
-                        })
-                        .detach();
-                    }
-                }
+                this.press(&addon, &section, control.clone(), &b, window, cx);
             }))
             .into_any_element()
+    }
+
+    // A click on a button or a row's menu item: send it, ask first, or pick files.
+    fn press(
+        &mut self,
+        addon: &str,
+        section: &str,
+        control: String,
+        b: &view::Button,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let (addon, section, id) = (addon.to_owned(), section.to_owned(), b.id.clone());
+        let click = Event::Click { id: id.clone() };
+        match &b.kind {
+            ButtonKind::Event => self.send(&addon, &section, control, click, window, cx),
+            ButtonKind::Confirm { title, text } => {
+                let shell = cx.entity().downgrade();
+                let (title, text) = (
+                    SharedString::from(title.clone()),
+                    SharedString::from(text.clone()),
+                );
+                window.open_alert_dialog(cx, move |alert, _, _| {
+                    let (shell, addon, section, control, id) = (
+                        shell.clone(),
+                        addon.clone(),
+                        section.clone(),
+                        control.clone(),
+                        id.clone(),
+                    );
+                    alert
+                        .title(title.clone())
+                        .description(text.clone())
+                        .show_cancel(true)
+                        .on_ok(move |_, window, cx| {
+                            let click = Event::Click { id: id.clone() };
+                            shell
+                                .update(cx, |this, cx| {
+                                    this.send(&addon, &section, control.clone(), click, window, cx)
+                                })
+                                .ok();
+                            true
+                        })
+                });
+            }
+            ButtonKind::Pick {
+                title,
+                folders,
+                multiple,
+                ..
+            } => {
+                let rx = cx.prompt_for_paths(PathPromptOptions {
+                    files: true,
+                    directories: *folders,
+                    multiple: *multiple,
+                    prompt: Some(SharedString::from(title.clone())),
+                });
+                cx.spawn_in(window, async move |this, cx| {
+                    if let Ok(Ok(Some(paths))) = rx.await {
+                        this.update_in(cx, |s, window, cx| {
+                            let event = Event::Picked { id, paths };
+                            s.send(&addon, &section, control, event, window, cx)
+                        })
+                        .ok();
+                    }
+                })
+                .detach();
+            }
+        }
     }
 
     pub(crate) fn drop_overlay(&self, p: Palette) -> impl IntoElement {

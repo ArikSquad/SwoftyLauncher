@@ -139,6 +139,7 @@ pub struct Row {
     pub tags: Vec<Tag>,
     pub trailing: Option<Control>,
     pub detail: Vec<Block>,
+    pub menu: Vec<Button>,
 }
 ```
 
@@ -146,7 +147,7 @@ pub struct Row {
 |---|---|
 | `subtitle`, `actions` | The page header and its buttons |
 | `notices` | Bars under the header, each with an optional button |
-| `Body::List` | Rows with art (a monogram or an image), tags, a trailing control and an expandable body (`detail`). A `reorder` list gets **Move up** and **Move down** in each expanded row. |
+| `Body::List` | Rows with art (a monogram or an image), tags, a trailing control and an expandable body (`detail`). A `reorder` list gets **Move up** and **Move down** in each expanded row. A row with a `menu` opens it on right-click: each button is a menu item, and a `Confirm` button asks in a dialog first. |
 | `Body::Empty` | An empty state with a title, a line and a button |
 | `Body::Blocks` | The blocks below, one after another |
 | `footer` | A muted line under the body |
