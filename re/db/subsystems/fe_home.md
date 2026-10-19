@@ -18,3 +18,4 @@ MidHook at `site_FeHome_AfterCareerCall` (sig `fe_home.after_career_site`), call
 - `FeHome_Add_Tile5d40` (flag bit 47) and the dev tile (bit 53): what they are.
 
 ## Inbox
+- 2026-10-19 14:03 ui-re: tab/screen builders beyond the home tile menu are now in the fe_flow lane (FeFlow_Add_DriversTab/StandardTab, the SessionDirector/Results container tabs). The home tile menu stays here; the generic frontend flow/transition/routing is fe_flow + vm.

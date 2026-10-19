@@ -15,3 +15,4 @@ Owner: see `subsystems.tsv`. Write-up: research/exe.md §3.1–3.2.
 - Which other menus (menu_kind values) map to which cases.
 
 ## Inbox
+- 2026-10-19 14:03 ui-re: generic container tab builders (SessionDirector/Results addTab*Screen) are mapped in fe_flow, not as FeTile_Build_List menus: they push per-tab VMs into a container vector at +0x288, distinct from the TileList item vector. The vm lane now has the full ~97-class node-class (widget) FourCC registry (Vm_Register_NodeClasses 0x14419b1d0).

@@ -1,0 +1,735 @@
+{
+ "schema": 1,
+ "build": {
+  "exe": "F1_25.exe",
+  "sha256": "cc506879c1c834aa54d3478b2f2133d2ec243f2f2d313397631145ea618ff7f4",
+  "size": 342936448,
+  "pe_timestamp": 1789128892,
+  "image_base": "0x140000000",
+  "distribution": "EA App",
+  "protection": "fully packed on disk (every executable section is entropy ~8.0); code is decrypted into memory at runtime"
+ },
+ "note": "EA App build template. The on-disk EA exe is fully packed: no plaintext code exists in the file, so no byte pattern can be derived statically (sigcheck --exe on the file reports 0 matches). The launcher's loader scans LIVE decrypted process memory at runtime; EA patterns must be derived from a decrypted-memory dump of the running game and then filled into 'pattern' (and 'expect'/rva) below. Build-independent fact already applied: the EA plaintext engine code lands in section '.rdata' at runtime (positional equivalent of the Steam '.xtls'; EA '.xcode' is writable/black-box and excluded by is_code). Every entry here therefore carries section '.rdata' and status 'pending-dump' with an empty pattern.",
+ "derived_from": "d873a1c8d2044cef2fd76c99c9d5a97649c5b815d055540995105f46619865ae",
+ "signatures": [
+  {
+   "id": "fe_home.after_career_site",
+   "section": ".rdata",
+   "pattern": "",
+   "anchor": "0xf",
+   "resolve": {
+    "kind": "addr"
+   },
+   "kind": "mid",
+   "expect": "",
+   "names": [
+    "site_FeHome_AfterCareerCall"
+   ],
+   "status": "pending-dump",
+   "steam": {
+    "pattern": "45 8D 67 01 4C 89 F1 44 89 E2 E8 ?? ?? ?? ?? F6",
+    "match": "0x141742fc7",
+    "target": "0x141742fd6"
+   },
+   "verified": [],
+   "used_by": [
+    "native/src/core/swofty_core.cpp"
+   ]
+  },
+  {
+   "id": "fe_home.career_adder",
+   "section": ".rdata",
+   "pattern": "",
+   "anchor": "0xb",
+   "resolve": {
+    "kind": "rel32",
+    "insn": "0xa"
+   },
+   "kind": "call",
+   "names": [
+    "FeHome_Add_CareerTile"
+   ],
+   "status": "pending-dump",
+   "steam": {
+    "pattern": "45 8D 67 01 4C 89 F1 44 89 E2 E8 ?? ?? ?? ?? F6",
+    "match": "0x141742fc7",
+    "target": "0x141746710"
+   },
+   "verified": [],
+   "used_by": [
+    "native/src/core/swofty_core.cpp"
+   ]
+  },
+  {
+   "id": "fe_tiles.tile_list_builder",
+   "section": ".rdata",
+   "pattern": "",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "kind": "func_start",
+   "names": [
+    "FeTile_Build_List"
+   ],
+   "status": "pending-dump",
+   "steam": {
+    "pattern": "41 57 41 56 41 55 41 54 56 57 55 53 48 81 EC 88 02 00 00 C5 F8 29 B4 24 70 02 00 00 4C 89 8C 24",
+    "match": "0x14173df80",
+    "target": "0x14173df80"
+   },
+   "verified": [],
+   "used_by": [
+    "native/src/core/swofty_core.cpp"
+   ]
+  },
+  {
+   "id": "fe_tiles.item_base_populate",
+   "section": ".rdata",
+   "pattern": "",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "kind": "func_start",
+   "names": [
+    "FeTile_ItemBase_Populate"
+   ],
+   "status": "pending-dump",
+   "steam": {
+    "pattern": "41 57 41 56 41 55 41 54 56 57 55 53 48 81 EC 88 00 00 00 C5 F8 29 74 24 70 44 89 44",
+    "match": "0x141697b90",
+    "target": "0x141697b90"
+   },
+   "verified": [],
+   "used_by": [
+    "native/src/core/swofty_core.cpp"
+   ]
+  },
+  {
+   "id": "vm.registry_global",
+   "section": ".rdata",
+   "pattern": "",
+   "anchor": "0x56",
+   "resolve": {
+    "kind": "riprel",
+    "insn": "0x53",
+    "len": 7
+   },
+   "kind": "data",
+   "names": [
+    "g_Vm_Registry"
+   ],
+   "status": "pending-dump",
+   "steam": {
+    "pattern": "41 57 41 56 41 55 41 54 56 57 55 53 48 81 EC 88 00 00 00 C5 F8 29 74 24 70 44 89 44",
+    "match": "0x141697b90",
+    "target": "0x146ca54f8"
+   },
+   "verified": [],
+   "used_by": [
+    "native/src/core/swofty_core.cpp"
+   ]
+  },
+  {
+   "id": "vm.set_string",
+   "section": ".rdata",
+   "pattern": "",
+   "anchor": "0x6a",
+   "resolve": {
+    "kind": "rel32",
+    "insn": "0x69"
+   },
+   "kind": "call",
+   "names": [
+    "Vm_Set_String"
+   ],
+   "status": "pending-dump",
+   "steam": {
+    "pattern": "41 57 41 56 41 55 41 54 56 57 55 53 48 81 EC 88 00 00 00 C5 F8 29 74 24 70 44 89 44",
+    "match": "0x141697b90",
+    "target": "0x140846270"
+   },
+   "verified": [],
+   "used_by": [
+    "native/src/core/swofty_core.cpp"
+   ]
+  },
+  {
+   "id": "vm.set_bool",
+   "section": ".rdata",
+   "pattern": "",
+   "anchor": "0x28f",
+   "resolve": {
+    "kind": "rel32",
+    "insn": "0x28e"
+   },
+   "kind": "call",
+   "names": [
+    "Vm_Set_Bool"
+   ],
+   "status": "pending-dump",
+   "steam": {
+    "pattern": "41 57 41 56 41 55 41 54 56 57 55 53 48 81 EC 88 00 00 00 C5 F8 29 74 24 70 44 89 44",
+    "match": "0x141697b90",
+    "target": "0x140975db0"
+   },
+   "verified": [],
+   "used_by": [
+    "native/src/core/swofty_core.cpp"
+   ]
+  },
+  {
+   "id": "core.nestr_from_cstr",
+   "section": ".rdata",
+   "pattern": "",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "kind": "func_start",
+   "names": [
+    "Ne_Make_StrFromCStr"
+   ],
+   "status": "pending-dump",
+   "steam": {
+    "pattern": "41 57 41 56 41 54 56 57 55 53 48 83 EC 50 44 89 C6 48 89 CF",
+    "match": "0x1441974e0",
+    "target": "0x1441974e0"
+   },
+   "verified": [],
+   "used_by": [
+    "native/src/core/swofty_core.cpp"
+   ]
+  },
+  {
+   "id": "fe_home.on_command_raised",
+   "section": ".rdata",
+   "pattern": "",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "kind": "func_start",
+   "names": [
+    "FeHome_Handle_Command"
+   ],
+   "status": "pending-dump",
+   "steam": {
+    "pattern": "41 57 41 56 56 57 53 48 83 EC 40 48 89 D7 48 89 CE 48 8B 05 ?? ?? ?? ?? 48 8D 0D",
+    "match": "0x141bb3c20",
+    "target": "0x141bb3c20"
+   },
+   "verified": [],
+   "used_by": []
+  },
+  {
+   "id": "fe_tiles.tile_base_ctor",
+   "section": ".rdata",
+   "pattern": "",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "kind": "func_start",
+   "names": [
+    "FeTile_Construct_Tile"
+   ],
+   "status": "pending-dump",
+   "steam": {
+    "pattern": "41 57 41 56 41 55 41 54 56 57 55 53 48 83 EC 48 C5 F8 29 74 24 30 4C 89 CF 4C 89 C3 48 89 CE 48 8D 05",
+    "match": "0x1415a92d0",
+    "target": "0x1415a92d0"
+   },
+   "verified": [],
+   "used_by": []
+  },
+  {
+   "id": "session.selector_limit_load",
+   "section": ".rdata",
+   "pattern": "",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "kind": "mid",
+   "expect": "",
+   "names": [
+    "site_Sess_SelectorLimitLoad"
+   ],
+   "status": "pending-dump",
+   "steam": {
+    "pattern": "8B 00 48 89 44 24 40 4C 8D AC 24 30 01 00 00",
+    "match": "0x1424a30a8",
+    "target": "0x1424a30a8"
+   },
+   "verified": [],
+   "used_by": []
+  },
+  {
+   "id": "gamedb.table_cursor_init",
+   "section": ".rdata",
+   "pattern": "",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "kind": "func_start",
+   "names": [
+    "Gdb_Init_TableCursor"
+   ],
+   "status": "pending-dump",
+   "steam": {
+    "pattern": "56 48 81 EC 20 01 00 00 83 B9 00 02 00 00 00",
+    "match": "0x1445a25c0",
+    "target": "0x1445a25c0"
+   },
+   "verified": [],
+   "used_by": []
+  },
+  {
+   "id": "session.parse_entrant_list",
+   "section": ".rdata",
+   "pattern": "",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "kind": "func_start",
+   "names": [
+    "Sess_Parse_EntrantList"
+   ],
+   "status": "pending-dump",
+   "steam": {
+    "pattern": "41 57 41 56 41 55 41 54 56 57 55 53 48 81 EC F8 06 00 00 4C 89 4C 24 38",
+    "match": "0x142453c40",
+    "target": "0x142453c40"
+   },
+   "verified": [],
+   "used_by": []
+  },
+  {
+   "id": "session.weekend_start",
+   "section": ".rdata",
+   "pattern": "",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "kind": "func_start",
+   "names": [
+    "Sess_Weekend_Start"
+   ],
+   "status": "pending-dump",
+   "steam": {
+    "pattern": "41 57 41 56 41 55 41 54 56 57 55 53 48 81 EC B8 00 00 00 44 89 C3 49 89 D4",
+    "match": "0x140af0460",
+    "target": "0x140af0460"
+   },
+   "verified": [],
+   "used_by": []
+  },
+  {
+   "id": "session.parse_entrant_setup_mode",
+   "section": ".rdata",
+   "pattern": "",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "kind": "func_start",
+   "names": [
+    "Sess_Parse_EntrantSetupMode"
+   ],
+   "status": "pending-dump",
+   "steam": {
+    "pattern": "41 57 41 56 41 55 41 54 56 57 55 53 48 81 EC C8 04 00 00 C5 F8 29 B4 24 B0 04 00 00 4C 89 4C 24 30",
+    "match": "0x14249f190",
+    "target": "0x14249f190"
+   },
+   "verified": [],
+   "used_by": []
+  },
+  {
+   "id": "session.select_entrants",
+   "section": ".rdata",
+   "pattern": "",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "kind": "func_start",
+   "names": [
+    "Sess_Select_Entrants"
+   ],
+   "status": "pending-dump",
+   "steam": {
+    "pattern": "41 57 41 56 41 55 41 54 56 57 55 53 B8 B8 29 00 00",
+    "match": "0x1424a2350",
+    "target": "0x1424a2350"
+   },
+   "verified": [],
+   "used_by": []
+  },
+  {
+   "id": "session.ai_vehicle_register_call",
+   "section": ".rdata",
+   "pattern": "",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "kind": "mid",
+   "expect": "",
+   "names": [
+    "site_Sess_AiVehicleRegisterCall"
+   ],
+   "status": "pending-dump",
+   "steam": {
+    "pattern": "E8 ?? ?? ?? ?? 48 8B BC 24 58 08 00 00 48 85 FF",
+    "match": "0x14060314d",
+    "target": "0x14060314d"
+   },
+   "verified": [],
+   "used_by": [
+    "native/src/mods/grid_capacity/grid_capacity.cpp"
+   ]
+  },
+  {
+   "id": "core.log_gate",
+   "section": ".rdata",
+   "pattern": "",
+   "anchor": "0x11",
+   "resolve": {
+    "kind": "riprel",
+    "insn": "0xe",
+    "len": 7
+   },
+   "kind": "data",
+   "names": [
+    "g_Ne_LogGate"
+   ],
+   "status": "pending-dump",
+   "steam": {
+    "pattern": "80 3D ?? ?? ?? ?? 01 75 74 B8 5F 01 00 00 48 8D 0D ?? ?? ?? ?? 66 66 66 66 66 66 2E 0F 1F 84 00 00 00 00 00 8B 14 81 85 D2 74 52 81 FA CB 88 7C 7C",
+    "match": "0x140af047c",
+    "target": "0x14604b4f0"
+   },
+   "verified": [],
+   "used_by": [
+    "native/src/gamelog/gamelog.cpp"
+   ]
+  },
+  {
+   "id": "core.log_call",
+   "section": ".rdata",
+   "pattern": "",
+   "anchor": "0x16",
+   "resolve": {
+    "kind": "rel32",
+    "insn": "0x15"
+   },
+   "kind": "call",
+   "names": [
+    "Ne_Log_Thunk"
+   ],
+   "status": "pending-dump",
+   "steam": {
+    "pattern": "48 8D 0D ?? ?? ?? ?? 48 8D 15 ?? ?? ?? ?? 4C 8D 05 ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8B BE 98 04 00 00",
+    "match": "0x140af04df",
+    "target": "0x1406d4c80"
+   },
+   "verified": [],
+   "used_by": [
+    "native/src/gamelog/gamelog.cpp"
+   ]
+  },
+  {
+   "id": "core.format_string_entry",
+   "section": ".rdata",
+   "pattern": "",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "kind": "mid",
+   "expect": "",
+   "names": [
+    "site_Ne_Format_String_Entry"
+   ],
+   "status": "pending-dump",
+   "steam": {
+    "pattern": "41 57 41 56 56 57 55 53 48 81 EC 48 02 00 00 48 89 D7 48 89 CE 4C 89 84 24 90 02 00 00",
+    "match": "0x1441630f0",
+    "target": "0x1441630f0"
+   },
+   "verified": [],
+   "used_by": [
+    "native/src/gamelog/gamelog.cpp"
+   ]
+  },
+  {
+   "id": "game.unlockable_owned_state",
+   "section": ".rdata",
+   "pattern": "",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "kind": "func_start",
+   "expect": "",
+   "names": [
+    "Game_Get_UnlockableOwnedState"
+   ],
+   "status": "pending-dump",
+   "steam": {
+    "pattern": "41 56 56 57 55 53 48 83 EC 20 48 8B 01 48 8B 71 08 FF 50 08 8B 90 A0 00 00 00",
+    "match": "0x142ec37d0",
+    "target": "0x142ec37d0"
+   },
+   "verified": [],
+   "used_by": [
+    "native/src/core/items.cpp"
+   ]
+  },
+  {
+   "id": "vm.flow_update",
+   "section": ".rdata",
+   "pattern": "",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "kind": "func_start",
+   "names": [
+    "Vm_Update_FlowStateMachine"
+   ],
+   "status": "pending-dump",
+   "steam": {
+    "pattern": "41 57 41 56 41 55 41 54 56 57 55 53 48 81 EC 58 02 00 00 C5 F8 29 B4 24 40 02 00 00 C5 F9 28 F2",
+    "match": "0x144423ce0",
+    "target": "0x144423ce0"
+   },
+   "verified": [],
+   "used_by": [
+    "native/src/core/events.cpp"
+   ]
+  },
+  {
+   "id": "game.session_enter",
+   "section": ".rdata",
+   "pattern": "",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "kind": "func_start",
+   "names": [
+    "Game_GameModule_OnSessionEnter"
+   ],
+   "status": "pending-dump",
+   "steam": {
+    "pattern": "41 57 41 56 41 54 56 57 53 48 81 EC 38 02 00 00 48 89 CE 80 3D ?? ?? ?? ?? 01",
+    "match": "0x14080c300",
+    "target": "0x14080c300"
+   },
+   "verified": [],
+   "used_by": [
+    "native/src/core/events.cpp"
+   ]
+  },
+  {
+   "id": "game.race_started",
+   "section": ".rdata",
+   "pattern": "",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "kind": "func_start",
+   "names": [
+    "Game_ChampionshipFormationLapComponent_OnRaceStarted"
+   ],
+   "status": "pending-dump",
+   "steam": {
+    "pattern": "41 57 41 56 41 55 41 54 56 57 55 53 48 83 EC 28 48 89 CE 80 3D ?? ?? ?? ?? 01 75 53",
+    "match": "0x140b808a0",
+    "target": "0x140b808a0"
+   },
+   "verified": [],
+   "used_by": [
+    "native/src/core/events.cpp"
+   ]
+  },
+  {
+   "id": "car.fit_upgrades_func",
+   "section": ".rdata",
+   "pattern": "",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "kind": "func_start",
+   "names": [
+    "Car_Fit_UpgradesToRating"
+   ],
+   "status": "pending-dump",
+   "steam": {
+    "pattern": "41 57 41 56 41 55 41 54 56 57 55 53 B8 18 25 00 00",
+    "match": "0x143514670",
+    "target": "0x143514670"
+   },
+   "verified": [],
+   "used_by": []
+  },
+  {
+   "id": "car.attr_array_iter_site",
+   "section": ".rdata",
+   "pattern": "",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "kind": "mid",
+   "expect": "",
+   "names": [
+    "site_Car_AttrArrayIter"
+   ],
+   "status": "pending-dump",
+   "steam": {
+    "pattern": "49 8B 84 24 60 19 00 00 48 85 C0 74 E3",
+    "match": "0x143514c50",
+    "target": "0x143514c50"
+   },
+   "verified": [],
+   "used_by": []
+  },
+  {
+   "id": "car.attr_array_base_site",
+   "section": ".rdata",
+   "pattern": "",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "kind": "mid",
+   "expect": "",
+   "names": [
+    "site_Car_AttrArrayBase"
+   ],
+   "status": "pending-dump",
+   "steam": {
+    "pattern": "49 8D 9C 24 10 0D 00 00 0F 1F 40 00",
+    "match": "0x143514c64",
+    "target": "0x143514c64"
+   },
+   "verified": [],
+   "used_by": []
+  },
+  {
+   "id": "session.handle_safety_car",
+   "section": ".rdata",
+   "pattern": "",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "kind": "func_start",
+   "names": [
+    "Sess_Handle_SafetyCarData"
+   ],
+   "status": "pending-dump",
+   "steam": {
+    "pattern": "41 57 41 56 41 55 41 54 56 57 55 53 48 83 EC 28 83 79 48 02 0F 8C ?? ?? ?? ?? 4C 8B 79 60 4C 8B 61 68 4D 39 E7 0F 84 ?? ?? ?? ?? 48 89 D6 0F B6 05",
+    "match": "0x14361f250",
+    "target": "0x14361f250"
+   },
+   "verified": [],
+   "used_by": []
+  },
+  {
+   "id": "session.state_enter",
+   "section": ".rdata",
+   "pattern": "",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "kind": "func_start",
+   "names": [
+    "Sess_State_OnStateEnter"
+   ],
+   "status": "pending-dump",
+   "steam": {
+    "pattern": "41 57 41 56 41 55 41 54 56 57 55 53 48 83 EC 78 C5 F8 29 74 24 60 C5 F8 28 F1",
+    "match": "0x1436f6740",
+    "target": "0x1436f6740"
+   },
+   "verified": [],
+   "used_by": []
+  },
+  {
+   "id": "session.session_unloaded",
+   "section": ".rdata",
+   "pattern": "",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "kind": "func_start",
+   "names": [
+    "Sess_Module_OnSessionUnloaded"
+   ],
+   "status": "pending-dump",
+   "steam": {
+    "pattern": "41 57 41 56 41 54 56 57 53 48 81 EC 88 00 00 00 48 89 CE 83 79 1C 05",
+    "match": "0x142d4ae20",
+    "target": "0x142d4ae20"
+   },
+   "verified": [],
+   "used_by": []
+  },
+  {
+   "id": "session.start_sequence_time",
+   "section": ".rdata",
+   "pattern": "",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "kind": "func_start",
+   "names": [
+    "Sess_StartLights_HandleSequenceStartTime"
+   ],
+   "status": "pending-dump",
+   "steam": {
+    "pattern": "41 57 41 56 56 57 53 48 83 EC 30 83 79 08 02",
+    "match": "0x143237c40",
+    "target": "0x143237c40"
+   },
+   "verified": [],
+   "used_by": []
+  },
+  {
+   "id": "session.tyre_alloc_send",
+   "section": ".rdata",
+   "pattern": "",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "kind": "func_start",
+   "names": [
+    "Sess_TyreAllocation_SendNetMessage"
+   ],
+   "status": "pending-dump",
+   "steam": {
+    "pattern": "41 57 41 56 41 55 41 54 56 57 55 53 48 81 EC 88 00 00 00 4C 8B 79 20",
+    "match": "0x140bd1ac0",
+    "target": "0x140bd1ac0"
+   },
+   "verified": [],
+   "used_by": []
+  }
+ ]
+}

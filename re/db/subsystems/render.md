@@ -14,3 +14,4 @@ Owner: see `subsystems.tsv`. Consumer: `native/src/core/hud.cpp` (the overlay st
 - Text and image rendering: the first landing paints solid rects / outlines / lines only; a font atlas and textured-quad path remain.
 
 ## Inbox
+- 2026-10-19 14:03 ui-re: new 'hud' lane holds the HUD view-model/logic side (what widgets publish + their setToOpen gates); render still owns the D3D present/draw path. Hud_Open_TyrePerformance (0x14152b5f0) publishes to view_model_data.hud_* registry nodes. HUD VM vtables cluster near 0x1456ed290 if you need draw-time addresses.

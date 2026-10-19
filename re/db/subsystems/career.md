@@ -1,0 +1,183 @@
+# career: My Team / R&D (upgrades, departments, resource points, economy, season flow)
+
+Owner: see `subsystems.tsv` (prefix `Career`). Game-DB model + launcher feasibility:
+`/scratchpad/rnd/01_db_model_findings.md`, `02_native_findings.md`,
+`/scratchpad/rnd-dept/01_mechanism_findings.md`, `02_feasibility_and_hook_plan.md`.
+
+Scope: the career / My-Team subsystem a modder would hook — R&D upgrade trees (load / fit /
+AI spend), the department enums + economy (resource points, cost/time/fail-rate scales,
+facilities), the career component object model, and the telemetry/message surface for R&D events.
+All addresses are VAs, image base `0x140000000`, build `d873a1c8…` (Steam). Code is `.xtls`;
+GVDB string *values* are XOR-masked (unmasked inline with the 4-byte mask at `0x145890978`,
+`g_Gdb_StringXorMask` in the gamedb lane — see `k_Career_*` notes).
+
+## The R&D pipeline is almost entirely data-driven {#pipeline}
+
+Every stage reads the GVDB by field NAME through `Gdb_Get_FieldInt` (gamedb `0x1445a2cf0`, L2),
+so new `upgrade_*` / `UpgradeDepartmentEntry_*` rows are ingested with no code change. The only
+hard-coded surfaces are (a) the two department string→int enums and (b) the ~21-entry
+`upgrade_type` / unit-type vocabularies. Full feasibility in the scratchpad notes.
+
+| stage | function | addr | level |
+|---|---|---|---|
+| load the per-dept upgrade rows | `Career_Load_UpgradeRows` | 0x143539bc0 | L2 |
+| load the team→supplier link path | `Career_Read_TeamLinks` | 0x1435396e0 | L2 |
+| load AI "tweakables" (pick %, refunds, delays) | `Career_Load_RnDTweakables` | 0x14353cea0 | L2 |
+| load department economy entries | `Career_Load_DepartmentEntries` | 0x1412326e0 | L2 |
+| load resource-point rate config | `Career_Load_ResourceRateConfig` | 0x14122ada0 | L2 |
+| load upgrade effect/attribute defs (CAR lane) | `Car_Aggregate_UpgradeStats` | 0x1409e3fb0 | L1 |
+| fit upgrades to a rating / apply to car (CAR lane) | `Car_Fit_UpgradesToRating` | 0x143514670 | L2 |
+| register career/MyTeam components | `Career_Register_Components` | 0x1412cc2f0 | L1 |
+| parse team setup row (holds dept-enum store) | `Career_Parse_TeamSetupRow` | 0x14276fda0 | L1 |
+| upgrade-card VM binder | `Career_Bind_UpgradeCard` | 0x1417f8090 | L1 |
+| R&D telemetry/message subscriber | `Career_Report_RnDTelemetry` | 0x1406d8470 | L1 |
+
+## Load: per-dept upgrade rows {#load-upgrade-rows}
+
+`Career_Load_UpgradeRows` (0x143539bc0, cxx likely `game::upgrades::…`): outer loop over a 6-byte
+department-code table `k_Career_UpgradeDeptCodeTable` (0x145735d60, codes 0..5, breaks at 5);
+per code it picks a dept-name string from `k_Career_UpgradeDeptNameTable` (0x14584f880, index*8),
+formats `<team>.…<dept>` and opens the `"upgrade"` table (`GStack._256 = "upgrade"`). For each row
+it reads by name: `upgrade_name`, `upgrade_type`, `upgrade_size`, `upgrade_department`, `cost`,
+`cost_to_develop`, `weighting`(float), `fitting_times.num_days_to_research`,
+`fitting_times.num_days_to_develop`, `unlock_at_facility_level` (default 1),
+`supplier_delivery_date_index` (default 1). It then builds a 0x80-byte `UpgradeRecord` into the
+output vector (begin `[out+0x08]`, end `[out+0x10]`, cap `[out+0x18]`, grows ×1.5 via the
+allocator vtable slot +0x18, frees via +0x38).
+
+Three enums are resolved inline here:
+- `upgrade_type` → 0..18 via 19 string compares against `k_Career_UpgradeTypeNameTable`
+  (0x14584f6b8, indexed by `UNK_14566fd16`); unknown → 0.
+- `upgrade_size` → 0 Minor / 1 Major / 2 Ultimate (3 compares `UNK_14565cf95/cf9b/cfa1`).
+- `upgrade_department` **enum A** → a ci-fnv1a-64 switch at 0x14353a6dd (inlined ~27× across the
+  exe, so NOT uniquely hookable): default 0; Chassis 1 (0x184f58717a1a6a3f); Durability 2
+  (0x1e339d9dc3c05766); Engine 3 (0x3dacd07fc0cad3db); Fake 4 (0xef08697916801cf4); Invalid 5
+  (0x2be5705c42a81bd0). Hash = ci-fnv1a of the lowercased field value; unknown → 0, no crash.
+  This is a DIFFERENT enum from the team `department` enum B below.
+
+`UpgradeRecord` field map is in `structs/UpgradeRecord.h`. Note the enum bytes land at +0x70/+0x71/
++0x72 (type/size/deptA), cost at +0x5c, weighting (AI pick weight) at +0x64.
+
+## Load: team→supplier link path {#team-links}
+
+`Career_Read_TeamLinks` (0x1435396e0): builds `teams_linked_to`, reads the `links` list field and
+copies a path/handle block into the output object (`out[0] = vtable 0x145613538`). Eight callers
+(0x14122ff36, 0x1434f6620, 0x1434fae20, 0x143539291, 0x14353abde, 0x14353bb96, 0x14353c54a,
+0x14353cec2) — it is the shared prefix helper the other R&D loaders call to resolve a team's
+engine-supplier tree container before reading `upgrade`/`tweakables`.
+
+## Load: AI tweakables {#tweakables}
+
+`Career_Load_RnDTweakables` (0x14353cea0): calls `Career_Read_TeamLinks`, opens the `…tweakables`
+table and fills the config object `[arg0+0x68]` (`RnDDepartmentConfig`): the AI recommended-upgrade
+chances (`recommended_upgrade.percentage_chance_of_picking_{vehicle,durability}_upgrade`,
+`.{min,max}_percentage_of_upgrades_that_can_be_adapted`), the refund percentages
+(`cancelling_{research,development,adaptation}.refund_percentage`), the development-delay thresholds/
+days arrays and `development_delay.worst_case_cash_penalty`, and `target_mass_adjustment_at_max_upgrade`
++ `difficulty_mass_adjustment_scalar(_enabled)`. Vtable slot at 0x1458477f8; E8 callers 0x140603984,
+0x141246056. A new row's weighting + these chances drive the AI pick automatically (prior pass §3).
+
+## Load: department economy entries {#dept-entries}
+
+`Career_Load_DepartmentEntries` (0x1412326e0): opens the `…DepartmentEntry` container, loops
+`row_count` (DB instance count — NOT a hard 4) and per row reads the full economy vocabulary:
+`department`, `attribute`, `upgradeTierAttribute`, `morale_effect_message`, `research_delay_chance`,
+`research_delay_scale`, `research_cost_scale`, `research_time_scale`, `development_cost_scale`,
+`development_time_scale`, `development_fail_rate`, `development_speed_penalty_for_repair`,
+`development_failure_time_percentage_name`, `adapting_cost_scale`, `max_simultaneous_research`,
+`max_simultaneous_development`, `dual_development_cost_scale`, `dual_development_available`,
+`rush_available`, `rush_fail_rate`. Each entry is stored into the pointer array at `[arg0+0xc60]`
+(stride 0x10, pointer at +8). Reached via vtable slot 0x1456cc930. Adding an `UpgradeDepartmentEntry_N`
+row + bumped instancecount mints a new department's economy with no code.
+
+## Load: upgrade effect definitions {#effect-defs}
+
+The attribute + effect-definition loader is `Car_Aggregate_UpgradeStats` (0x1409e3fb0, **car lane**,
+owner car-re). For reference it reads `available`, `attributes`, `default_effects`, per-attribute
+`default_value`/`min_value`/`max_value`/`use_clamp_min`/`use_clamp_max`/`restriction`/`statId`/
+`network_serialisable`, `upgrade_fitter_adjustment`/`upgrade_fitter_ratio`/`replay_serialise_mods`,
+and per effect-type `upgrade_type` + `bhp_adjustment_fully_upgraded` + `mass_adjustment_fully_upgraded`.
+These are the effect-definition objects (`[effdef+0x7c]`, effect float `[+0x64]`) that
+`Car_Fit_UpgradesToRating` groups and sums (full field list left in the car inbox).
+
+## Load: resource-point rate config {#resource-rate}
+
+`Career_Load_ResourceRateConfig` (0x14122ada0): reads `resource_points.session_types` + `session`,
+walks the static table 0x1456cc3e0..0x1456cc4d0 (ends at the `AiResourceRateModifiers` string) and
+pushes 0x30-byte rate-modifier records (begin/end/cap at `[arg1+0x08/0x10/0x18]`; default rate
+`1.0` at +0x28; per-type template from `UNK_1456d0ab0`). E8 callers 0x1412282d9, 0x14122835f,
+0x1412283dc. This is the per-session-type resource-point gain-rate config (practice programmes etc.);
+`AiResourceRateModifiers` vs `PlayerResourceRateModifiers` split the AI/player rates (prior pass).
+
+## Fit / apply {#fit}
+
+The apply/fit function is `Car_Fit_UpgradesToRating` (0x143514670, **car lane**, owner car-re, L2),
+cxx `game::upgrades::EngineSuppliers::fitUpgradesUpToRating`, pretty-fn `0x145846f3a`:
+`(const Upgrades&, const DepartmentData&, DriverStatId)`. It consumes the R&D data this lane loads, so
+the mechanism is recorded here for cross-reference. FULLY DYNAMIC:
+- robin_hood/absl flat-hash iteration of the Upgrades container (control bytes, tzcnt, 0x40 groups)
+  at `[arg0+0x38/0x40]`, then `[obj+0x180/0x188]`, then the `DepartmentData` effect-def array `arg1`.
+- groups by BYTE equality — `byte[effdef+0x7c] == byte[group+0]` and `byte[group+0x72] == byte[upg+0]`
+  — never by array index; candidate count = `[arg1+0xc00]` (dynamic).
+- rating lerp: sums the effect float `[obj+0x64]` over two groups → ratio; bounds `[b+0x10]` (min),
+  `[b+0x14]` (max), `[b+0x18]` (target); `rating = min + (max-min)*ratio`; converges ≤0x200 iters.
+- write-back per vehicle: vector `[[arg0+8]+0x298 .. +0x2a0]`; per vehicle, attribute count
+  `[veh+0x1960]`, base `[veh+0xd10]`, stride 0xc40, delta written via the thunk 0x1449e2850 (→ .data1
+  body 0x1562c20a0). The attribute array + write thunk are the `car` lane (see car inbox).
+- log channel "UPGRADES/V": "No upgrades to fit for %s", "Done in %s for %s, achieved/exceeded rating",
+  "Calling %s for %s".
+=> a new upgrade reusing an existing effect type/dept byte aggregates onto the car with no mixin.
+
+## Department enum B (the TEAM R&D departments) — the key hook {#team-dept-enum}
+
+The top-level team R&D departments are a SEPARATE enum resolved at a SINGLE inlined site inside
+`Career_Parse_TeamSetupRow` (0x14276fda0, which also parses helmet/avatar/mods/team). ci-fnv1a-64 of
+the `department` value → signed binary search → stored `mov byte [rdi+0x340], cl`:
+default 0; Powertrain 1 (0xeacc53611edf399c); Chassis 2 (0x184f58717a1a6a3f); Aero 3
+(0xd0fae783d5a9fb7c, token "Aero" not "Aerodynamics"); Tyres 4 (0xac9965efa31b61d0). Pivot const
+0xeacc53611edf399b. The Aero/Tyres/Powertrain hash immediates each occur EXACTLY ONCE in the exe →
+this resolver is the only place the team-dept enum is minted.
+
+`site_Career_TeamDeptEnumStore` (0x142774258, the `mov [rdi+0x340], cl`) is the hook for new team
+departments: at the store `rax` still holds the ci-fnv1a hash of the value and `cl` the base-game
+resolution (0 for unknown tokens), so a SITE mixin can set `cl` to 5/6 for new tokens. Signature
+`career.team_dept_enum_store` (unique, count-verified = 1). This is the single required code hook to
+add R&D departments; the rest (UpgradeDepartmentEntry rows, upgrade rows, effect/dept wiring,
+`DepartmentData` bounds, lng strings) is pure data — see `02_feasibility_and_hook_plan.md`.
+
+## Career / My-Team component object model {#components}
+
+`Career_Register_Components` (0x1412cc2f0) registers the ECS-style career components by name+hash,
+including the R&D ones: `ResourcePointsComponent`, `UpgradesComponent`, `RnDChallengesComponent`,
+`UpgradesRegulationChangesComponent`, `EngineSuppliersComponent`, `EngineManagementComponent`,
+`MyTeamAttributesComponent`, plus `GridSetupComponent`, `LocationComponent`, `RivalManagerComponent`,
+`QuickPracticeComponent`, `RandomGarageFaultsComponent`, `OnlineServicesCoordinatorComponent`, etc.
+This is where the career object graph is wired; a modder reaching R&D state goes through
+`ResourcePointsComponent` (RP economy) and `UpgradesComponent` (owned/fitted upgrades).
+
+## R&D event / telemetry surface {#telemetry}
+
+`Career_Report_RnDTelemetry` (0x1406d8470, ElasticSearchReporter) subscribes to the R&D messages a
+mod would hook for purchase/spend events: `upgrade_research_purchased_message`,
+`upgrade_development_purchased_message`, `upgrade_{research,development,adaptation}_cancelled_message`,
+`upgrades_update_failed_rnd_message`, `upgrade_adapted_message`, `UpgradeFittingChangedMessage`,
+`MessageESMyTeamFacilityUpgradePurchased`, `MessageFacilityUpgradeCompleteESMessage`,
+`MessageRnDEndofWeekendResourcePointTotal`, `DriverPerkPurchased`. The actual RP `-= cost`
+instruction still needs a runtime trace to pin (see "needs trace" below).
+
+## Needs runtime verification (no L3 here yet) {#needs-trace}
+
+- `Car_Fit_UpgradesToRating` (0x143514670, car lane): no static caller (vtable/ptr dispatched) —
+  a trace or vtable-slot id would confirm the dispatch and the car-attribute write offsets.
+- The exact resource-point spend/award instruction (the `-= cost` on `ResourcePointsComponent`):
+  not pinned statically; the purchase path is data-driven but the write site needs a trace of
+  `upgrade_research_purchased_message`.
+- Whether the team-dept enum value 5/6 overflows any fixed-capacity array keyed by `[obj+0x340]`
+  (feasibility Unknown #1) — a short in-game spike.
+- `game.session_enter` already exists (session lane, `Game_GameModule_OnSessionEnter`); the
+  career/season-start flow hooks (new season, race-weekend enter) should be built around it +
+  `Career_Parse_TeamSetupRow`.
+
+## Inbox
+- 2026-10-19 13:56 ai-re: ai lane created. Your Career_Load_RnDTweakables (recommended-upgrade AI pick %) + Career_Load_ResourceRateConfig (AiResourceRateModifiers) + RnDDepartmentConfig.difficulty_mass_adjustment_scalar are cross-referenced in subsystems/ai.md#xrefs as the AI R&D/economy surface (kept in your lane). The on-track race AI (overtaking/defending/ERS strategy/mistakes via ai_vehicle_config.*) is now in the ai lane.
+- 2026-10-19 14:01 entrants-re: re-homed Career_Parse_TeamSetupRow 0x14276fda0 -> entrants lane as Ent_Parse_TeamSetupRow (L2) per your handoff. The dept-enum store site_Career_TeamDeptEnumStore 0x142774258 and sig career.team_dept_enum_store STAY in the career lane (unchanged); career.md#team-dept-enum still valid. Only the function name/subsystem changed.

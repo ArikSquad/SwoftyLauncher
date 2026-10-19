@@ -37,6 +37,29 @@ table = open(sys.argv[1]).read().split('FEATURES[] = ', 1)[1].split(';', 1)[0]
 features = {name: 'stable' if stable == 'true' else 'experimental' for name, stable in re.findall(r'\{"(\w+)", (true|false)\}', table)}
 json.dump({'schema': 1, 'features': features}, open(sys.argv[2], 'w'))
 EOF
+# Ship a per-build bindings set for the EA App build alongside the Steam one. The core (manager.cpp)
+# selects the set whose build.pe_timestamp matches the running exe. The EA exe is fully packed, so its
+# patterns cannot be derived from the on-disk file; this template carries the EA build block and the
+# runtime code section (.rdata, not Steam's .xtls) and leaves each pattern empty until a decrypted-memory
+# dump fills it. See re/db/signatures.ea.json and re/db/subsystems/core.md.
+python3 - "$DIST/swofty/addons/core/bindings.json" "$DIST/swofty/addons/core/bindings.ea.json" <<'EOF'
+import json, sys
+steam = json.load(open(sys.argv[1]))
+EA = {"exe": "F1_25.exe", "sha256": "cc506879c1c834aa54d3478b2f2133d2ec243f2f2d313397631145ea618ff7f4",
+      "size": 342936448, "pe_timestamp": 1789128892, "image_base": "0x140000000", "distribution": "EA App"}
+note = ("EA App build template: the on-disk EA exe is fully packed (no plaintext code), so patterns cannot be "
+        "derived statically. The loader scans decrypted process memory at runtime; fill each 'pattern' (and "
+        "'expect') from a decrypted-memory dump. Section is '.rdata' (EA runtime engine code), not '.xtls'.")
+out = []
+for b in steam["bindings"]:
+    nb = dict(b); nb["status"] = "pending-dump"; nb["section"] = ".rdata"
+    nb["steam_rva"] = b.get("rva"); nb["steam_pattern"] = b["pattern"]; nb["pattern"] = ""
+    if nb.get("expect") is not None: nb["expect"] = ""
+    nb.pop("rva", None); nb["build"] = EA["sha256"]
+    out.append(nb)
+json.dump({"schema": 1, "generator": "native/build.sh EA template", "build": EA, "note": note, "bindings": out},
+          open(sys.argv[2], "w"), indent=1)
+EOF
 
 "${PIN[@]}" "${CC[@]}" -O2 -Wall -Wextra -I$SDK -Iinclude -D__USE_MINGW_ANSI_STDIO=1 -shared \
     -o "$OUT/version.dll" src/loader/version.c src/loader/version.def "${STATIC[@]}" &

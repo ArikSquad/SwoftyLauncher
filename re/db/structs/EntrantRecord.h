@@ -1,7 +1,28 @@
 // struct: EntrantRecord
-// subsystem: session
-// size: 0x88 L2 decomp:re/decomp/14245fb70.c candidate and session vectors step 0x88
+// subsystem: entrants
+// size: 0x88 L2 decomp:re/decomp/142452e60.c (Sess_Parse_Entrant builds one; session vectors step 0x88)
+// notes: one entrants.entrant_lists row -> one 0x88 record, assembled by Sess_Parse_Entrant
+// (0x142452e60). The record is the grid participant's identity: driver/team/vehicle/badge stat ids
+// (each resolved by label against its entrants.* table) plus the two customisation packings and the
+// car number / team position. In the Weekend/session participant vector the element carries a
+// polymorphic header (vtable &UNK_145612e20 at +0x00, sub-object vtable &UNK_145612ed0 at +0x70, set
+// by Sess_ParticipantVec_PushBack / the parser); +0x08..+0x40 is an embedded NeStr name block (the
+// entrant_reference label). Unresolved label -> stat id 0x3fff (sentinel) in the high word.
 struct EntrantRecord {
-    /* 0x04b */ uint8_t flags;          // L1 doc:research/grid24-cap.md#3 bit 0x10 excludes the record from the AI count
-    /* 0x05c */ uint32_t vehicle_ref;   // L1 doc:research/grid24-cap.md#2 passed as &e+0x5c to Sess_Find_Vehicle; width unproven
+    /* 0x000 */ void **vtable;          // L2 decomp:re/decomp/142452e60.c;xref:0x1424536be &UNK_145612e20
+    /* 0x008 */ void *name_block[8];    // L1 decomp:re/decomp/142452e60.c;xref:0x1424536be entrant_reference NeStr/name block (+0x08..+0x47), built by FUN_1441207d0
+    /* 0x048 */ uint32_t ordinal_flags; // L2 decomp:re/decomp/142452e60.c;xref:0x1424536c8 low 24 bits = per-entrant running index (parser post-increments *param_2); high byte (+0x4b) is a flags byte set after parse, bit 0x10 excludes from AI count (doc:research/grid24-cap.md#3)
+    /* 0x050 */ uint8_t id_lo;          // L2 decomp:re/decomp/140bd1ac0.c;kb:subsystems/session.md#tyre low byte of the participant net id; 0 at parse, assigned at runtime; matched by Sess_TyreAllocation_SendNetMessage
+    /* 0x052 */ uint16_t id_hi;         // L2 decomp:re/decomp/142452e60.c;xref:0x142453703 driver stat id (parser writes dword@0x50 = driver_stat_id<<16; entrants.drivers label lookup; sentinel 0x3fff)
+    /* 0x054 */ uint32_t driver_customisation; // L2 decomp:re/decomp/142452e60.c;xref:0x142453707 packed driver_customisation (Ent_Pack_DriverCustomisation 0x142453880; 0x3fff0000 if empty)
+    /* 0x058 */ uint32_t team_stat_id;  // L2 decomp:re/decomp/142452e60.c;xref:0x142453710 team stat id in high word +0x5a (entrants.teams label lookup; 0 if empty)
+    /* 0x05c */ uint32_t vehicle_ref;   // L2 decomp:re/decomp/142452e60.c;xref:0x142453717 packed vehicle ref (vehicle stat id in high word; Ent_Pack_VehicleRef 0x1425069b0; 0x3fff0000 if empty)
+    /* 0x060 */ uint32_t driver_reg_value; // L2 decomp:re/decomp/142452e60.c;xref:0x14245371e value from the matched driver-registry node (+0x4b0), keyed on driver/team/vehicle ids
+    /* 0x064 */ uint32_t vehicle_customisation; // L2 decomp:re/decomp/142452e60.c;xref:0x142453721 packed vehicle_customisation (livery preset; Ent_Pack_VehicleCustomisation 0x1424fc250; 0x3fff0000 if empty)
+    /* 0x068 */ uint32_t badge_stat_id; // L2 decomp:re/decomp/142452e60.c;xref:0x142453724 badge_customisation stat id in high word (entrants.badges label lookup; sentinel 0x3fff)
+    /* 0x070 */ void **subobj_vtable;   // L2 decomp:re/decomp/142452e60.c;xref:0x142453735 &UNK_145612ed0
+    /* 0x078 */ uint32_t const_ffff0012; // L1 decomp:re/decomp/142452e60.c;xref:0x142453727 constant 0xffff0012 written by the parser
+    /* 0x080 */ uint16_t team_position; // L2 decomp:re/decomp/142452e60.c;xref:0x142453739 entrant team_position field, packed with a flag bit (value ^ 0x100)
+    /* 0x082 */ uint8_t unk_0x82;       // L1 decomp:re/decomp/142452e60.c;xref:0x142453740 constant 0xff
+    /* 0x083 */ uint8_t car_number;     // L2 decomp:re/decomp/142452e60.c;xref:0x14245374b entrant car_number field (racing number)
 };

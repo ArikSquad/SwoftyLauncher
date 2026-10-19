@@ -676,6 +676,547 @@
    "used_by": [
     "native/src/core/events.cpp"
    ]
+  },
+  {
+   "id": "car.fit_upgrades_func",
+   "section": ".xtls",
+   "pattern": "41 57 41 56 41 55 41 54 56 57 55 53 B8 18 25 00 00",
+   "match": "0x143514670",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x143514670",
+   "kind": "func_start",
+   "names": [
+    "Car_Fit_UpgradesToRating"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-19",
+     "by": "car-re"
+    }
+   ],
+   "used_by": []
+  },
+  {
+   "id": "car.attr_array_iter_site",
+   "section": ".xtls",
+   "pattern": "49 8B 84 24 60 19 00 00 48 85 C0 74 E3",
+   "match": "0x143514c50",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x143514c50",
+   "kind": "mid",
+   "expect": "49 8B 84 24",
+   "names": [
+    "site_Car_AttrArrayIter"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-19",
+     "by": "car-re"
+    }
+   ],
+   "used_by": []
+  },
+  {
+   "id": "car.attr_array_base_site",
+   "section": ".xtls",
+   "pattern": "49 8D 9C 24 10 0D 00 00 0F 1F 40 00",
+   "match": "0x143514c64",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x143514c64",
+   "kind": "mid",
+   "expect": "49 8D 9C 24",
+   "names": [
+    "site_Car_AttrArrayBase"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-19",
+     "by": "car-re"
+    }
+   ],
+   "used_by": []
+  },
+  {
+   "id": "session.handle_safety_car",
+   "section": ".xtls",
+   "pattern": "41 57 41 56 41 55 41 54 56 57 55 53 48 83 EC 28 83 79 48 02 0F 8C ?? ?? ?? ?? 4C 8B 79 60 4C 8B 61 68 4D 39 E7 0F 84 ?? ?? ?? ?? 48 89 D6 0F B6 05",
+   "match": "0x14361f250",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x14361f250",
+   "kind": "func_start",
+   "names": [
+    "Sess_Handle_SafetyCarData"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-19",
+     "by": "session-re"
+    }
+   ],
+   "used_by": []
+  },
+  {
+   "id": "session.state_enter",
+   "section": ".xtls",
+   "pattern": "41 57 41 56 41 55 41 54 56 57 55 53 48 83 EC 78 C5 F8 29 74 24 60 C5 F8 28 F1",
+   "match": "0x1436f6740",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x1436f6740",
+   "kind": "func_start",
+   "names": [
+    "Sess_State_OnStateEnter"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-19",
+     "by": "session-re"
+    }
+   ],
+   "used_by": []
+  },
+  {
+   "id": "session.session_unloaded",
+   "section": ".xtls",
+   "pattern": "41 57 41 56 41 54 56 57 53 48 81 EC 88 00 00 00 48 89 CE 83 79 1C 05",
+   "match": "0x142d4ae20",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x142d4ae20",
+   "kind": "func_start",
+   "names": [
+    "Sess_Module_OnSessionUnloaded"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-19",
+     "by": "session-re"
+    }
+   ],
+   "used_by": []
+  },
+  {
+   "id": "session.start_sequence_time",
+   "section": ".xtls",
+   "pattern": "41 57 41 56 56 57 53 48 83 EC 30 83 79 08 02",
+   "match": "0x143237c40",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x143237c40",
+   "kind": "func_start",
+   "names": [
+    "Sess_StartLights_HandleSequenceStartTime"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-19",
+     "by": "session-re"
+    }
+   ],
+   "used_by": []
+  },
+  {
+   "id": "session.tyre_alloc_send",
+   "section": ".xtls",
+   "pattern": "41 57 41 56 41 55 41 54 56 57 55 53 48 81 EC 88 00 00 00 4C 8B 79 20",
+   "match": "0x140bd1ac0",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x140bd1ac0",
+   "kind": "func_start",
+   "names": [
+    "Sess_TyreAllocation_SendNetMessage"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-19",
+     "by": "session-re"
+    }
+   ],
+   "used_by": []
+  },
+  {
+   "id": "career.load_upgrade_rows",
+   "section": ".xtls",
+   "pattern": "41 57 41 56 41 55 41 54 56 57 55 53 48 81 EC C8 07 00 00 C5 F8 29 B4 24 B0 07 00 00 4C 89 4C 24 48",
+   "match": "0x143539bc0",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x143539bc0",
+   "kind": "func_start",
+   "names": [
+    "Career_Load_UpgradeRows"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-19",
+     "by": "career-re",
+     "how": "static"
+    }
+   ],
+   "used_by": []
+  },
+  {
+   "id": "career.read_team_links",
+   "section": ".xtls",
+   "pattern": "41 57 41 56 41 55 41 54 56 57 55 53 48 81 EC F8 05 00 00 C5 F8 29 B4 24 E0 05 00 00 4C 89 C3 89 D5",
+   "match": "0x1435396e0",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x1435396e0",
+   "kind": "func_start",
+   "names": [
+    "Career_Read_TeamLinks"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-19",
+     "by": "career-re",
+     "how": "static"
+    }
+   ],
+   "used_by": []
+  },
+  {
+   "id": "career.load_rnd_tweakables",
+   "section": ".xtls",
+   "pattern": "56 57 53 48 81 EC 60 05 00 00 C5 F8 29 B4 24 50 05 00 00",
+   "match": "0x14353cea0",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x14353cea0",
+   "kind": "func_start",
+   "names": [
+    "Career_Load_RnDTweakables"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-19",
+     "by": "career-re",
+     "how": "static"
+    }
+   ],
+   "used_by": []
+  },
+  {
+   "id": "career.load_department_entries",
+   "section": ".xtls",
+   "pattern": "41 57 41 56 41 55 41 54 56 57 55 53 48 81 EC 98 06 00 00 48 89 CE 48 8D 8C 24 70 01 00 00",
+   "match": "0x1412326e0",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x1412326e0",
+   "kind": "func_start",
+   "names": [
+    "Career_Load_DepartmentEntries"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-19",
+     "by": "career-re",
+     "how": "static"
+    }
+   ],
+   "used_by": []
+  },
+  {
+   "id": "career.load_resource_rate_config",
+   "section": ".xtls",
+   "pattern": "41 57 41 56 41 55 41 54 56 57 55 53 48 81 EC 98 05 00 00 C5 78 29 8C 24 80 05 00 00",
+   "match": "0x14122ada0",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x14122ada0",
+   "kind": "func_start",
+   "names": [
+    "Career_Load_ResourceRateConfig"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-19",
+     "by": "career-re",
+     "how": "static"
+    }
+   ],
+   "used_by": []
+  },
+  {
+   "id": "career.team_dept_enum_store",
+   "section": ".xtls",
+   "pattern": "75 06 B1 03 EB 02 31 C9 88 8F 40 03 00 00",
+   "match": "0x142774250",
+   "anchor": "0x8",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x142774258",
+   "kind": "mid",
+   "expect": "88 8F 40 03 00 00",
+   "names": [
+    "site_Career_TeamDeptEnumStore"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-19",
+     "by": "career-re",
+     "how": "static"
+    }
+   ],
+   "used_by": []
+  },
+  {
+   "id": "ai.general_settings_resolve",
+   "section": ".xtls",
+   "pattern": "41 57 41 56 56 57 55 53 48 89 C8 49 B9 E1 64 19 A5 D6 AB F3 2D",
+   "match": "0x1405fb920",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x1405fb920",
+   "kind": "func_start",
+   "names": [
+    "Ai_Resolve_GeneralSettings"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-19",
+     "by": "ai-re",
+     "how": "static"
+    }
+   ],
+   "used_by": []
+  },
+  {
+   "id": "ai.merge_heatmap_parse",
+   "section": ".xtls",
+   "pattern": "41 57 41 56 41 55 41 54 56 57 55 53 48 83 EC 28 48 89 D7 48 89 CE 45 85 C0",
+   "match": "0x140682580",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x140682580",
+   "kind": "func_start",
+   "names": [
+    "Ai_Parse_MergeHeatMap"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-19",
+     "by": "ai-re",
+     "how": "static"
+    }
+   ],
+   "used_by": []
+  },
+  {
+   "id": "entrants.session_enter_veh_clamp",
+   "section": ".xtls",
+   "pattern": "48 C7 83 38 0E 00 00 00 00 00 00 0F B6 0D ?? ?? ?? ?? 80 F9 1B B8 1B 00 00 00 0F 42 C1",
+   "match": "0x14080c7f2",
+   "anchor": "0xb",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x14080c7fd",
+   "kind": "mid",
+   "expect": "0F B6 0D D8",
+   "names": [
+    "site_Ent_SessionEnterVehClamp"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-19",
+     "by": "entrants-re"
+    }
+   ],
+   "used_by": []
+  },
+  {
+   "id": "vm.register_node_classes",
+   "section": ".xtls",
+   "pattern": "41 57 41 56 41 55 41 54 56 57 55 53 48 81 EC 88 00 00 00 48 89 CE 48 8D 05",
+   "match": "0x14419b1d0",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x14419b1d0",
+   "kind": "func_start",
+   "names": [
+    "Vm_Register_NodeClasses"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-19",
+     "by": "ui-re"
+    }
+   ],
+   "used_by": []
+  },
+  {
+   "id": "vm.run_route",
+   "section": ".xtls",
+   "pattern": "41 57 41 56 41 55 41 54 56 57 55 53 48 81 EC A8 00 00 00 C5 F8 29 B4 24 90 00 00 00 4C 89 CB 4C 89 C7 48 89 CE",
+   "match": "0x144188370",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x144188370",
+   "kind": "func_start",
+   "names": [
+    "Vm_Run_Route"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-19",
+     "by": "ui-re"
+    }
+   ],
+   "used_by": []
+  },
+  {
+   "id": "fe_flow.state_frontend_enter",
+   "section": ".xtls",
+   "pattern": "41 57 41 56 41 55 41 54 56 57 55 53 48 81 EC D8 01 00 00 C5 F8 29 B4 24 C0 01 00 00 48 89 CE 8B 0D",
+   "match": "0x1436cdac0",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x1436cdac0",
+   "kind": "func_start",
+   "names": [
+    "FeFlow_StateFrontend_OnStateEnter"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-19",
+     "by": "ui-re"
+    }
+   ],
+   "used_by": []
+  },
+  {
+   "id": "fe_flow.recalc_transition_state",
+   "section": ".xtls",
+   "pattern": "41 57 41 56 56 57 55 53 48 81 EC C8 00 00 00 48 89 D3",
+   "match": "0x1436d1500",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x1436d1500",
+   "kind": "func_start",
+   "names": [
+    "FeFlow_Recalculate_TransitionState"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-19",
+     "by": "ui-re"
+    }
+   ],
+   "used_by": []
+  },
+  {
+   "id": "fe_popup.show_notification",
+   "section": ".xtls",
+   "pattern": "41 56 56 57 53 48 81 EC 38 01 00 00 C5 F8 29 B4 24 20 01 00 00 44 89 CB",
+   "match": "0x1406d1db0",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x1406d1db0",
+   "kind": "func_start",
+   "names": [
+    "FePopup_Show_Notification"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-19",
+     "by": "ui-re"
+    }
+   ],
+   "used_by": []
+  },
+  {
+   "id": "fe_input.add_input_provider",
+   "section": ".xtls",
+   "pattern": "41 56 56 57 55 53 48 81 EC E0 00 00 00 48 89 D7",
+   "match": "0x1434d6fd0",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x1434d6fd0",
+   "kind": "func_start",
+   "names": [
+    "FeInput_Add_PlayerProvider"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-19",
+     "by": "ui-re"
+    }
+   ],
+   "used_by": []
   }
  ]
 }

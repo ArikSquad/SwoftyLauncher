@@ -146,6 +146,49 @@ std::string read_file(const std::wstring &path)
     return out;
 }
 
+std::string select_bindings(const std::wstring &dir, long long stamp, std::string &chosen)
+{
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileW((dir + L"bindings*.json").c_str(), &fd);
+    std::string match_text, default_text, first_text;
+    std::wstring match_name, first_name;
+    int candidates = 0;
+    if (h != INVALID_HANDLE_VALUE) {
+        do {
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+                continue;
+            std::string text = read_file(dir + fd.cFileName);
+            json::Value d;
+            if (!json::parse(text, d) || d["build"].type == json::Value::Null)
+                continue;
+            candidates++;
+            if (first_text.empty())
+                first_text = text, first_name = fd.cFileName;
+            if (!_wcsicmp(fd.cFileName, L"bindings.json"))
+                default_text = text;
+            if (match_text.empty() && (long long)d["build"]["pe_timestamp"].num() == stamp)
+                match_text = text, match_name = fd.cFileName;
+        } while (FindNextFileW(h, &fd));
+        FindClose(h);
+    }
+    if (!match_text.empty()) {
+        chosen = utf8(match_name.c_str());
+        api->log("[core] bindings: %d set(s) present, selected %s by PE timestamp %lld", candidates, chosen.c_str(), stamp);
+        return match_text;
+    }
+    if (!default_text.empty()) {
+        chosen = "bindings.json";
+        api->log("[core] bindings: %d set(s) present, none match PE timestamp %lld; using bindings.json", candidates,
+                 stamp);
+        return default_text;
+    }
+    chosen = first_name.empty() ? "bindings.json" : utf8(first_name.c_str());
+    if (candidates)
+        api->log("[core] bindings: %d set(s) present, none match PE timestamp %lld and no bindings.json; using %s",
+                 candidates, stamp, chosen.c_str());
+    return first_text;
+}
+
 std::vector<uint8_t> hex_bytes(const std::string &s)
 {
     std::vector<uint8_t> out;
@@ -608,9 +651,12 @@ extern "C" __declspec(dllexport) int SwoftyCoreAttach(SwoftyApi *a)
     dir.resize(dir.find_last_of(L'\\') + 1);
     crash_attach(a, dir);
     settings_attach(a, dir);
+    auto nt = reinterpret_cast<const IMAGE_NT_HEADERS *>(base + reinterpret_cast<const IMAGE_DOS_HEADER *>(base)->e_lfanew);
+    long long running_stamp = (long long)nt->FileHeader.TimeDateStamp;
+    std::string chosen = "bindings.json";
     json::Value doc;
-    if (!json::parse(read_file(dir + L"bindings.json"), doc))
-        api->log("[core] %lsbindings.json missing or unreadable; no binding will resolve", dir.c_str());
+    if (!json::parse(select_bindings(dir, running_stamp, chosen), doc))
+        api->log("[core] %ls%s missing or unreadable; no binding will resolve", dir.c_str(), chosen.c_str());
     for (auto &j : doc["bindings"].a) {
         Binding b{j["id"].str(), j["kind"].str(), j["status"].str(), j["section"].str(), j["pattern"].str(),
                   j["resolve"]["kind"].str("addr"), hex_bytes(j["expect"].str()), j["anchor"].num(),
@@ -618,9 +664,8 @@ extern "C" __declspec(dllexport) int SwoftyCoreAttach(SwoftyApi *a)
         binding_index[b.id] = bindings.size();
         bindings.push_back(std::move(b));
     }
-    auto nt = reinterpret_cast<const IMAGE_NT_HEADERS *>(base + reinterpret_cast<const IMAGE_DOS_HEADER *>(base)->e_lfanew);
-    same_build = doc["build"]["pe_timestamp"].num() == (long long)nt->FileHeader.TimeDateStamp;
-    api->log("[core] bindings.json: %zu binding(s) for build %.16s, %s", bindings.size(),
+    same_build = doc["build"]["pe_timestamp"].num() == running_stamp;
+    api->log("[core] %s: %zu binding(s) for build %.16s, %s", chosen.c_str(), bindings.size(),
              doc["build"]["sha256"].str("?").c_str(),
              same_build ? "this exe (rva checked)" : "a different exe (signatures decide)");
     std::wstring session_path = dir + L"..\\..\\session.json";
