@@ -46,7 +46,7 @@
       "id": "diag_tree_rowcount",
       "type": "toggle",
       "label": "Diagnose the upgrade-tree tile source count",
-      "description": "Read-only: log the research-upgrade-tree data loader's per-department row count, including the code-4 'fake'/Tyres branch, so the invisible-tiles cause is bisected (4 rows = our nodes loaded, blocker is the display filter; 1 row = the instancecount bump was not honored). Produces no gameplay change.",
+      "description": "Read-only: log the upgrade-tree loader's per-department row count, including the code-4 'fake'/Tyres branch, to bisect the empty-page cause (4 rows = our nodes loaded, blocker is display; 1 row = instancecount bump not honored). No gameplay change.",
       "default": true,
       "binds": "native"
     }
