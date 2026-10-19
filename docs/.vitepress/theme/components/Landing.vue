@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import { useData } from "vitepress";
 import Icon from "./Icon.vue";
+import DownloadButton from "./DownloadButton.vue";
 import { useLinks } from "../links";
 
 const { frontmatter: fm, theme } = useData();
@@ -96,11 +97,10 @@ const footPaths = footBands.map((b) => ({ color: b.color, d: wave(b, 1440, 420) 
         </p>
 
         <div class="lp-actions">
-          <a class="lp-btn lp-btn--ink lp-btn--big" :href="hero.download" rel="noopener">
-            <Icon name="download" /><span>Download</span>
-          </a>
+          <DownloadButton v-bind="hero.download" />
           <a class="lp-btn lp-btn--ink lp-btn--big" :href="to(hero.docs)"><Icon name="book" /><span>Docs</span></a>
         </div>
+        <p class="lp-hint">Then follow the <a :href="to(hero.download.manual)">installation guide</a>.</p>
       </div>
     </header>
 
