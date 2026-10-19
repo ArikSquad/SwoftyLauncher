@@ -29,7 +29,7 @@
    "op": "set",
    "select": "{5e21a18f9f59dbf6}.UpgradeDepartmentEntry_4",
    "field": "department",
-   "value": "Tyres",
+   "value": "Fake",
    "create": true,
    "type": 3
   },
@@ -197,7 +197,7 @@
    "op": "set",
    "select": "{1f304d36c3c2b947}.UpgradeDepartmentEntry_4",
    "field": "department",
-   "value": "Tyres",
+   "value": "Fake",
    "create": true,
    "type": 3
   },
