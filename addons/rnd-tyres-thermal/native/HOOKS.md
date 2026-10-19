@@ -644,3 +644,111 @@ and every dept-4 instance's last state.
   `Upgrade_EvalFacilityLock` 0x14352ea40
 - `Upgrades_QueryEnabled` 0x1435188d0, `Career_Build_RnDDeptPage` 0x141c7b880 (query 0x141c7d8cf)
 - `Upgrades_Deserialise` 0x143536000 (+ per-tree 0x143524c20), tree serialise 0x143523fd0
+
+## v0.6.1 — the DEVELOP UPGRADE screen for the Tyres upgrades
+
+### The screen
+The detail screen is the departments container's purchase tab, `LaptopRnDUpgradePurchaseViewModel`
+(card name `tab_rnd_upgrade_purchase_panel`, `begin[4]` of the box-grid card vector, vtable 0x145740ac0):
+build `0x141c8a080` (vt+0x30; finds the instance by `upgrade_hash_name` via `Upgrades_QueryEnabled` and
+copies `byte [u+0x72]` to panel+0x6e8), update `0x141c8d540` (cost, slots, timeline, comparison, card),
+messages `0x141c8bcc0` (vt+0x50), option rows `0x141c8cbb0` / `0x141c8f0a0`, unlocks `0x141c8c430`, upgrade
+card binder `0x141814320` (also `0x14180fc60`, `0x1418169f0`). Panel fields: +0x620 container, +0x680
+career, +0x6a0 Upgrades, +0x6a8 instance, +0x6cc team, +0x6d0 cannot-develop, +0x6d1 insufficient points,
++0x6d2 research limit reached, +0x6e0 view, +0x6e8 department.
+
+### Root cause of the Back trap
+`back_pressed` (djb2 0x493fe92b) in `0x141c8bcc0` @0x141c8c150:
+`name = dept < 4 ? k_Career_RnDDeptNameTable[dept] : "error_department"`, then container
+`vt+0x80("open", name)`. The container's dispatch (`0x141c86fc0`, vt+0x50; open case @0x141c87032) maps the
+name's djb2 to a card: aero 0x7c93fd0c, chassis 0xc239ed13, engine 0xfb78dbfb, maintenance 0x5c31ec68,
+0x396ca87 (purchase), 0x10230e0a (perks); anything else takes `jne 0x141c875f5` and returns. The event is
+consumed and no tab changes, so the player is stuck. Same dead end: the perks tab's back (`0x141c89730`,
+reads `return_department_name`, which the department page sets with the same fallback @0x141c7fdd1) and the
+department page's cross-department jump to a linked upgrade (@0x141c8041e).
+
+### Second root cause: the 5th department row clobbered Aero (fixed in data)
+`Career_Load_DepartmentEntries` parses each row's `department` with ENUM A (switch @0x14123412a: Chassis 1,
+Durability 2, Engine 3, Fake 4, Invalid 5, anything else 0) and inserts per-department attribute pointers
+into 19 maps keyed by that byte (`component+0x738 + N*0x48`, insert `0x1412ba3d0`; status 1 = key exists,
+the value is still overwritten). Our row said `department = Tyres` → 0, so since v0.2.0 it overwrote AERO's
+attributes (cost/time scales, slots, rush, dual development) with Durability's. The per-team modifier lists
+(`{kind, dept, ?, active, value}`, built by listeners registered in `0x141238520` from those maps, read by
+`0x1434fb4b0`) therefore had no department-4 entries at all: research slots 0 (→ research-limit flag), rush
+locked, no cost/time scales. `db/departments.json` now says `department = Fake` (→ 4): Aero gets its own
+attributes back and department 4 becomes a real economy department sharing Durability's attributes, so
+every modifier consumer below works for Tyres with no code. Residual risk: code that iterates these maps and
+indexes a 4-wide array by the key (none found on the R&D paths; watch the stock departments' slots/costs).
+
+### Sweep: code that branches on the department byte (508 `byte [x+0x72]` accesses scanned)
+Classified with `capstone` over a full `objdump` of `.xtls`; plus the panel/card copies (+0x6e8, +0x6d8).
+
+| site | function | dept 4 behaviour | screen | status |
+|---|---|---|---|---|
+| 0x143517e0c | instance init 0x143517d80 | `==4` → disabled sentinel | page | v0.6.0 hook |
+| 0x1435230f3 0x143523520 0x143523740 0x1435157e0 0x1412486b8 | push state / enabled / facility lock / fitted / auto-fit | `>3` → return | purchase | v0.6.0 hooks |
+| 0x143528a05 | availability BFS 0x1435288f0 | `==4` → treated as hub | unlock chain | v0.6.0 hook |
+| 0x141c8c150 | purchase messages 0x141c8bcc0 (back_pressed) | `>3` → "error_department" → open no-op | **yes** | **fixed: Back route** |
+| 0x141c7fdd1 | dept page 0x141c7fc50 (perks) | return name "error_department" | Tyres page | fixed: Back route |
+| 0x141c8041e | dept page 0x141c7fc50 (linked upgrade) | open "error_department" | Tyres page | fixed: Back route |
+| 0x141c8703d..0x141c873c7 | container open dispatch 0x141c86fc0 | unknown name → ret | **yes** | **hooked @0x141c873c2** |
+| 0x14181459c 0x14180fe7a 0x141816f48 | card binders | `lng_rnd_dept_error_department` (missing key) | **yes** (dept tag) | lang key added |
+| 0x141815611 0x14181041d 0x1418185b5 | card binders | `rnd_dept_icons_small.error_department` (no frame) | **yes** | icon → `chassis` |
+| 0x141814b95 0x14180ff10 0x1418174c6 | card binders | colour 0x14571bce0[4] = white | **yes** | [4] → Tyres orange |
+| 0x141c8e1ed | panel update | colour 0x145755e78[4] | **yes** | Tyres orange since v0.2.0 |
+| 0x141c8e28c | panel update | kind 0 (slots) for dept → 0 → +0x6d2 research limit | **yes** (blocks buy) | fixed: Fake row |
+| 0x141c8de49 | panel update → dept summary 0x1416d53f0 | kinds 3/2/1/0xd → zeros | **yes** | fixed: Fake row |
+| 0x143536f04 | rush available 0x143536e90 | kind 5 for dept → none → Rush locked | **yes** (Rush `-`) | fixed: Fake row |
+| 0x14352f975 | failure chance 0x14352f8d0 | kind 0xe → base | **yes** | fixed: Fake row |
+| 0x1412434ea | start research/develop 0x1412431a0 | kind 0x10 → none | purchase | fixed: Fake row |
+| 0x143516b50 0x14351c4ff 0x14351c5d1 0x14351f1b8 0x14351f2a0 0x143521e90 0x143521f70 0x1435220f1 0x14352e95b 0x14352ea6b 0x14352fad3 0x1435301f3 0x1435302dc 0x143534796 0x1435348b6 0x1435349c8 0x143534a97 0x141c7dca8 | R&D simulation / availability / facility lock / dept page slots | modifier kinds 0x0-0x19 for dept → none | progression | fixed: Fake row |
+| 0x141c8ebfc → 0x141890e60 | vehicle performance comparison | team base rating list (+0x1a38) has no dept 4 → empty bars | **yes** | alias hook @0x141c8ec4c |
+| 0x141893f59 | per-team performance data 0x1418914f0 | `lng_rnd_dept_%s` / tables | pie | pie agent (`0x1418914f0`) |
+| 0x1416b6d51 | timeline 0x1416b6cd0 | `rnd_goto_error_department_department` VM string | yes | harmless |
+| 0x141c737ff 0x141c837a2 0x141c7db76 0x141c495e9 0x141c55188 0x141c70d8a 0x141c74da9 0x141c77eb2 | other R&D views | name `error_department` | no | lang key covers `lng_rnd_dept_%s` |
+| 0x1418b0f95 0x1419bf58f 0x141c78850 0x141c84170 0x141f3dab5 | other views | colour tables `<6` → white | no | bounded, cosmetic |
+| 0x14071e711 0x14071e99d 0x140777f12 | telemetry | ENUM A name table [4] = "Fake" | no | valid string |
+| 0x140f5e300 0x140f5e820 | per-dept counters | `==0..5` chain | no | handles 4 |
+| 0x14372f44d 0x143730424 | 0x14372ef80 | `>3` → skip | no | bounded |
+| ENUM A switch (~27 inlined copies, e.g. 0x14353a700) | parse | "Fake" → 4 | load | data |
+| card binders `rnd_part_image/_mask.<upgrade_name>` | 6 Ne_Format_String sites | no frame for our names → blank card/unlock art | **yes** | borrowed parts |
+| 0x143525b60 | upgrade cost | formula (below) | **yes** | test price hook |
+
+### What v0.6.1 installs (gate: one `.xtls` scan of the dispatch, hit must be 0x141c873ac; flag `tyres_upgrade_screen`, default on)
+Every other site is byte-verified at its fixed RVA and installs on its own.
+- **Back route** — MidHook @0x141c873c2 (`cmp eax,0x5c31ec68`, the last name compare of the open case). For
+  name hash `tyres` (0x107666dc) or `error_department` (0x7e5c1342, only produced for department >= 4): find
+  the department card (vtable 0x145740250, `+0x6d8 == 4`) that owns a container slot
+  (`+0x548..+0x550`, `slotObj+0x20 == card+0x268`, `slotObj+8 != 0`), call `0x141c87620(&container, 0)` (the
+  stock department-mode refresh: dept cards on, panels off, `show_shoulders`), enable the Tyres card with
+  `0x14431f470(container+0x2d8, card+0x268, 1)`, set `rax = &cards[i]` and resume at the stock tail
+  0x141c875a5 (`mov [rsi+0x7b8],card` → slot lookup → `jmp 0x14431f6b0` select). If no such card/slot
+  exists, rewrite the hash to `maintenance` so the stock code opens Durability. Stock names never match.
+- **Comparison alias** — MidHook @0x141c8ec4c (before `call 0x1418130b0`): the comparison's department byte
+  at `[rsp+0x108]` is 4 only for our upgrades; Tyre Wear/Brakes → Chassis (1), Upgrade All Durability →
+  Durability (2), which are the stock departments of those effect types.
+- **Card art** — MidHooks on the `lea r9` before 9 `Ne_Format_String` calls (`[rsp+0x20]` = frame name):
+  `rnd_part_image`/`rnd_part_mask` @0x141810122/0x1418103a2/0x1418154d0/0x14181558f/0x14181845c/0x14181852e
+  (our names → `[om_xm_]tyre_blankets`, `calipers`, `turbo_charger_wear_1` + the state suffix; `om_xm_` when the
+  pkg path contains it), and `rnd_dept_icons_small` @0x141810482/0x141815670/0x14181861b
+  (`error_department` → `chassis`).
+- **Card colour** — `0x14571bce0[4]` white → Tyres orange 0xff0078ff (table verified stock first).
+- **Diagnostics** — back_pressed @0x141c8c172, option rows @0x141c8cbb0, purchase entry @0x1412414c0,
+  state pushes in the v0.6.0 push guard.
+
+### Test price (flag `tyres_test_price`, default on) — TEMPORARY
+Cost = `0x143525b60(list, instance, team modifiers, option)`: base `cost` (+0x5c) or `cost_to_develop`
+(+0x60, option & 6), team rows only; × modifier kind 3 (research) / 0x13 (development) cost scale; + kind 10 ×
+upgrades owned; + `(base × instance+0xd8) / 100` (event-driven percent; −60 on the test save, which is why the
+1000-point row showed 400). It is called by the affordability list `0x1435329b0`, the research and
+development cost wrappers `0x14351dde0` / `0x14351df60` (`0x14351df60` is mislabelled
+`Car_Read_VehicleAttribute` in the KB), the card and the panel. A MidHook at its entry (scan + 60-byte
+verify) returns 5 for our three by resuming at a verified `ret` (0x14351df56). Restore: turn
+`tyres_test_price` off (database `cost`/`cost_to_develop` stay 1000). Research/development times were also
+shortened to 5/5 days for testing (database rows; real values 20/25).
+
+### Names
+Per-upgrade name key = `lng_rnd_<upgrade_name>`, description = `lng_rnd_<upgrade_name>_description` (card
+binder `0x141814320`, desc `0x14385ad00`). The detail title is `lng_rnd_<size>` + `lng_rnd_<type>`
+("Minor - Tyre Wear") and does not use the name. The department tag over the title is the Tyres card's own
+name key (`lng_rnd_dept_tyres`, the same key the Tyres tab shows), now "Tyres".

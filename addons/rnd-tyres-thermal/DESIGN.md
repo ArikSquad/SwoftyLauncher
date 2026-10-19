@@ -218,6 +218,29 @@ the in-game test (see `native/HOOKS.md`).
 |---|---|---|---|
 | 5th dept selection | `select_fifth_dept` | name-guard + box-grid and tile-page active-dept clamp relax (dept 4 selectable, crash trap closed) | tiles-render confirm (in-game test); box RECT + pie wedge (authored art) |
 
+## v0.6.1 — the Develop Upgrade screen
+
+| piece | flag | shipped |
+|---|---|---|
+| Back from a Tyres upgrade's detail screen | `tyres_upgrade_screen` | the container's tab-open dispatch routes `tyres`/`error_department` to the Tyres tab (Durability if it has no slot); also fixes the perks back and linked-upgrade jumps |
+| department economy | data | `UpgradeDepartmentEntry_4.department = Fake` (was `Tyres` → enum 0, which overwrote Aero's attributes): Tyres gets Durability's slots, rush, cost/time scales |
+| card art, department icon, card colour | `tyres_upgrade_screen` | borrowed stock parts (`tyre_blankets`, `calipers`, `turbo_charger_wear_1`), `chassis` icon, Tyres orange |
+| vehicle performance comparison | `tyres_upgrade_screen` | Tyre Wear/Brakes compare on Chassis, Upgrade All Durability on Durability |
+| department tag over the title | lang | `lng_rnd_dept_tyres` = "Tyres" (the Tyres tab shows the same key) |
+| upgrade names | lang | `lng_rnd_<upgrade_name>` (+ `_description`) |
+
+### TEMPORARY test values (restore before a release)
+
+- **Price:** flag `tyres_test_price` (default on) makes the three Tyres upgrades cost **5** research
+  points for research and development, standard and rush. The database still carries the real
+  `cost` / `cost_to_develop` = **1000**; turning the flag off restores them (displayed price then
+  follows the game's formula, see `native/HOOKS.md`).
+- **Durations:** `db/tyres_tree.json` sets `fitting_times.num_days_to_research` and
+  `num_days_to_develop` to **5**; the real values are **20** and **25**.
+- **Names:** `assets/text.json` gives the upgrades the joke names "Pirelli Whisperer"
+  (`tyres_wear_reduction`), "Brake Disc Chill Pill" (`tyres_brake_cooling`) and "Thermal Blanket
+  of Destiny" (`tyres_thermal_reliability`) under `lng_rnd_<upgrade_name>`.
+
 ## Residual unknowns (the in-game test resolves these)
 
 - **Does the game read the 5th department row?** Resolved by RE + the live
@@ -225,11 +248,9 @@ the in-game test (see `native/HOOKS.md`).
   `<container>._UpgradeDepartmentEntry_instancecount_` (= 4), read by
   `Gdb_Init_TableCursor` and used as the loader's `for i in 0..count-1` bound.
   The loader reads indices `0..3` from `{5e21a18f9f59dbf6}`/`{1f304d36c3c2b947}`.
-  The native Hook B bumps that count to 5 so index `4` (our row) is read. **Open
-  for the in-game test:** `department = Tyres` maps to the per-upgrade
-  `upgrade_department` **ENUM A = 0** (default) in this loader's inline switch -
-  the same slot as Aerodynamics - so the economy entry may collide with Aero's
-  slot rather than form a distinct 5th entry. Whether a distinct 5th *tab* then
+  The native Hook B bumps that count to 5 so index `4` (our row) is read.
+  **Resolved in v0.6.1:** `department = Tyres` mapped to ENUM A = 0 and overwrote
+  Aero's attribute maps; the row now says `Fake` (= 4), a distinct 5th entry. Whether a distinct 5th *tab* then
   renders (the tab list may enumerate via a different path) is the test question.
 - **UI box visibility (v0.4.0 RESOLVED cause).** The v0.3.0 5th card is attached
   but invisible because the box grid's container (`builder+0x2d8`, a UITC tab VM)
