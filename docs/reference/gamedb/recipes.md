@@ -17,7 +17,7 @@ These rules come from built and runtime-tested variants of the database (the 24 
 - `set` on a key that does not exist stops the build with `no such key`. `"create": true` with `"type": <tag>` adds it.
 - Strings in an operation can hold <span v-pre>`{{option}}`</span> placeholders and a `when` condition, filled from the addon's [settings](/reference/addons/manifest#options) at build time.
 
-The launcher applies database changes in this order: map activation (one per enabled map), then each addon's operations in load order. A later write to the same key wins. It then writes the file sorted by `key_hi`.
+The launcher applies database changes in this order: track activation (one per enabled track), then each addon's operations in load order. A later write to the same key wins. It then writes the file sorted by `key_hi`.
 
 ## Adding a row
 
@@ -83,7 +83,7 @@ For N cars:
 
 ## Adding a track
 
-The launcher does this when a map is enabled (`packages/core/src/activation/`). Its table list is `packages/core/src/activation/track_tables.json`. For a new track id it:
+The launcher does this when a track is enabled (`packages/core/src/activation/`). Its table list is `packages/core/src/activation/track_tables.json`. For a new track id it:
 
 1. Clones the slot track's `tracks.Track_N` row with its full schema and sub-tables, sets a new `statId` (max + 1), and raises `tracks._Track_instancecount_` (43 in the shipping file).
 2. Adds a track resource row `swofty_<code>` to `tracks.track_resource.TrackResource_N` and names it in the track row's `track_resource`.
@@ -103,7 +103,7 @@ The launcher does this when a map is enabled (`packages/core/src/activation/`). 
 | track trivia `TrackTriviaTrack_N` | 32 | not traced |
 
 5. Adds the code to every `content_sets.content_set_N.available_tracks_N.tracks` list that holds the base track, and to both `track_data.sorted_track_order.sorted_track_order_N.TrackRef_N` orders.
-6. Applies the map's overrides to its `TrackData` rows and track overrides to its `Track` row.
+6. Applies the track's overrides to its `TrackData` rows and track overrides to its `Track` row.
 
 Tables keyed by track that are calendars, challenge rounds, F1 World activities, map markers and trophies are not cloned.
 

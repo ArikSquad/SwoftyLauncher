@@ -30,7 +30,7 @@ pub struct RunArgs {
     direct: bool,
     #[arg(
         long,
-        help = "Build and install the profile (database, maps) before the game starts, and roll it back when it exits"
+        help = "Build and install the profile (database, tracks) before the game starts, and roll it back when it exits"
     )]
     apply: bool,
     #[arg(long, help = "Game folder (default: discovered from Steam)")]

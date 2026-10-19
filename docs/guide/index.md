@@ -35,7 +35,7 @@ The type of content determines where you install it:
 | **Mods** | Mods page | Content with no code, such as liveries and new text |
 | **Tracks** | Mods page | Community circuits, such as Sepang and Okayama |
 
-See [Addons, mods and maps](/guide/addons-mods-maps) for more on the differences, or go straight to installing.
+See [Addons, mods and tracks](/guide/addons-mods-tracks) for more on the differences, or go straight to installing.
 
 ## Where to start
 

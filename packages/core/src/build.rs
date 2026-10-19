@@ -328,7 +328,7 @@ pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
     let natural = planner.route(Kind::Group) == Route::Runtime;
     if !natural && maps.len() > SLOTS.len() {
         return Err(Error::Map(format!(
-            "at most {} maps can be enabled at once",
+            "at most {} tracks can be enabled at once",
             SLOTS.len()
         )));
     }
@@ -507,7 +507,7 @@ pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
             }
             for (rel, src) in placement.added.into_iter().chain(left) {
                 if built.plan.added.insert(rel.clone(), src).is_some() {
-                    return Err(Error::Map(format!("{rel} is placed by two maps")));
+                    return Err(Error::Map(format!("{rel} is placed by two tracks")));
                 }
             }
         }

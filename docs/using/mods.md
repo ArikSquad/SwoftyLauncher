@@ -55,7 +55,7 @@ Expand a row to see the mod's version, author, size and import date. For a close
 
 To import a track, drop the track package zip onto the launcher without unpacking it. You'll see the **Track** tag on its row. Turn it on to make it appear in Grand Prix track selection; you can turn on any number of tracks in one profile.
 
-[How tracks are installed](/reference/maps) covers what activation changes.
+[How tracks are installed](/reference/installing-tracks) covers what activation changes.
 
 ## From a terminal
 

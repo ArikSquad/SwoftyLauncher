@@ -402,7 +402,7 @@ fn map_rows<'a>(e: &Entry) -> Vec<Row<'a>> {
             "Track Code",
             e.id,
             "TRACK CODE",
-            "Pick this track in any mode to race the map.",
+            "Pick this track in any mode to race on it.",
         ),
         info("row_author", "Author", e.author, "AUTHOR", ""),
         info("row_version", "Version", e.version, "VERSION", ""),

@@ -4,7 +4,7 @@ If you're contributing to Swofty Launcher for F1 25, start here for the intended
 
 ## Goals
 
-- Manage addons and community maps in one desktop app.
+- Manage addons and community tracks in one desktop app.
 - Keep modded play offline only, with multiplayer off.
 - Switch profiles and restore the original game in one click.
 - Change addon options through ADDON SETTINGS under Career.
@@ -16,7 +16,7 @@ If you're contributing to Swofty Launcher for F1 25, start here for the intended
 |---|---|
 | `apps/launcher` | Desktop interface, built with Rust and GPUI |
 | `apps/cli` | Terminal commands and Linux Steam launch wrapper |
-| `packages/core` | Addons, maps, profiles, backups and launch setup |
+| `packages/core` | Addons, tracks, profiles, backups and launch setup |
 | `packages/formats` | Game file readers and writers |
 | `packages/sdk` | Plugin API |
 | `native/` | In-game loader and menu entry |
@@ -24,11 +24,11 @@ If you're contributing to Swofty Launcher for F1 25, start here for the intended
 
 Keep the interface separate from the shared core. When you're working on the Rust format code, check it with the Python tools in `tools/`.
 
-## Addons and maps
+## Addons and tracks
 
 An addon's [`swofty.json` manifest](/reference/addons/manifest) tells you what it contains: database changes, assets, UI patches, loose files and plugins.
 
-Maps already have a community track-package format. Import the package unchanged, then use its track code in the profile.
+Tracks already have a community package format. Import the package unchanged, then use its track code in the profile.
 
 Apply changes in load order, and report any missing requirements or conflicts before launch.
 
@@ -36,7 +36,7 @@ You'll find the plans for content mods, the Launcher API, the Asset API and the 
 
 ## Profiles and saves
 
-Your profile holds your addons, maps and options. The design also calls for separate saves under `$DATA/saves/<profile>/` for each profile, keeping them away from vanilla saves and Steam Cloud.
+Your profile holds your addons, tracks and options. The design also calls for separate saves under `$DATA/saves/<profile>/` for each profile, keeping them away from vanilla saves and Steam Cloud.
 
 Save isolation isn't implemented yet. The built-in `vanilla` profile has no addons, and you can't edit it.
 
@@ -58,7 +58,7 @@ On Linux, you launch through a Steam launch option; on Windows, you use a separa
 
 SwoftyMod adds ADDON SETTINGS below Career, an F9/R3 prompt and a launcher panel.
 
-Open ADDON SETTINGS and you'll find a tile and a page for each enabled addon and map. These are generated from the player's game files and the profile when you build the profile. Change a database setting and you'll need to restart; plugin settings apply immediately.
+Open ADDON SETTINGS and you'll find a tile and a page for each enabled addon and track. These are generated from the player's game files and the profile when you build the profile. Change a database setting and you'll need to restart; plugin settings apply immediately.
 
 ## Current status
 

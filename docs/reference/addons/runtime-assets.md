@@ -123,7 +123,7 @@ The engine loads content by asset group, so you use `group.register` to add a gr
 - Ship the archive with `file.put`. Loose files are copied into the game folder at build, or served from `swofty/overlay/` if your profile turns on the experimental `file` feature.
 - Use `erps` to list several archives, `deps` to name groups that must load first, and `template` to name a stock group to copy settings from.
 - The core skips groups already in the stock manifest. If a database field points at a stock group whose archive is missing, the session load hangs.
-- Refer to the group through database fields such as a track's `worldAssetGroup`. Tracks use this route: each track's archive goes to `2025_asset_groups/environment_package/tracks/<code>/<code>.erp`, with one group per world, bake and probe set ([How maps are installed](/reference/maps)).
+- Refer to the group through database fields such as a track's `worldAssetGroup`. Tracks use this route: each track's archive goes to `2025_asset_groups/environment_package/tracks/<code>/<code>.erp`, with one group per world, bake and probe set ([How tracks are installed](/reference/installing-tracks)).
 
 ## From a native plugin
 

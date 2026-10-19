@@ -53,8 +53,8 @@ features:
     title: Mods
     details: ERPs and SERPs with no code. Drop them on the launcher's <em>Mods</em> page from <em>Team Simplified</em>, or an addon can <em>bundle</em> them or load them at runtime through the <em>Asset API</em>.
     link: /using/mods
-  - icon: map
-    title: Maps
+  - icon: flag
+    title: Tracks
     details: Import community track packages, such as <em>Sepang</em> and <em>Okayama</em>, as mods and race on them as extra tracks.
     link: /using/mods#tracks
   - icon: layers

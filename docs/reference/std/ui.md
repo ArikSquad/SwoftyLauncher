@@ -33,9 +33,9 @@ Each time you build the profile, the launcher generates ADDON SETTINGS from the 
 
 | Screen | Holds |
 |---|---|
-| `swofty_settings` | One tile per enabled addon and map: name, author, version, description |
+| `swofty_settings` | One tile per enabled addon and track: name, author, version, description |
 | `swofty_addon_<n>` | The page for `addons[n]` of `swofty/settings.json`: one row per option |
-| `swofty_map_<n>` | A map's track code, author and version |
+| `swofty_map_<n>` | A track's code, author and version |
 
 To open ADDON SETTINGS, its home tile routes to `mod_menu`.
 

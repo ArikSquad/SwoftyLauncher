@@ -22,7 +22,7 @@ use swofty_core::store::Store;
 #[command(
     name = "swofty",
     version,
-    about = "Swofty Launcher for F1 25: addons, mods and maps"
+    about = "Swofty Launcher for F1 25: addons, mods and tracks"
 )]
 struct Cli {
     #[arg(
@@ -48,7 +48,7 @@ enum Command {
         game: Option<PathBuf>,
     },
     #[command(
-        about = "Build the profile and install it into the game folder (database, maps); swofty restore undoes it"
+        about = "Build the profile and install it into the game folder (database, tracks); swofty restore undoes it"
     )]
     Apply {
         #[arg(long, help = "Game folder (default: discovered from Steam)")]

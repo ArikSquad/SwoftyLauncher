@@ -8,7 +8,7 @@ If you're contributing, this is the design for splitting today's mods into addon
 |---|---|
 | Addon | A package with a `swofty.json` manifest: native plugins, declared content, settings and in-game screens. Everything the product calls a mod today is an addon. The built-in addons are SwoftyMod (`swofty.core`) and Team Simplified (`teamsimplified.mods`). |
 | Mod | A content package with no code: liveries, cars, text, shaders, database rows. An addon imports, stores and loads mods. Team Simplified handles `.serps` mods. |
-| Map | A community track package. Tracks are mods in Team Simplified's library ([section 5](#_5-tracks-are-mods)). |
+| Track | A community track package. Tracks are mods in Team Simplified's library ([section 5](#_5-tracks-are-mods)). |
 | Asset op | One change to game content: an asset group, an archive resource, a database record, a language string or a loose file. |
 | Delivery | How an asset op reaches the game. A build delivery rewrites a game file and installs it through the journal. A runtime delivery has swofty_core apply the op in memory while the game boots. |
 
@@ -42,10 +42,10 @@ The renames and compatibility rules below are already built. In `owned_items` en
 | Screen names | `swofty_mod_<n>` | `swofty_addon_<n>` |
 | In game | `MOD SETTINGS` | `ADDON SETTINGS` |
 | Launcher text | `Mods` (sidebar), `Install mod…`, `A mod folder that contains swofty.json.`, `<n> mods installed`, `MODS` and `No mods` on profile cards | `Addons`, `Install addon…`, `An addon folder that contains swofty.json.`, `<n> addons installed`, `ADDONS` and `No addons` |
-| CLI text | `Swofty Launcher for F1 25: mods and maps`, `mod settings` | `Swofty Launcher for F1 25: addons, mods and maps`, `addon settings` |
+| CLI text | `Swofty Launcher for F1 25: mods and maps`, `mod settings` | `Swofty Launcher for F1 25: addons, mods and tracks`, `addon settings` |
 | Manifest errors | `must be a relative path inside the mod` | `must be a relative path inside the addon` |
 | SwoftyMod description | `mod loading` | `addon loading` |
-| Docs titles | `Mods and maps`, `Making a mod`, `Configuring mods (swofty.json)`, `In-game mod settings`, `Mod manifest` | `Addons and maps` (`Addons, mods and maps` with the Mods section), `Making an addon`, `Configuring addons (swofty.json)`, `In-game addon settings`, `Addon manifest` |
+| Docs titles | `Mods and maps`, `Making a mod`, `Configuring mods (swofty.json)`, `In-game mod settings`, `Mod manifest` | `Addons and tracks` (`Addons, mods and tracks` with the Mods section), `Making an addon`, `Configuring addons (swofty.json)`, `In-game addon settings`, `Addon manifest` |
 
 These stay unchanged: `swofty.json` and every field in it, manifest `schema_version` 1, the id `swofty.core`, the name SwoftyMod, the `swofty_set:` and `swofty_enable:` commands, the requests file, `$DATA/maps/`, the app id `net.swofty.ModLauncher`, and doc page paths.
 
@@ -486,7 +486,7 @@ The planner chooses a route for each kind:
 Whichever route a kind takes, you get the same result:
 
 - `erp`: `ErpBuild` produces each changed resource. `replace-resource` refills one fragment as `set_fragment` does for `patch-pkg`; `add-resource` builds the resource with `Resource::like`, which copies the type argument, fragment names, flags and compression of a resource of the same type and fragment count in the target archive. The build route writes the whole archive, keeping unchanged resources as byte copies (`ErpFile::write`). `add-mipmaps` files are installed as loose game files through the journal on both routes, as a track's mip files are. The runtime route writes the changed resources as overlay archives under `swofty/assets/resources/`, one per set of target archives, and lists them in `resource_erps`. It leaves out a replacement whose type, argument or fragment layout differs from the stock resource. The core registers the overlay archives in the manifest without rebuilding them.
-- `db`: the planner builds the database. The build route writes the file. The runtime route writes the records that differ from the database after map activation as `db_edits` by hash, with their tag and text, and sets `early_stage`. Map activation stays in the file. On both routes, `owned.rs` finds the `unlockable_se_livery` rows the built database has and stock lacks, whichever op added them, and writes their keys to `owned_items` in `swofty/settings.json`.
+- `db`: the planner builds the database. The build route writes the file. The runtime route writes the records that differ from the database after track activation as `db_edits` by hash, with their tag and text, and sets `early_stage`. Track activation stays in the file. On both routes, `owned.rs` finds the `unlockable_se_livery` rows the built database has and stock lacks, whichever op added them, and writes their keys to `owned_items` in `swofty/settings.json`.
 - `file`: the build route installs into the game folder through the journal. The runtime route copies under `swofty/overlay/` and sets `overlay`.
 - `lang`: the runtime route writes one partial table per language under `swofty/assets/lang/` and lists it as `lang.<code>.table`. `*` writes `all.lng`, which applies to every language.
 - `group`: the runtime route lists the group in `asset_groups`. Core skips a group that the stock manifest already has. A database field pointed at a stock group whose ERP is missing hangs the session load.
@@ -503,7 +503,7 @@ To mark a native feature `stable`, its runtime test must pass and a verifier mus
 
 ### 3.5 Order and conflicts
 
-- Map activation comes first, followed by addons in resolver order. Within your addon, declared ops apply before build hook ops, which keep the order you returned them in. The later write wins.
+- Track activation comes first, followed by addons in resolver order. Within your addon, declared ops apply before build hook ops, which keep the order you returned them in. The later write wins.
 - The planner records the target of each write. A write that replaces a target (`put`, `replace` and `remove` ops, `db.set`, `db.put-record`, `lang.set`, `file.put`, `erp.add-mipmaps`) after another origin wrote it is a conflict. Edits inside a resource (`patch-pkg`) and row additions compose and are not conflicts.
 - You'll see each conflict in the build output with its winner and overridden origins, and in the launcher under the play bar.
 
@@ -648,7 +648,7 @@ The build hook emits ops for each enabled mod, in profile order, with origin `te
 | Text | `lang.set` |
 | Replacement, Addition | `file.put` |
 
-- These ops apply after map activation and earlier addons. Only the database records the package changed are touched; archives merge one resource at a time.
+- These ops apply after track activation and earlier addons. Only the database records the package changed are touched; archives merge one resource at a time.
 - When a package adds a special livery row, it's reported as owned through `owned_items` ([section 3.4](#_3-4-deliveries)), so you'll see the livery in the picker.
 - Ops follow the planner's routes ([section 3.4](#_3-4-deliveries)). If you don't have the in-game loader, text ops wait; the build tells you how many entries are waiting.
 - Resource removals are `erp.remove-resource` ops on the archive the mod removed them from, and put every `erp` op on the build route. A removal of a record or resource an earlier mod already removed is left out.
@@ -674,7 +674,7 @@ A team rename package points team name records at its own keys, such as `lng_tea
 ### 4.7 Conflicts
 
 - The section computes conflicts between enabled mods from their cached diffs, in profile order. A mod counts once for each target. Simplified Studio's marker and the logo texture arrays merged slice by slice are not targets. A row shows `Overrides <n> in <mod>` when it wins and `<n> overridden by <mod>` when it loses. Its expanded body lists the targets under `CONFLICTS`: resource URIs with their archive, record keys in hex, text keys with their language, and files.
-- The build reports conflicts with other addons and maps through the planner ([section 3.5](#_3-5-order-and-conflicts)).
+- The build reports conflicts with other addons and tracks through the planner ([section 3.5](#_3-5-order-and-conflicts)).
 
 ### 4.8 Section
 
@@ -691,13 +691,13 @@ You'll find `Mods` after `Addons` in the sidebar, with the library size as its c
 
 ## 5. Tracks are mods
 
-You manage tracks as `.serps` mods in the Team Simplified library. That's already built, with no tracks addon or Maps page.
+You manage tracks as `.serps` mods in the Team Simplified library. That's already built, with no tracks addon or separate tracks page.
 
 - **Raw track zips.** Team Simplified claims zips containing a track package (`manifest.json` with `track_code`), or downloads containing one such zip. Import stores it in `library/<id>/`: `package.json` has `track` set to the code, `mod.serps` is written from the manifest, and the package goes under `track/`. The id is the track code, or `<code>-track` if a library mod already uses that id. Import the track again and it replaces the existing copy, keeping its id.
 - **Track SERPs.** A package built by the Simplified Track Installer (the track archive in an invitational slot, mipmaps under `environment_package/tracks/<code>/mipmaps/`, the `track_info` shader archives and optionally a whole game database) imports, diffs and merges like any other `.serps` mod ([sections 4.3 to 4.6](#_4-3-import)), with the slot as shipped.
 - **Build.** The build hook emits `track.add` for each enabled raw track in profile order, with `source` `{ "root": "data", "path": "library/<id>/track" }`. Core processes `track.add` through `activation/` before other database ops, handling the database rows, archive, menus and ERS. If your loader's `features.json` includes `group`, the archive uses its natural path `2025_asset_groups/environment_package/tracks/<code>/<code>.erp`, with `group.register` ops and natural resource-row values. You can then add tracks without a limit. Otherwise they use the invitational slots, at most eight.
 - **Migration.** `Addon::migrate` runs from `Store::migrate` (`data_version` 3). Team Simplified moves each `$DATA/maps/<code>/` into the library and each profile's `maps` list into its state, enabled, after the mods already listed. The track's id is its code, or `<code>-track` when a library mod already has that id. Each track is staged under `library/.migrate-<folder>/`, and the next run finishes a staged track. A code that matches no track in the library is dropped. `Profile` still reads `maps` and no longer writes it.
-- **Removed from core.** The Maps page and sidebar entry, `Profile.maps`, `Store::maps`, `import_map`, `remove_map`, the core track importer and the `swofty maps` commands. `swofty maps` is a hidden alias of `swofty mods`.
+- **Removed from core.** The old tracks page and its sidebar entry, `Profile.maps`, `Store::maps`, `import_map`, `remove_map`, the core track importer and the `swofty maps` commands. `swofty maps` is a hidden alias of `swofty mods`.
 
 ## 6. Work items
 

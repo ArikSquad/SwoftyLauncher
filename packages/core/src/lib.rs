@@ -58,7 +58,7 @@ pub enum Error {
     Addon(#[from] swofty_addon::Error),
     #[error("invalid manifest: {0}")]
     Manifest(String),
-    #[error("invalid map package: {0}")]
+    #[error("invalid track package: {0}")]
     Map(String),
     #[error("{0}")]
     Resolve(String),

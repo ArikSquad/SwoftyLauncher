@@ -54,7 +54,7 @@ To check the ADDON SETTINGS build, run the test below. It compares the result by
 F1_25_DIR="/path/to/F1 25" SWOFTY_MENU_ORACLE=/path/to/reference cargo test -p swofty-core --test real_menus
 ```
 
-To check map edits alongside ADDON SETTINGS, set `SWOFTY_MAPS_DIR` to a folder holding an imported `bahrain24` package. The same test file then checks that both are written into a single `databases.erp` and a single `persistent.erp`.
+To check track edits alongside ADDON SETTINGS, set `SWOFTY_MAPS_DIR` to a folder holding an imported `bahrain24` package. The same test file then checks that both are written into a single `databases.erp` and a single `persistent.erp`.
 
 ## Native loader
 

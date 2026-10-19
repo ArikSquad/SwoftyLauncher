@@ -107,7 +107,7 @@ Build your changes:
 swofty build
 ```
 
-Check the build output for conflicts. Map activations apply first, followed by each addon's operations in load order. If more than one writes to the same key, the later write wins; the build prints each conflict.
+Check the build output for conflicts. Track activations apply first, followed by each addon's operations in load order. If more than one writes to the same key, the later write wins; the build prints each conflict.
 
 The build rewrites the database in the overlay folder. With the in-game loader present, it also carries the changed records to the game through `swofty/assets.json` while the game boots. See [deliveries](/reference/addons/asset-api#deliveries).
 

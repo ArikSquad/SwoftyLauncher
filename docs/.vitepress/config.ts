@@ -32,6 +32,8 @@ const moved: Record<string, string> = {
   "/reference/std/files": "/reference/ops/files",
   "/using/mods-and-maps": "/using/addons",
   "/using/importing-maps": "/using/mods",
+  "/guide/addons-mods-maps": "/guide/addons-mods-tracks",
+  "/reference/maps": "/reference/installing-tracks",
 };
 
 const gameApiItems = gameApi.subsystems.map((s) => ({
@@ -119,7 +121,7 @@ export default defineConfigWithTheme<DocsThemeConfig>({
             text: "Getting Started",
             items: [
               { text: "Introduction", link: "/guide/" },
-              { text: "Addons, mods and maps", link: "/guide/addons-mods-maps" },
+              { text: "Addons, mods and tracks", link: "/guide/addons-mods-tracks" },
               { text: "1. Installation", link: "/guide/installation" },
               { text: "1.1. Windows", link: "/guide/windows" },
               { text: "1.2. Linux and Steam Deck", link: "/guide/linux" },
@@ -257,7 +259,7 @@ export default defineConfigWithTheme<DocsThemeConfig>({
               { text: "ERP operations", link: "/reference/ops/erp", icon: "file" },
               { text: "UI patches", link: "/reference/ops/ui-patches", icon: "file" },
               { text: "File operations", link: "/reference/ops/files", icon: "file" },
-              { text: "How tracks are installed", link: "/reference/maps", icon: "file" },
+              { text: "How tracks are installed", link: "/reference/installing-tracks", icon: "file" },
             ],
           },
           {

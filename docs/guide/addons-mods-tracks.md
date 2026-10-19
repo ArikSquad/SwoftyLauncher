@@ -1,9 +1,9 @@
 ---
-title: Addons, mods and maps
+title: Addons, mods and tracks
 description: The three kinds of content Swofty Launcher for F1 25 loads — addons, mods and tracks — and how they install.
 ---
 
-# Addons, mods and maps
+# Addons, mods and tracks
 
 You can load three kinds of content into F1 25 through the launcher. To install any of them, drop the file on the launcher window or use the Install or Import button on its page:
 
@@ -29,7 +29,7 @@ A mod gives you content with no code: liveries, cars, in-game text and other pac
 
 ## Track
 
-A community track, such as Sepang or Okayama, is a kind of mod, so you import its package on the **Mods** page too. Turn it on and you'll find it in Grand Prix track selection. There's no separate Maps page.
+A community track, such as Sepang or Okayama, is a kind of mod, so you import its package on the **Mods** page too. Turn it on and you'll find it in Grand Prix track selection. There's no separate tracks page.
 
 ## Profiles and in-game settings
 

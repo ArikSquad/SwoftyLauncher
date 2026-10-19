@@ -69,7 +69,7 @@ The importer recognises a track package by the `manifest.json` at the root of it
 | `copy_directories` | `source` folders in the package and their `destination` in the game |
 | `ui.images_file`, `ui.minimap_file` | Menu artwork and minimap files |
 
-Keep every path in the package inside the package. For every table, archive and menu change made during activation, see [How tracks are installed](/reference/maps).
+Keep every path in the package inside the package. For every table, archive and menu change made during activation, see [How tracks are installed](/reference/installing-tracks).
 
 ## The track's name
 
@@ -103,4 +103,4 @@ Use the folder `swofty build` printed under `$DATA/cache/overlay/<profile>/<buil
 - Each rewritten archive and database re-serialises correctly.
 - Every ERS setting is present.
 
-See [Checking a build](/reference/maps#checking-a-build).
+See [Checking a build](/reference/installing-tracks#checking-a-build).
