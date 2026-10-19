@@ -131,6 +131,14 @@
       "binds": "native"
     },
     {
+      "id": "tyres_dept_tags",
+      "type": "toggle",
+      "label": "Tyres icon and colour in R&D lists",
+      "description": "Tyres upgrades get an icon (borrowed stock frames) and the Tyres orange in R&D lists: In Progress, the department category rows, the perks title, Team HQ popups and upgrade cards. Install-time.",
+      "default": true,
+      "binds": "native"
+    },
+    {
       "id": "tyres_test_price",
       "type": "toggle",
       "label": "Tyres upgrades cost 5 points (test)",

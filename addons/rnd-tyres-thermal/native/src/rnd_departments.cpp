@@ -56,6 +56,7 @@
 #include <swofty/mixin.hpp>
 
 #include "rnd_capacity.hpp"
+#include "rnd_dept_tags.hpp"
 #include "rnd_fifth_pie.hpp"
 
 namespace {
@@ -2351,6 +2352,10 @@ void install_page_instance_diag(uintptr_t base)
 // upgrades for the panel's department; nothing exists for department 4, so every bar is empty.
 // The comparison's department byte is aliased to the effect's stock department for our upgrades.
 //
+// v0.7.2 department icon: the borrowed rnd_dept_icons_small frame is "maintenance", the frame the
+// Tyres tile's wheel icon uses, so department 4 has one icon everywhere (rnd_dept_tags.cpp uses the
+// same frame for the lists).
+//
 // v0.7.2 Tyres tile -> Tyres page (pie_tyres_open): the departments screen's box grid picks its first
 // tab at 0x141c86d03 (`mov rax,[rax] ; mov [rsi+0x7b8],rax`, rax = the card-vector element chosen
 // from the stock selection index). While the Performance page's last focused tile is Tyres
@@ -2390,7 +2395,7 @@ static_assert(djb2("back_pressed") == 0x493fe92bu, "back_pressed hash drifted");
 constexpr uint32_t kTestPrice = 5;
 constexpr uint8_t  kEffectDept[3] = {1, 1, 2};
 constexpr const char *kArtBase[3] = {"tyre_blankets", "calipers", "turbo_charger_wear_1"};
-const char kTyresIconFrame[] = "chassis";
+const char kTyresIconFrame[] = "maintenance";
 
 constexpr uintptr_t kRvaOpenDispatch = 0x141c873acull - kImageBase;
 constexpr uintptr_t kOpenSiteOff     = 0x16;
@@ -2942,6 +2947,10 @@ SWOFTY_ON_LOAD
     // v0.7.2: the Tyres tile's fitted/total and progress ring (pie_tyres_counts), on the
     // slot-4 machinery install_fifth_pie just set up.
     install_tile_counts(base);
+
+    // v0.7.2: department 4's icon and colour in the R&D lists (rnd_dept_tags.cpp) - its
+    // OWN one-scan gate + feature flag.
+    rnd_dept_tags::install(base);
 
     // v0.7.1: Durability-equivalent research capacity and R&D modifiers for department 4
     // (rnd_capacity.cpp) - its OWN one-scan gate + feature flag.
