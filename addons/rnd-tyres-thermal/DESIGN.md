@@ -53,24 +53,62 @@ department. No new enum value is minted.
    different, unread copy; the live `rnd-probe` loop proved the loader reads
    indices `0..3` from `{5e21…}`/`{1f30…}`.)
 2. `db/tyres_tree.json` - a small three-node upgrade tree (Tyre Wear, Brakes,
-   Upgrade All Durability), each node a valid clone of the stock durability node
-   schema. **Lookup RESOLVED (v0.4.0):** `Career_Load_UpgradeRows` (0x143539bc0)
-   opens the tree container by dept NAME, `<team_link>.<deptname>`, with
-   `k_Career_UpgradeDeptNameTable[4] = "fake"` - so the 5th department's tree is
-   the `<team_link>.fake` container, and the lookup is a naming convention, not a
-   data key on the dept row. Each record is classified by its own
-   `upgrade_department` -> ENUM A, and the page shows records whose ENUM A matches
-   its code, so the rows set `upgrade_department = "Fake"` (ENUM A = 4) - NOT
-   "Tyres" (which resolves to 0 and would collide with Aero). MyTeam's tree is
-   `<handle>.trees.user_defined` (engine-supplier choice is irrelevant); the four
-   shipped `user_defined.fake` hub containers are `{ae8319a01aa30478}`,
-   `{5927ed801bdb6765}` (2025) and `{75a045fd77ae52b9}`, `{f71aa592926ce9d9}`
-   (2026). The 3 nodes are written as `upgrade_1/2/3` into all four (the shipped
-   `upgrade_0` = `central_fake_upgrade` hub is preserved), each
-   `_upgrade_instancecount_` bumped 1 -> 4. The `attach_tyres_tree` native hook
-   confirms which container the player's save reads. Remaining in-game-test items:
-   the ENUM-A display filter, tree reachability/linkage, and the rating
-   integration.
+   Upgrade All Durability), each node a field-for-field clone of the stock
+   `fake.upgrade_0` hub schema. **Lookup RESOLVED (v0.4.0):** `Career_Load_UpgradeRows`
+   (0x143539bc0) opens the tree container by dept NAME, `<team_link>.<deptname>`,
+   with `k_Career_UpgradeDeptNameTable[4] = "fake"` - so the 5th department's tree
+   is the `<team_link>.fake` container, a naming convention, not a data key on the
+   dept row. Each record is classified by its own `upgrade_department` -> ENUM A,
+   and the page shows records whose ENUM A matches its code, so the rows set
+   `upgrade_department = "Fake"` (ENUM A = 4) - NOT "Tyres" (which resolves to 0
+   and would collide with Aero).
+
+   **Container RESOLVED (v0.4.1, live in-game diagnostic).** The code-4 tree is
+   read per-save from `upgrades.2026.trees.<team_link>.fake`, where `team_link`
+   resolves to the team's **engine-supplier constructor** token, NOT the
+   constructor and NOT a generic `user_defined` hub. A McLaren (Mercedes PU) save
+   opens `upgrades.2026.trees.mercedes.fake` = `{deae0310dc31dce2}`
+   (`_upgrade_instancecount_` key `{b2932bd32df83903}`, `upgrade_0._metadata_` key
+   `{cabec8fb14f94a7a}` - all three match the live diagnostic). The gamedb holds
+   **46 real `.fake` hub containers** (each carries the shipped
+   `fake.upgrade_0 = central_fake_upgrade` hub, `_upgrade_instancecount_ = 1`, same
+   15-key schema). 12 are `upgrades.2026.trees.<team>.fake` for `ferrari`,
+   `force_india`, `gm_cadillac`, `haas`, `mclaren`, `mercedes`, `redbull`,
+   `renault`, `sauber`, `tororosso`, `user_defined`, `williams`; the other 34 are
+   additional verified-identical fake hubs (per-save/variant copies) carried by
+   hash. The 2025-season team trees do not exist, and the
+   `engine_suppliers.trees.engine_supplier_upgrades_N.fake` containers (e.g.
+   `{3c55d614fc76ce3e}`) are **empty** (no hub, no instancecount) so they are not
+   written. The three `user_defined.fake` family hubs the v0.4.0 note mislabelled
+   (`{ae8319a01aa30478}`, `{5927ed801bdb6765}`, `{75a045fd77ae52b9}`, plus the
+   named `{f71aa592926ce9d9}` = `user_defined`) are four of these 46 real hubs and
+   now carry the corrected rows (kept, not removed - they are real per-save
+   targets).
+
+   The 3 nodes ship as `upgrade_1/2/3` into **all 46** containers (the shipped
+   `upgrade_0` hub is preserved, `_upgrade_instancecount_` bumped 1 -> 4), each a
+   field-for-field clone of that container's own stock `fake.upgrade_0` schema (all
+   15 keys, matching type tags). Keys use the per-container
+   `{container_hash}.upgrade_N.<field>` scheme the addon DB-op engine resolves as
+   `fnv1a64_from(container_hash, ".upgrade_N.<field>")`, verified against the real
+   GVDB keys and applied end-to-end through the engine (0 stock collisions,
+   gamedb round-trip stable).
+
+   **Reachability RESOLVED (v0.4.1).** The whole career R&D tree is one graph
+   rooted at the `fake` hub node `default` (`central_fake_upgrade`, grid `0,0`),
+   which links OUTWARD (child/unlock edges) to each department's branch root by the
+   target node's `_metadata_` id (e.g. `gearbox_durability_1`). A node is
+   reachable/buyable only if a directed path from `default` reaches it. So the fix
+   attaches the Tyres branch exactly as a stock department attaches to the hub: the
+   hub's `links` list gains our root (`fake.upgrade_0.links` += `,tyres_thermal_1`,
+   preserving the stock branch targets), then `tyres_thermal_1` -> `tyres_thermal_2`
+   -> `tyres_thermal_3` chain outward. (The v0.4.0 rows linked backward - child to
+   hub - and never attached the hub to the branch, so they were unreachable even
+   in the wrong container.) The `attach_tyres_tree` native hook stays as-is
+   (read-only logging). Remaining in-game-test item: confirm the branch renders and
+   is buyable (link-gated vs. facility-gated buyability is the one thing static
+   analysis cannot settle; the hub-link attach is the stock-faithful, strictly-safer
+   choice either way).
 
 ### Text (`operations.assets`)
 
@@ -146,7 +184,7 @@ to an empty handle, so the slice is populated but no wedge draws yet. See
 | piece | flag | shipped | deferred |
 |---|---|---|---|
 | 5th box visible cell | `render_fifth_box_layout` | read-only slot-vector diagnostic (cause resolved: no authored +0x270 slot / scene cell) | authored/cloned 5th slot + scene rect |
-| upgrade tree | `attach_tyres_tree` | 3 nodes in all 4 `user_defined.fake` hubs (`upgrade_department=Fake`), instancecount 1->4, + container-confirm hook | reachability/linkage + rating integration (in-game test) |
+| upgrade tree | `attach_tyres_tree` | 3 nodes in all 46 real `trees.<team_link>.fake` hubs (`upgrade_department=Fake`), instancecount 1->4, hub `links` attach + outward chain, + container-confirm hook | branch render/buyability confirm + rating integration (in-game test) |
 | 5th pie slice | `render_fifth_pie` (off) | buffer grow + 5th slot + guard relax | authored wedge geometry + jump-table case 4 |
 
 ## Residual unknowns (the in-game test resolves these)
@@ -171,11 +209,14 @@ to an empty handle, so the slice is populated but no wedge draws yet. See
   (the scene authors only four). The `render_fifth_box_layout` diagnostic captures
   the slot/card vectors in-game so that follow-up (external ERP scene patch, or a
   runtime slot clone) has ground truth. See `native/HOOKS.md`.
-- **Upgrade-tree attachment (v0.4.0 RESOLVED).** `Career_Load_UpgradeRows` opens
-  the tree by dept NAME (`<team_link>.fake` for code 4); MyTeam =
-  `<handle>.trees.user_defined`. The 3 nodes ship in the four `user_defined.fake`
-  hub containers as `upgrade_1/2/3` (`upgrade_department=Fake`, ENUM A=4). Open:
-  tree reachability/linkage and rating integration (in-game test).
+- **Upgrade-tree attachment (v0.4.1 RESOLVED).** `Career_Load_UpgradeRows` opens
+  the tree by dept NAME, `upgrades.2026.trees.<team_link>.fake` for code 4, where
+  `team_link` is the team's engine-supplier constructor token (McLaren save ->
+  `mercedes` -> `{deae0310dc31dce2}`, matching the live diagnostic). The 3 nodes
+  ship in all 46 real `trees.<team_link>.fake` hub containers as `upgrade_1/2/3`
+  (`upgrade_department=Fake`, ENUM A=4), attached to the hub `default` via its
+  `links` list and chained outward. Open: confirm the branch renders and is
+  buyable, and the rating integration (in-game test).
 - **Save tolerance** - whether a career save accepts the new row/enum value.
 - **Enum overflow** - no fixed array keyed by the department byte was found
   (the loader's embedded sub-arrays have ~18 slots), but value 4 in a consumer

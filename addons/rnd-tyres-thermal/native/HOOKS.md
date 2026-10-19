@@ -326,24 +326,50 @@ Therefore the Tyres (code-4) page shows records with `upgrade_department="Fake"`
 distinct spare).
 The "fake" container is NOT empty — it is the tree's **central hub**
 (`fake.upgrade_0 = central_fake_upgrade`, instancecount 1, linking the branch
-roots). MyTeam's tree is **`<handle>.trees.user_defined`** (engine-supplier choice
-is irrelevant), with **four shipped `user_defined.fake` containers** (2025/2026 ×
-a duplicate copy), FNV container hashes
-`{ae8319a01aa30478}` `{5927ed801bdb6765}` `{75a045fd77ae52b9}` `{f71aa592926ce9d9}`.
-**Shipped data:** the 3 Tyres nodes are written as `upgrade_1/2/3` into all four
-(preserving `upgrade_0`), each `_upgrade_instancecount_` bumped 1→4, every field a
-field-for-field clone of the stock `fake.upgrade_0` schema (15 keys, correct type
-tags) with real `upgrade_type` (Tyre Wear / Brakes / Upgrade All Durability) and
-`upgrade_department=Fake`. The DB-op `{hash}` selector continues FNV through
-`.upgrade_N.field` (verified against the GVDB keys).
+roots).
+
+**Container RESOLVED (v0.4.1, live diagnostic).** `team_link` is the team's
+**engine-supplier constructor** token, not the constructor and not a generic
+`user_defined` hub: a McLaren (Mercedes PU) save opens
+`upgrades.2026.trees.mercedes.fake` = `{deae0310dc31dce2}` (`_upgrade_instancecount_`
+`{b2932bd32df83903}`, `upgrade_0._metadata_` `{cabec8fb14f94a7a}` — all three match
+the diagnostic). The GVDB holds **46 real `.fake` hub containers**, each with the
+`central_fake_upgrade` hub (`_upgrade_instancecount_ = 1`, identical 15-key
+schema). 12 are `upgrades.2026.trees.<team>.fake` (`ferrari`, `force_india`,
+`gm_cadillac`, `haas`, `mclaren`, `mercedes`, `redbull`, `renault`, `sauber`,
+`tororosso`, `user_defined`, `williams`); the other 34 are additional
+verified-identical fake hubs carried by hash. No 2025-season team trees exist, and
+`engine_suppliers.trees.engine_supplier_upgrades_N.fake` (e.g. `{3c55d614fc76ce3e}`)
+is empty (no hub) so it is not written. The four `user_defined.fake`-family hubs
+the v0.4.0 note mislabelled (`{ae8319a01aa30478}` `{5927ed801bdb6765}`
+`{75a045fd77ae52b9}` `{f71aa592926ce9d9}`) are four of these 46 and now carry the
+corrected rows.
+
+**Shipped data:** the 3 Tyres nodes are written as `upgrade_1/2/3` into all 46
+containers (preserving `upgrade_0`), each `_upgrade_instancecount_` bumped 1→4,
+every field a field-for-field clone of the stock `fake.upgrade_0` schema (15 keys,
+correct type tags) with real `upgrade_type` (Tyre Wear / Brakes / Upgrade All
+Durability) and `upgrade_department=Fake`. The DB-op `{hash}` selector continues FNV
+through `.upgrade_N.field` (`fnv1a64_from(container_hash, ".upgrade_N.field")`;
+verified against the GVDB keys and applied end-to-end through the engine — 0 stock
+collisions, round-trip stable).
+
+**Reachability RESOLVED (v0.4.1).** The whole R&D tree is one graph rooted at the
+hub `default` (grid `0,0`), which links OUTWARD (child/unlock edges) to each
+department's branch root by the target's `_metadata_` id. A node is reachable only
+if a directed path from `default` reaches it, so the Tyres branch attaches the stock
+way: `fake.upgrade_0.links` gains our root (`,tyres_thermal_1`, preserving the stock
+branch targets) and `tyres_thermal_1` → `tyres_thermal_2` → `tyres_thermal_3` chain
+outward. (The v0.4.0 rows linked child→hub and never attached the hub to the branch
+→ unreachable.)
+
 **Shipped native (scan `career.load_upgrade_rows_deptpath` @0x143539c84, default on,
 read-only):** a hook (r8=team_link cstr, r9=deptname cstr, rdi=code) that logs each
-code's resolved path + FNV container hash; the code-4 line should equal one of the
-four hashes above, confirming the placement on the player's save (and revealing the
-exact `{hash}` if a future build/save differs). Remaining in-game-test items: the
-display-filter (ENUM A == card enum), tree reachability/linkage of the new nodes
-(their `links` connect to the hub via `_metadata_` "default"; whether the hub must
-also list them is the open question), and the economy/rating integration.
+code's resolved path + FNV container hash; the code-4 line should now equal
+`{deae0310dc31dce2}` on the McLaren save (one of the 46 real hubs), confirming the
+placement (and revealing the exact `{hash}` if a future build/save differs).
+Remaining in-game-test items: the display-filter (ENUM A == card enum), confirm the
+branch renders and is buyable, and the economy/rating integration.
 
 ### Piece 3 — the development-potential pie 5th slice (flag `render_fifth_pie`, default OFF)
 Live builder `Career_Build_RnDPieOverview` (0x141f46eb0) + populate
