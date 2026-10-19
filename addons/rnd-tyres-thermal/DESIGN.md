@@ -241,6 +241,16 @@ the in-game test (see `native/HOOKS.md`).
   (`tyres_wear_reduction`), "Brake Disc Chill Pill" (`tyres_brake_cooling`) and "Thermal Blanket
   of Destiny" (`tyres_thermal_reliability`) under `lng_rnd_<upgrade_name>`.
 
+## v0.7.0 — the five-sector pie
+
+R&D > Performance gets five overview tiles (3+2) and a five-sector development-potential pie with
+Tyres (orange, 90°-162° counter-clockwise from 3 o'clock) between Aero and Chassis, shipped as ERP
+operations over `flow_career_hub.erp` and `flow_team_hq.erp` (`erp/rnd_fifth_pie.json`, `ui/`). The
+native half (`native/src/rnd_fifth_pie.cpp`) names the fifth slot and tile `tyres`, routes its focus
+and publishes `department_performance.tyres`. `render_fifth_pie` is on by default; its three
+sub-options are `pie_tyres_slice`, `pie_tyres_focus` and `pie_tyres_performance`. Needs a launcher
+with the size-changed archive rewrite (origin/main after PR #138).
+
 ## Residual unknowns (the in-game test resolves these)
 
 - **Does the game read the 5th department row?** Resolved by RE + the live

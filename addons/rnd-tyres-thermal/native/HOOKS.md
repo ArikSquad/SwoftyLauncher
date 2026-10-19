@@ -752,3 +752,31 @@ Per-upgrade name key = `lng_rnd_<upgrade_name>`, description = `lng_rnd_<upgrade
 binder `0x141814320`, desc `0x14385ad00`). The detail title is `lng_rnd_<size>` + `lng_rnd_<type>`
 ("Minor - Tyre Wear") and does not use the name. The department tag over the title is the Tyres card's own
 name key (`lng_rnd_dept_tyres`, the same key the Tyres tab shows), now "Tyres".
+
+## v0.7.0 — the five-sector development-potential pie (folded in)
+
+The pie art and native half were prepared separately (`f1-modding/work/rnd-fifth-pie`) and merged here.
+
+**Assets** (`erp/rnd_fifth_pie.json`, 60 ops, sources under `ui/`): per archive (`flow_career_hub.erp`,
+`flow_team_hq.erp`) 3 `replace-resource` (`rnd_overview.idf` with 3+2 tiles, `laptop_r_and_d.ui` with
+tile 5 bound to `@tyres` and a `dev_potential.tyres` group, `rnd_dev_potential_full.idf` pointing
+`chart_1` at the new pie) and 27 `add-resource` (`rnd_dev_potential5.idf` five 72° sectors,
+`rnd_dev_potential_sect72.idf` + its 3 proxies/models/meshes and 12 buffers, the five-spoke backdrop
+material/texture). The replacements change size, so both archives take the rewritten-archive route
+(launcher PR #138; the v1.0.4 CLI drops them). The research overview (`team_hq/research`) keeps the
+stock four-sector pie.
+
+**Native** (`src/rnd_fifth_pie.cpp`, `rnd_fifth_pie::install` right after `install_fifth_pie`; every piece
+needs `render_fifth_pie`, now default on; slice and focus also need its patches live):
+
+| option | scan gate | sites | for department code 4 |
+|---|---|---|---|
+| `pie_tyres_slice` | 0x141f48253 | 0x141f482a0, 0x141f485ab, 0x141f485b5, 0x141f48a64 | populate name `tyres`, description key, colour 0xff0078ff, wheel icon `maintenance` |
+| `pie_tyres_focus` | 0x141f4aa21 | 0x141f4aa28 (resume 0x141f4aa4f) | `department_focused "tyres"` highlights the sector; `DAT_145f93c08` untouched |
+| `pie_tyres_performance` | 0x1418945a5 | 0x1418945b6, 0x1418946d4, 0x141894702, 0x141894e03; data 0x14571bce0[4] | publisher `0x1418914f0` emits `department_performance.tyres` (derived current/potential) |
+
+All sites were checked for in-function branch targets inside the patched bytes (none). The colour slot
+0x14571bce0[4] is shared with the v0.6.1 card colour write; both accept an already-orange slot.
+Expected log lines: `pie5 slice/perf/focus ... INSTALLED`, then on R&D > Performance
+`pie5 slice: code 4 ...`, `pie5 perf: dept 4 published as department_performance.tyres`, and on the
+Tyres tile `pie5 focus: department_focused "tyres" -> ...`.
