@@ -324,6 +324,269 @@ void ui_groundwork()
     install_ui_probe(g_pie_probe, base + kRvaPie, &on_pie, "pie", base);
 }
 
+// ---------------------------------------------------------------------------
+// R&D > Performance: the LIVE fifth department box (Tyres & Thermal Management).
+//
+// Career_Build_RnDDeptBoxGrid (0x141c85f70) builds exactly four department cards
+// (begin[0..3], enums 0/1/3/2) plus two non-dept panels (begin[4] purchase,
+// begin[5] perks) into a pointer vector at builder+0x280..+0x290, then attaches
+// every slot to the container node builder+0x2d8. There is NO data path to a
+// fifth card. This injection grows the vector to seven and constructs a real
+// fifth Tyres card the game's way so the stock attach loop renders it too.
+//
+// Correction to the earlier scoping note: the card's compile-time "%s.%s.%s"
+// argument is the ICON ATLAS path "<pkg>.rnd_dept_icons_small.<frame>" (6th arg),
+// NOT a per-dept UIDF node path; the 5th arg is the NAME lang key
+// ("lng_rnd_dept_aero"). A dept card therefore needs NO per-dept authored UIDF
+// node and NO launcher UIDF pipeline - it renders through the same card VM node
+// (card+0x268) the other four use, attached to the same container. So the fifth
+// card is built by cloning a stock card's construction: name = our own
+// "lng_rnd_dept_tyres" literal, icon = a BORROWED existing frame (aero), enum = 4
+// (colour table slot [4] = the Tyres orange written by ui_colour_init), and it is
+// placed in a grown slot so the builder's own attach loop binds it.
+//
+// Injection site: 0x141c86567 (start of the purchase-panel alloc, right after the
+// 4th dept card is stored and before the panels are built). At that instruction
+// rsi = the builder (param_1) and rdi = the icon-prefix object (lVar8, non-volatile
+// and still live here), and all four dept cards exist. Reached by an exactly-one
+// scan of a unique signature whose match+8 is the site. Everything is feature-
+// flagged and region-guarded; on any miss it injects nothing and the other hooks
+// are untouched. The <4 selection clamp is deliberately NOT relaxed (a saved
+// index 4 would read colour[0] as a char* via the name table - crash), so the
+// fifth box only RENDERS this round; selection stays within the stock four.
+
+SWOFTY_SETTING(bool, render_fifth_box, true);
+std::atomic<bool> g_fifth_enabled{true};
+
+SWOFTY_ON_CHANGE(render_fifth_box, bool on)
+{
+    g_fifth_enabled.store(on);
+    swofty::log("[rnd-tyres] render_fifth_box toggled -> %s", on ? "on" : "off");
+}
+
+// Fixed RVAs from the reversed image base (0x140000000). The one-scan signature at
+// the hook site proves this exact build, so these siblings are valid; each is also
+// region-guarded before use.
+constexpr uintptr_t kRvaCardCtor       = 0x141c7aac0ull - kImageBase; // Career_Construct_RnDDeptCard
+constexpr uintptr_t kRvaNeMake         = 0x1441974e0ull - kImageBase; // Ne_Make_StrFromCStr
+constexpr uintptr_t kRvaNeFormat       = 0x1441630f0ull - kImageBase; // Ne_Format_String (varargs)
+constexpr uintptr_t kRvaDefaultAlloc   = 0x146ca54a8ull - kImageBase; // g_Ne_DefaultAllocator (free = vt+0x38)
+
+constexpr uint8_t kTyresDeptEnum = 4;          // reads colour table slot [4]
+constexpr size_t  kDeptCardSize  = 0x950;      // Career_Construct_RnDDeptCard object size
+constexpr size_t  kNeStrChars    = 9;          // NeStr::chars byte offset
+constexpr size_t  kNeStrRefcount = 4;          // NeStr::refcount (u16) byte offset
+
+using NeMakeFn   = uint32_t (*)(void **out, const char *s, uint32_t flags, uintptr_t len);
+using NeFormatFn = int64_t (*)(void **out, const char *fmt, ...);
+using CardCtorFn = void *(*)(void *card, void *ctx, void *builder, void *allocator, const char *name,
+                             const char *icon, uintptr_t dept_enum);
+using VtAllocFn  = void *(*)(void *allocator, size_t bytes, size_t align);
+using VtFreeFn   = void (*)(void *allocator, void *ptr);
+
+bool region_writable(const void *p, size_t n)
+{
+    MEMORY_BASIC_INFORMATION mbi{};
+    if (VirtualQuery(p, &mbi, sizeof mbi) != sizeof mbi)
+        return false;
+    if (mbi.State != MEM_COMMIT)
+        return false;
+    const DWORD writable = PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY;
+    if ((mbi.Protect & PAGE_GUARD) || (mbi.Protect & PAGE_NOACCESS) || !(mbi.Protect & writable))
+        return false;
+    uintptr_t endp = reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
+    return reinterpret_cast<uintptr_t>(p) + n <= endp;
+}
+
+void *vt_alloc(void *allocator, size_t bytes, size_t align)
+{
+    if (!region_readable(allocator, 8))
+        return nullptr;
+    uintptr_t vt = *reinterpret_cast<uintptr_t *>(allocator);
+    if (!region_readable(reinterpret_cast<void *>(vt + 0x18), 8))
+        return nullptr;
+    auto fn = *reinterpret_cast<VtAllocFn *>(vt + 0x18);
+    return fn(allocator, bytes, align);
+}
+
+void vt_free(void *allocator, void *ptr)
+{
+    if (!region_readable(allocator, 8))
+        return;
+    uintptr_t vt = *reinterpret_cast<uintptr_t *>(allocator);
+    if (!region_readable(reinterpret_cast<void *>(vt + 0x38), 8))
+        return;
+    auto fn = *reinterpret_cast<VtFreeFn *>(vt + 0x38);
+    fn(allocator, ptr);
+}
+
+// Drop our reference on a temporary NeStr exactly as the game does: atomic
+// refcount--, and if it hit zero free it through g_Ne_DefaultAllocator (vt+0x38).
+void release_nestr(uintptr_t base, void *s)
+{
+    if (!s || !region_writable(reinterpret_cast<uint8_t *>(s) + kNeStrRefcount, sizeof(uint16_t)))
+        return;
+    auto *rc = reinterpret_cast<volatile uint16_t *>(reinterpret_cast<uint8_t *>(s) + kNeStrRefcount);
+    uint16_t after = __atomic_sub_fetch(rc, 1, __ATOMIC_SEQ_CST);
+    if (after != 0)
+        return;
+    uint16_t expected = 0;
+    if (!__atomic_compare_exchange_n(rc, &expected, static_cast<uint16_t>(0xffff), false, __ATOMIC_SEQ_CST,
+                                     __ATOMIC_SEQ_CST))
+        return;
+    void **pa = reinterpret_cast<void **>(base + kRvaDefaultAlloc);
+    if (!region_readable(pa, 8))
+        return;
+    void *alloc = *pa;
+    if (alloc)
+        vt_free(alloc, s);
+}
+
+safetyhook::MidHook g_fifth_hook;
+std::atomic<int> g_fifth_log{0};
+
+// At the injection site: rsi = builder (param_1), rdi = icon-prefix object (lVar8).
+// Grow the 6-pointer card vector to 7, construct a Tyres card into the new slot,
+// and leave the builder's own attach loop to bind it. The two panels are stored
+// into begin[4]/begin[5] by the resumed stock code afterwards (fixed offsets off a
+// freshly-read begin), so the grown slot [6] is the fifth card.
+void on_fifth_box(safetyhook::Context &c)
+{
+    if (!g_fifth_enabled.load())
+        return;
+    bool first = g_fifth_log.fetch_add(1) == 0;
+    uintptr_t base = swofty::api ? swofty::api->module_base() : 0;
+    uintptr_t self = c.rsi;   // builder (param_1)
+    uintptr_t lvar8 = c.rdi;  // icon-prefix object
+
+    auto bail = [&](const char *why) {
+        if (first)
+            swofty::log("[rnd-tyres] 5th box aborted: %s (self=0x%llx)", why, (unsigned long long)self);
+    };
+
+    if (!base) { bail("no module base"); return; }
+    if (!region_readable(reinterpret_cast<void *>(self + 0x278), 0x28)) { bail("builder vector fields unreadable"); return; }
+
+    void *vec_alloc  = *reinterpret_cast<void **>(self + 0x278);
+    uintptr_t begin  = *reinterpret_cast<uintptr_t *>(self + 0x280);
+    uintptr_t endp   = *reinterpret_cast<uintptr_t *>(self + 0x288);
+    uintptr_t cap    = *reinterpret_cast<uintptr_t *>(self + 0x290); // units of pointers
+    void *card_alloc = *reinterpret_cast<void **>(self + 0x298);
+    void *ctx28      = *reinterpret_cast<void **>(self + 0x28);
+
+    if (begin == 0) { bail("null card vector"); return; }
+    uintptr_t used = (endp - begin) / 8;
+    if (used != 6) {
+        if (first)
+            swofty::log("[rnd-tyres] 5th box aborted: card vector has %llu slots, expected 6 "
+                        "(begin=0x%llx end=0x%llx cap=%llu)",
+                        (unsigned long long)used, (unsigned long long)begin, (unsigned long long)endp,
+                        (unsigned long long)cap);
+        return;
+    }
+    if (!region_readable(reinterpret_cast<void *>(lvar8 + 0x660), 8)) { bail("icon-prefix slot unreadable"); return; }
+    char *prefix = *reinterpret_cast<char **>(lvar8 + 0x660);
+    if (!region_readable(prefix, 1)) { bail("icon-prefix string unreadable"); return; }
+
+    if (first)
+        swofty::log("[rnd-tyres] 5th box: page opened; pre-grow card vec{begin=0x%llx end=0x%llx cap=%llu} "
+                    "prefix=\"%s\"",
+                    (unsigned long long)begin, (unsigned long long)endp, (unsigned long long)cap, prefix);
+
+    // 1) Grow the pointer vector to >= 7 (realloc to 8 when needed).
+    uintptr_t newbegin = begin;
+    if (cap < 7) {
+        void *nb = vt_alloc(vec_alloc, 8 * sizeof(void *), sizeof(void *));
+        if (!nb || !region_writable(nb, 8 * sizeof(void *))) { bail("vector realloc failed"); return; }
+        uintptr_t *dst = reinterpret_cast<uintptr_t *>(nb);
+        const uintptr_t *src = reinterpret_cast<const uintptr_t *>(begin);
+        for (int i = 0; i < 6; ++i)
+            dst[i] = src[i];
+        dst[6] = 0;
+        dst[7] = 0;
+        vt_free(vec_alloc, reinterpret_cast<void *>(begin));
+        newbegin = reinterpret_cast<uintptr_t>(nb);
+        *reinterpret_cast<uintptr_t *>(self + 0x280) = newbegin;
+        *reinterpret_cast<uintptr_t *>(self + 0x290) = 8;
+    } else if (!region_writable(reinterpret_cast<void *>(begin + 0x30), 8)) {
+        bail("slot[6] not writable");
+        return;
+    }
+    // end = begin + 7 pointers; the stock code still fills begin[4]/begin[5] (panels).
+    *reinterpret_cast<uintptr_t *>(self + 0x288) = newbegin + 0x38;
+
+    // 2) Construct the real Tyres card.
+    void *card = vt_alloc(card_alloc, kDeptCardSize, 8);
+    if (!card) {
+        *reinterpret_cast<uintptr_t *>(self + 0x288) = newbegin + 0x30; // undo: never leave a null slot[6]
+        bail("card alloc failed");
+        return;
+    }
+
+    void *s = nullptr;
+    auto ne_make = reinterpret_cast<NeMakeFn>(base + kRvaNeMake);
+    auto ne_format = reinterpret_cast<NeFormatFn>(base + kRvaNeFormat);
+    const char *icon = ""; // no texture: fall back to an empty icon if the NeStr build fails
+    if (region_readable(reinterpret_cast<void *>(base + kRvaNeMake), 1)
+        && region_readable(reinterpret_cast<void *>(base + kRvaNeFormat), 1)) {
+        ne_make(&s, "", 0, 0);
+        ne_format(&s, "%s.%s.%s", prefix, "rnd_dept_icons_small", "aero");
+        if (s && region_readable(reinterpret_cast<uint8_t *>(s) + kNeStrChars, 1))
+            icon = reinterpret_cast<const char *>(reinterpret_cast<uint8_t *>(s) + kNeStrChars);
+    }
+
+    auto ctor = reinterpret_cast<CardCtorFn>(base + kRvaCardCtor);
+    if (!region_readable(reinterpret_cast<void *>(base + kRvaCardCtor), 1)) {
+        *reinterpret_cast<uintptr_t *>(self + 0x288) = newbegin + 0x30;
+        release_nestr(base, s);
+        bail("card ctor address unreadable");
+        return;
+    }
+    ctor(card, ctx28, reinterpret_cast<void *>(self), card_alloc, "lng_rnd_dept_tyres", icon, kTyresDeptEnum);
+
+    *reinterpret_cast<uintptr_t *>(newbegin + 0x30) = reinterpret_cast<uintptr_t>(card);
+    release_nestr(base, s);
+
+    if (first) {
+        uint32_t colour = 0;
+        const uint32_t *ctbl = reinterpret_cast<const uint32_t *>(base + kRvaColourTable);
+        if (region_readable(ctbl, 6 * sizeof(uint32_t)))
+            colour = ctbl[kTyresDeptEnum];
+        swofty::log("[rnd-tyres] 5th box INJECTED: card=0x%llx slot[6]@0x%llx begin=0x%llx end=0x%llx cap=8 "
+                    "name=lng_rnd_dept_tyres icon-borrowed=\"%s.rnd_dept_icons_small.aero\" enum=%u colour[4]=0x%08x",
+                    (unsigned long long)reinterpret_cast<uintptr_t>(card), (unsigned long long)(newbegin + 0x30),
+                    (unsigned long long)newbegin, (unsigned long long)(newbegin + 0x38), prefix, (unsigned)kTyresDeptEnum,
+                    colour);
+    }
+}
+
+// Independent gate: one unique scan of the site signature (match+8 = the inject
+// instruction), region check, MidHook. INDEPENDENT of Hooks A/B and the colour
+// write - on any miss it installs nothing and they keep working.
+void install_fifth_box(uintptr_t base)
+{
+    uintptr_t hit = 0;
+    int matches = swofty::api->scan(".xtls", "48 C7 40 18 00 00 00 00 48 8B 8E 98 02 00 00", &hit);
+    if (matches != 1 || !hit) {
+        swofty::log("[rnd-tyres] 5th-box site signature matched %d time(s); NOT hooking (SAFE)", matches);
+        return;
+    }
+    uintptr_t site = hit + 8; // the `mov rcx,[rsi+0x298]` that starts the purchase-panel alloc
+    if (!region_readable(reinterpret_cast<void *>(site), 16)) {
+        swofty::log("[rnd-tyres] 5th-box site @0x%llx not committed; NOT hooking (SAFE)", (unsigned long long)site);
+        return;
+    }
+    auto r = safetyhook::MidHook::create(reinterpret_cast<void *>(site), &on_fifth_box);
+    if (!r) {
+        swofty::log("[rnd-tyres] 5th-box MidHook::create failed @0x%llx (err %d); NOT hooking (SAFE)",
+                    (unsigned long long)site, (int)r.error().type);
+        return;
+    }
+    g_fifth_hook = std::move(*r);
+    swofty::log("[rnd-tyres] 5th-box inject hook installed @0x%llx (base+0x%llx); render_fifth_box=%s",
+                (unsigned long long)site, (unsigned long long)(site - base), g_fifth_enabled.load() ? "on" : "off");
+}
+
 } // namespace
 
 SWOFTY_ON_LOAD
@@ -334,6 +597,10 @@ SWOFTY_ON_LOAD
 
     // UI groundwork + instrumentation first, so it runs even if the data hooks bail.
     ui_groundwork();
+
+    // The live fifth department box - its OWN independent gate + feature flag.
+    g_fifth_enabled.store(render_fifth_box.get());
+    install_fifth_box(base);
 
     uintptr_t hit = 0;
     int matches = swofty::api->scan(".xtls", "75 06 B1 03 EB 02 31 C9 88 8F 40 03 00 00", &hit);
