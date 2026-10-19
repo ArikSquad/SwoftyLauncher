@@ -53,11 +53,24 @@ department. No new enum value is minted.
    different, unread copy; the live `rnd-probe` loop proved the loader reads
    indices `0..3` from `{5e21…}`/`{1f30…}`.)
 2. `db/tyres_tree.json` - a small three-node upgrade tree (Tyre Wear, Brakes,
-   Upgrade All Durability) in a dedicated container, each node a valid clone of
-   the stock durability node schema with `upgrade_department = Tyres`. This is
-   ready data; **attaching the container to the Tyres tab is the next
-   iteration** (the department->tree-container lookup is unresolved by the
-   read-only RE).
+   Upgrade All Durability), each node a valid clone of the stock durability node
+   schema. **Lookup RESOLVED (v0.4.0):** `Career_Load_UpgradeRows` (0x143539bc0)
+   opens the tree container by dept NAME, `<team_link>.<deptname>`, with
+   `k_Career_UpgradeDeptNameTable[4] = "fake"` - so the 5th department's tree is
+   the `<team_link>.fake` container, and the lookup is a naming convention, not a
+   data key on the dept row. Each record is classified by its own
+   `upgrade_department` -> ENUM A, and the page shows records whose ENUM A matches
+   its code, so the rows set `upgrade_department = "Fake"` (ENUM A = 4) - NOT
+   "Tyres" (which resolves to 0 and would collide with Aero). MyTeam's tree is
+   `<handle>.trees.user_defined` (engine-supplier choice is irrelevant); the four
+   shipped `user_defined.fake` hub containers are `{ae8319a01aa30478}`,
+   `{5927ed801bdb6765}` (2025) and `{75a045fd77ae52b9}`, `{f71aa592926ce9d9}`
+   (2026). The 3 nodes are written as `upgrade_1/2/3` into all four (the shipped
+   `upgrade_0` = `central_fake_upgrade` hub is preserved), each
+   `_upgrade_instancecount_` bumped 1 -> 4. The `attach_tyres_tree` native hook
+   confirms which container the player's save reads. Remaining in-game-test items:
+   the ENUM-A display filter, tree reachability/linkage, and the rating
+   integration.
 
 ### Text (`operations.assets`)
 
@@ -116,17 +129,25 @@ a separate lang-key argument. So a dept card needs **no authored UIDF node** and
 stock four use. The v0.2.0 note claiming a fifth box needs an unbuilt UIDF node
 was based on a misread of the card constructor arguments.
 
-**Why the 5th pie slice is NOT shipped yet.** The live Performance-page pie is
-built by `Career_Build_RnDPieOverview` (`0x141f46eb0`, + populate helper
-`0x141f48030`) - NOT the canonical `Career_Build_RnDPotentialPie` (`0x141f41d60`),
-which belongs to a parallel research-overview screen that does not open here. The
-live pie allocates its per-sector array at exactly `0x900` (`0x80 + 4*0x220`) and
-constructs exactly four slots, with a `code < 4` loop guard. A fifth slice needs
-the buffer grown to `0xb20`, a fifth constructed slot, the guards relaxed, a
-`case 4` colour/name - and, unlike the box, a **5th pie-wedge authored in art**
-(the wedge geometry is authored, not computed). That rework is the next
-iteration; see `native/HOOKS.md` for the exact multi-site patch spec against the
-live builder.
+**The 5th pie slice (v0.4.0, partial, flag `render_fifth_pie`, default off).** The
+live Performance-page pie is built by `Career_Build_RnDPieOverview` (`0x141f46eb0`,
++ populate `0x141f48030`) - NOT `Career_Build_RnDPotentialPie` (`0x141f41d60`,
+dormant here). v0.4.0 grows its `0x900` (`0x80 + 4*0x220`) per-slice buffer to
+`0xb20`, constructs a real 5th slot (`FUN_141f45650` @ buf+0x900), and relaxes the
+`code < 4` populate guard so dept code 4 is populated - all faithful extensions of
+the stock prologue (not blind). DEFERRED: the **5th pie-wedge authored in art**
+(four 90-degree sector nodes) and the jump-table `case 4` name/colour; code 4 falls
+to the default case (name `error_department`, white) and its sector node resolves
+to an empty handle, so the slice is populated but no wedge draws yet. See
+`native/HOOKS.md` for the exact sites.
+
+## v0.4.0 status summary
+
+| piece | flag | shipped | deferred |
+|---|---|---|---|
+| 5th box visible cell | `render_fifth_box_layout` | read-only slot-vector diagnostic (cause resolved: no authored +0x270 slot / scene cell) | authored/cloned 5th slot + scene rect |
+| upgrade tree | `attach_tyres_tree` | 3 nodes in all 4 `user_defined.fake` hubs (`upgrade_department=Fake`), instancecount 1->4, + container-confirm hook | reachability/linkage + rating integration (in-game test) |
+| 5th pie slice | `render_fifth_pie` (off) | buffer grow + 5th slot + guard relax | authored wedge geometry + jump-table case 4 |
 
 ## Residual unknowns (the in-game test resolves these)
 
@@ -141,17 +162,20 @@ live builder.
   the same slot as Aerodynamics - so the economy entry may collide with Aero's
   slot rather than form a distinct 5th entry. Whether a distinct 5th *tab* then
   renders (the tab list may enumerate via a different path) is the test question.
-- **UI box rendering** - the R&D > Performance department box grid is **hardcoded
-  to 4 in native code** and does **not** enumerate the `UpgradeDepartmentEntry`
-  data model, so the loader-count bump alone does **not** add a 5th box. v0.3.0
-  therefore injects a real fifth card natively into
-  `Career_Build_RnDDeptBoxGrid` (`0x141c85f70`) - see the v0.3.0 section above and
-  `native/HOOKS.md`. **Open for the in-game test:** whether the box container lays
-  the fifth card out visibly (it may be a fixed 4-slot 2x2 grid, or an auto-flow)
-  - the injection is faithful either way; this is the one thing static analysis
-  cannot settle. The 5th pie slice is deferred (authored wedge art); the live pie
-  builder is `0x141f46eb0` (not `0x141f41d60`).
-- **Upgrade-tree attachment** - which container the Tyres tab loads.
+- **UI box visibility (v0.4.0 RESOLVED cause).** The v0.3.0 5th card is attached
+  but invisible because the box grid's container (`builder+0x2d8`, a UITC tab VM)
+  only shows departments that have an entry in the authored slot vector
+  `builder+0x548..+0x550` (`container+0x270`), created at screen init from authored
+  tab/scene nodes (a fixed four) - the per-card attach never adds a slot. A visible
+  5th cell needs a 5th authored/cloned slot + a 5th `rnd_card_with_info` scene rect
+  (the scene authors only four). The `render_fifth_box_layout` diagnostic captures
+  the slot/card vectors in-game so that follow-up (external ERP scene patch, or a
+  runtime slot clone) has ground truth. See `native/HOOKS.md`.
+- **Upgrade-tree attachment (v0.4.0 RESOLVED).** `Career_Load_UpgradeRows` opens
+  the tree by dept NAME (`<team_link>.fake` for code 4); MyTeam =
+  `<handle>.trees.user_defined`. The 3 nodes ship in the four `user_defined.fake`
+  hub containers as `upgrade_1/2/3` (`upgrade_department=Fake`, ENUM A=4). Open:
+  tree reachability/linkage and rating integration (in-game test).
 - **Save tolerance** - whether a career save accepts the new row/enum value.
 - **Enum overflow** - no fixed array keyed by the department byte was found
   (the loader's embedded sub-arrays have ~18 slots), but value 4 in a consumer

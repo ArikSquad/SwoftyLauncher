@@ -274,3 +274,100 @@ resolved by name-hash via `Vm_GetOrCreate_ChildNode` under `rnd_wheel_icon`
 
 Decompiles: `re/decomp/141f46eb0.c` (live builder), `re/decomp/141f48030.c`
 (populate loop), plus class-A `141f41d60.c`/`141f45d30.c` for contrast.
+
+## v0.4.0 — three independently-gated pieces (box visibility, tree, pie slice)
+
+Three pieces, each behind its OWN exactly-one `.xtls` scan + feature flag,
+independent of Hooks A/B, the colour write and the v0.3.0 box inject. On any scan
+miss / layout mismatch / >1 match each logs `[rnd-tyres]` and does nothing.
+
+### The data model that ties it together (RESOLVED)
+The whole R&D UI (box grid, pie, upgrade trees) is keyed by the per-upgrade
+**ENUM A** (`upgrade_department`), not the team-dept ENUM B:
+`0=aero 1=chassis 2=durability 3=engine 4=Fake` (switch @0x14353a6dd). Value **4
+("Fake") is the unused spare** that card enum 4 / `k_Career_RnDDeptColourTable[4]`
+and `k_Career_UpgradeDeptNameTable[4]="fake"` all line up on. So the "5th
+department" is the code-4/"Fake" slot made real. (The team `department`=Tyres /
+Hook A / ENUM B=4 is a separate axis driving the team's setup, not the R&D grid.)
+
+### Piece 1 — the 5th box is invisible: CAUSE RESOLVED, visible cell DEFERRED
+`Career_Build_RnDDeptBoxGrid`'s container (builder+0x2d8) is an embedded **UITC
+tab-container VM**. A department is visible/selectable only if it has an entry in
+the authored **slot vector at container+0x270..+0x278 (= builder+0x548..+0x550)**,
+0x10 per entry: entry+8 = slotObj, slotObj+0x20 = bound card node, slotObj+8 =
+inner content node. Those slots are created at **screen init** from the authored
+tab/VM nodes (`view_model_data.laptop_r_and_d_departments_container`) + the
+authored `rnd_card_with_info` scene instances in `frontend_overlay.idf`, keyed by
+node id — a **fixed four**. The per-card attach `FUN_14431d720` only registers a
+child (container+0x28/+0x378); it **never writes +0x270**. So the v0.3.0 5th card
+is parented but has no slot and no authored scene cell → invisible (matches the
+live result).
+A genuine 5th cell needs a 5th +0x270 slot **and** a 5th `rnd_card_with_info`
+scene instance with a real cell rect. The slot-register routine (UITC `vt[0x48]` /
+screen builder 0x141c43290) is not in the decompiled corpus and the 5th cell rect
+lives in the un-dumped `frontend_overlay.idf` scene; cloning a slot + fabricating
+a rect blind risks a crash, and the declarative UIDF/ERP pipeline is not built — so
+**no visible-cell lever is safely shippable from the addon this round**.
+**Shipped (flag `render_fifth_box_layout`, default on, scan
+`career.rnd_box_layout_probe` @0x141c86d86, read-only):** a one-shot diagnostic
+that dumps the live slot-vector vs card-vector + every authored slot's bound/inner
+node, so the follow-up (an external f1-modding ERP scene patch adding a 5th
+authored cell, or a runtime slot+scene-node clone using the captured pointers) has
+exact ground truth.
+
+### Piece 2 — the upgrade tree (flag `attach_tyres_tree`)
+`Career_Load_UpgradeRows` (0x143539bc0) loops codes 0..4 and opens
+`<team_link>.<deptname>` (`"%s.%s"`, deptname from `k_Career_UpgradeDeptNameTable`;
+[4]="fake"), reading `upgrade_<N>` rows into one vector. Each record stores only
+its **ENUM-A byte**, so the department page shows records whose ENUM A == its code.
+Therefore the Tyres (code-4) page shows records with `upgrade_department="Fake"`
+(ENUM A=4). `db/tyres_tree.json` sets `upgrade_department="Fake"` — the flagged
+**economy-collision fix** ("Tyres"→0 would collide with Aero; "Fake"→4 is the
+distinct spare).
+The "fake" container is NOT empty — it is the tree's **central hub**
+(`fake.upgrade_0 = central_fake_upgrade`, instancecount 1, linking the branch
+roots). MyTeam's tree is **`<handle>.trees.user_defined`** (engine-supplier choice
+is irrelevant), with **four shipped `user_defined.fake` containers** (2025/2026 ×
+a duplicate copy), FNV container hashes
+`{ae8319a01aa30478}` `{5927ed801bdb6765}` `{75a045fd77ae52b9}` `{f71aa592926ce9d9}`.
+**Shipped data:** the 3 Tyres nodes are written as `upgrade_1/2/3` into all four
+(preserving `upgrade_0`), each `_upgrade_instancecount_` bumped 1→4, every field a
+field-for-field clone of the stock `fake.upgrade_0` schema (15 keys, correct type
+tags) with real `upgrade_type` (Tyre Wear / Brakes / Upgrade All Durability) and
+`upgrade_department=Fake`. The DB-op `{hash}` selector continues FNV through
+`.upgrade_N.field` (verified against the GVDB keys).
+**Shipped native (scan `career.load_upgrade_rows_deptpath` @0x143539c84, default on,
+read-only):** a hook (r8=team_link cstr, r9=deptname cstr, rdi=code) that logs each
+code's resolved path + FNV container hash; the code-4 line should equal one of the
+four hashes above, confirming the placement on the player's save (and revealing the
+exact `{hash}` if a future build/save differs). Remaining in-game-test items: the
+display-filter (ENUM A == card enum), tree reachability/linkage of the new nodes
+(their `links` connect to the hub via `_metadata_` "default"; whether the hub must
+also list them is the open question), and the economy/rating integration.
+
+### Piece 3 — the development-potential pie 5th slice (flag `render_fifth_pie`, default OFF)
+Live builder `Career_Build_RnDPieOverview` (0x141f46eb0) + populate
+`Career_Populate_RnDPieSlices` (0x141f48030). Scan `career.rnd_pie_buf_alloc`
+@0x141f46f6b (`mov rbx,[rsi+0x270]; mov rax,[rbx]; mov edx,0x900; …`), all sites by
+fixed RVA + region/value verified, patches ordered so the guard is relaxed LAST:
+1. buffer `0x900→0xb20` immediate @0x141f46f76 (= 0x80 + 5*0x220).
+2. MidHook @0x141f47012 (rbx=buffer, after the 4th `FUN_141f45650`): construct the
+   5th slot `FUN_141f45650(buf+0x900)` (slot i @ buf+0x80+i*0x220).
+3. relax the populate `code<4` guard `cmp r14d,3 → 4` @0x141f4821b. (The index
+   guard `cmp r13d,4` @0x141f4821e already permits 5 writes; left intact.)
+These are faithful extensions of the stock prologue, not blind writes. **DEFERRED
+(authored art):** the pie **wedge geometry** (four pre-authored 90° sectors) and
+the jump-table `case 4` name/colour. With the guard relaxed, code 4 takes the
+populate DEFAULT jump-table case → name token `error_department`, colour white, and
+its sector node resolves by name-hash under `rnd_wheel_icon` to an EMPTY handle
+(benign, node-guarded). So the 5th slice is **populated but no wedge draws** until a
+5th authored sector node + a `case 4` are added. Extending the 4-entry rel32 jump
+table @0x141f48231 needs a code cave within ±2GB and would be a blind crash risk,
+so it is not done. Default OFF because it has no visible payoff yet and is the
+riskiest piece; toggling at runtime logs that the (install-time) code patches need
+a relaunch.
+
+### New KB signatures (build d873a1c8…, sigcheck green)
+- `career.rnd_pie_buf_alloc` → `site_Career_RnDPieBufAlloc` @0x141f46f6b
+- `career.rnd_box_layout_probe` → `site_Career_RnDDeptBoxLayoutProbe` @0x141c86d86
+- `career.load_upgrade_rows_deptpath` → `site_Career_LoadUpgradeRows_DeptPath` @0x143539c84
