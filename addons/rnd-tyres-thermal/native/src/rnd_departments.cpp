@@ -33,6 +33,12 @@
 // The fix lets ONLY our three instances take the normal path; the stock hub is
 // untouched. See the v0.6.0 section below and native/HOOKS.md.
 //
+// v0.6.1 - the DEVELOP UPGRADE screen. Back from a Tyres upgrade dead-ended because
+// the container's tab-open dispatch has no case for department 4's name; the
+// dispatch now routes it to the Tyres tab. The card art, the vehicle performance
+// comparison and a temporary 5-point test price are handled alongside. See the
+// v0.6.1 section below and native/HOOKS.md.
+//
 // Each hook is gated on an exactly-one scan match. On 0 or >1 matches, or a
 // failed install, it logs and installs nothing, so the DLL stays benign.
 
@@ -43,6 +49,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <cstdio>
 #include <utility>
 
 #include <safetyhook.hpp>
@@ -1380,6 +1387,15 @@ std::atomic<int> g_sanitize_log{0};
 std::atomic<int> g_sanitize_depth{0};
 std::atomic<int> g_sanitize_fail{0};
 std::atomic<bool> g_sanitize_off{false};
+std::atomic<int> g_push_log{0};
+
+const char *state_name(unsigned s)
+{
+    static const char *const kNames[] = {"Unavailable", "Available",         "InProgress",
+                                         "Completed",   "Failed",            "Invalid",
+                                         "PendingDevelopment", "InDevelopment", "PendingFitting"};
+    return s < 9 ? kNames[s] : "?";
+}
 
 bool bytes_are(uintptr_t addr, const uint8_t *want, size_t n)
 {
@@ -1459,6 +1475,13 @@ template <size_t I> void on_guard(safetyhook::Context &c)
     if (g_guard_log[I].fetch_add(1) < 3)
         swofty::log("[rnd-tyres] %s admitted tyres_thermal_%d \"%s\" (dept 4 treated as a real department)",
                     kGuardSites[I].what, idx + 1, inst_name(u));
+    if constexpr (I == 0) {
+        unsigned to = static_cast<unsigned>(c.r8 & 0xffu);
+        if (to != 0 && to != 1 && g_push_log.fetch_add(1) < 160)
+            swofty::log("[rnd-tyres] state push: tyres_thermal_%d \"%s\" owner=0x%x -> %u (%s) arg=0x%x", idx + 1,
+                        inst_name(u), static_cast<unsigned>(c.rdx & 0xffffffffu), to, state_name(to),
+                        static_cast<unsigned>(c.r9 & 0xffffffffu));
+    }
 }
 
 using GuardFn = void (*)(safetyhook::Context &);
@@ -1824,6 +1847,534 @@ void install_page_instance_diag(uintptr_t base)
                 (unsigned long long)site, (unsigned long long)(site - base));
 }
 
+// ---------------------------------------------------------------------------
+// v0.6.1: the DEVELOP UPGRADE screen for the Tyres upgrades.
+//
+// The screen is the departments container's purchase tab (LaptopRnDUpgradePurchaseViewModel,
+// vtable 0x145740ac0, built by 0x141c8a080, updated by 0x141c8d540, messages 0x141c8bcc0). It
+// copies the upgrade's department into panel+0x6e8.
+//
+// Back trap: on back_pressed (djb2 0x493fe92b) the panel sends the container "open <name>" with
+// name = dept < 4 ? k_Career_RnDDeptNameTable[dept] : "error_department". The container's open
+// dispatch (0x141c86fc0) only knows aero/chassis/engine/maintenance and the two panels; any other
+// name hash returns without switching tabs, and the input is consumed. The perks tab's back
+// (return_department_name, set by the department page with the same fallback) and the department
+// page's cross-department jump hit the same dead end. Fix: teach the dispatch the names "tyres"
+// and "error_department" (only ever produced for a department >= 4): select the Tyres card's tab
+// the stock way (FUN_141c87620 department mode, enable the card, resume in the stock tail), or,
+// if no Tyres tab with a slot exists, route to Durability. Back can no longer dead-end.
+//
+// Card art: the upgrade card binders build "<pkg>.rnd_part_image.<upgrade_name>[_suffix]" and
+// "<pkg>.rnd_part_mask.<upgrade_name>". Our names have no atlas frame, so the card and unlock
+// tiles render blank. The six variable-name Ne_Format_String calls get a borrowed stock part, and
+// the three "<pkg>.rnd_dept_icons_small.error_department" department icons get the chassis frame.
+//
+// Comparison: the vehicle performance comparison sums each team's base rating plus completed
+// upgrades for the panel's department; nothing exists for department 4, so every bar is empty.
+// The comparison's department byte is aliased to the effect's stock department for our upgrades.
+//
+// Test price: the cost of an upgrade is FUN_143525b60(list, instance, team modifiers, option); the
+// affordability list, the research/development cost wrappers and the card all use it. For our
+// three it returns kTestPrice (flag tyres_test_price, temporary).
+
+SWOFTY_SETTING(bool, tyres_upgrade_screen, true);
+SWOFTY_SETTING(bool, tyres_test_price, true);
+std::atomic<bool> g_screen_enabled{true};
+std::atomic<bool> g_price_enabled{true};
+
+SWOFTY_ON_CHANGE(tyres_upgrade_screen, bool on)
+{
+    g_screen_enabled.store(on);
+    swofty::log("[rnd-tyres] tyres_upgrade_screen toggled -> %s (art/comparison follow at once; the Back route stays "
+                "installed until relaunch)",
+                on ? "on" : "off");
+}
+
+SWOFTY_ON_CHANGE(tyres_test_price, bool on)
+{
+    g_price_enabled.store(on);
+    swofty::log("[rnd-tyres] tyres_test_price toggled -> %s", on ? "on" : "off");
+}
+
+constexpr uint32_t kHashTyresTab = djb2("tyres");
+constexpr uint32_t kHashErrDept  = djb2("error_department");
+constexpr uint32_t kHashMaint    = djb2("maintenance");
+static_assert(kHashTyresTab == 0x107666dcu && kHashErrDept == 0x7e5c1342u && kHashMaint == 0x5c31ec68u,
+              "djb2 tab-name hashes drifted");
+static_assert(djb2("back_pressed") == 0x493fe92bu, "back_pressed hash drifted");
+
+constexpr uint32_t kTestPrice = 5;
+constexpr uint8_t  kEffectDept[3] = {1, 1, 2};
+constexpr const char *kArtBase[3] = {"tyre_blankets", "calipers", "turbo_charger_wear_1"};
+const char kTyresIconFrame[] = "chassis";
+
+constexpr uintptr_t kRvaOpenDispatch = 0x141c873acull - kImageBase;
+constexpr uintptr_t kOpenSiteOff     = 0x16;
+constexpr uintptr_t kRvaOpenTail     = 0x141c875a5ull - kImageBase;
+constexpr uintptr_t kRvaTabSelect    = 0x141c87620ull - kImageBase;
+constexpr uintptr_t kRvaTabEnable    = 0x14431f470ull - kImageBase;
+constexpr uintptr_t kRvaCompareSite  = 0x141c8ec4cull - kImageBase;
+constexpr uintptr_t kRvaCompareWin   = 0x141c8ec3full - kImageBase;
+constexpr uintptr_t kRvaCardColour   = 0x14571bce0ull - kImageBase;
+constexpr uintptr_t kRvaCostFn       = 0x143525b60ull - kImageBase;
+constexpr uintptr_t kRvaRetWin       = 0x14351df50ull - kImageBase;
+constexpr uintptr_t kRvaBackWin      = 0x141c8c150ull - kImageBase;
+constexpr uintptr_t kRvaBackSite     = 0x141c8c172ull - kImageBase;
+constexpr uintptr_t kRvaOptionFn     = 0x141c8cbb0ull - kImageBase;
+constexpr uintptr_t kRvaPurchaseFn   = 0x1412414c0ull - kImageBase;
+constexpr uintptr_t kRvaDeptCardVt   = 0x145740250ull - kImageBase;
+
+const uint8_t kOpenTailBytes[]  = {0x48, 0x8b, 0x00, 0x48, 0x85, 0xc0, 0x74, 0x48, 0x48, 0x89,
+                                   0x86, 0xb8, 0x07, 0x00, 0x00, 0x48, 0x8d, 0x8e, 0xd8, 0x02};
+const uint8_t kTabSelectBytes[] = {0x41, 0x56, 0x56, 0x57, 0x55, 0x53, 0x48, 0x83, 0xec, 0x50, 0x89, 0xd7,
+                                   0x4c, 0x8b, 0x31, 0x49, 0x8d, 0xb6, 0xd8, 0x02, 0x00, 0x00, 0x83, 0xfa};
+const uint8_t kTabEnableBytes[] = {0xe9, 0xcb, 0x19, 0x94, 0x0f};
+const uint8_t kCompareBytes[]   = {0x48, 0x8d, 0x84, 0x24, 0x00, 0x01, 0x00, 0x00, 0x48, 0x89, 0x44, 0x24, 0x20, 0x48, 0x8d,
+                                   0x9c, 0x24, 0x58, 0x01, 0x00, 0x00, 0x48, 0x89, 0xd9, 0xe8, 0x54, 0x44, 0xb8, 0xff};
+const uint8_t kCostBytes[]      = {0x41, 0x57, 0x41, 0x56, 0x41, 0x54, 0x56, 0x57, 0x55, 0x53, 0x48, 0x81,
+                                   0xec, 0xa0, 0x00, 0x00, 0x00, 0xc5, 0x78, 0x29, 0x84, 0x24, 0x90, 0x00,
+                                   0x00, 0x00, 0xc5, 0xf8, 0x29, 0xbc, 0x24, 0x80, 0x00, 0x00, 0x00, 0xc5,
+                                   0xf8, 0x29, 0x74, 0x24, 0x70, 0x44, 0x89, 0xcf, 0x31, 0xc0, 0x40, 0xf6,
+                                   0xc7, 0x06, 0x0f, 0x95, 0xc0, 0x44, 0x8b, 0x64, 0x82, 0x5c, 0x80, 0x7a};
+const uint8_t kRetBytes[]       = {0x41, 0x5c, 0x41, 0x5e, 0x41, 0x5f, 0xc3, 0xcc};
+const uint8_t kBackBytes[]      = {0x48, 0x0f, 0xbe, 0x86, 0xe8, 0x06, 0x00, 0x00, 0x48, 0x83, 0xf8, 0x03,
+                                   0x77, 0x0d, 0x48, 0x8d, 0x0d, 0xf3, 0x9c, 0xac, 0x03, 0x48, 0x8b, 0x14,
+                                   0xc1, 0xeb, 0x07, 0x48, 0x8d, 0x15, 0x9b, 0x1f, 0xbf, 0x03, 0x48, 0x8b,
+                                   0xb6, 0x20, 0x06, 0x00, 0x00};
+const uint8_t kOptionBytes[]    = {0x41, 0x56, 0x56, 0x57, 0x55, 0x53, 0x48, 0x83, 0xec, 0x40, 0x89, 0xd3,
+                                   0x48, 0x89, 0xce, 0x48, 0x8b, 0xb9, 0xe0, 0x06, 0x00, 0x00, 0xc6, 0x44};
+const uint8_t kPurchaseBytes[]  = {0x41, 0x57, 0x41, 0x56, 0x56, 0x57, 0x55, 0x53, 0x48, 0x83, 0xec, 0x48,
+                                   0x4d, 0x85, 0xc0, 0x0f, 0x84, 0x01, 0x01, 0x00, 0x00, 0x44, 0x89, 0xcd};
+const uint32_t kCardColourStock[6] = {0xffeead00, 0xff3ec58d, 0xff16deff, 0xff7a2aed, 0xffffffff, 0xffffffff};
+
+struct ArtSite {
+    uintptr_t win_rva;
+    uintptr_t call_rva;
+    uint8_t bytes[39];
+    size_t len;
+};
+
+const ArtSite kArtSites[] = {
+    {0x141810100ull - kImageBase, 0x141810122ull - kImageBase,
+     {0x48, 0x8b, 0x84, 0x24, 0xd8, 0x00, 0x00, 0x00, 0x4c, 0x8b, 0x40, 0x10, 0x4c, 0x89, 0x7c, 0x24, 0x20, 0x48, 0x8d, 0x15,
+      0xa1, 0x60, 0xe2, 0x03, 0x4c, 0x8d, 0x0d, 0x7e, 0x07, 0xf0, 0x03, 0x4c, 0x89, 0xf1, 0xe8, 0xc9, 0x2f, 0x95, 0x02},
+     39},
+    {0x141810380ull - kImageBase, 0x1418103a2ull - kImageBase,
+     {0x48, 0x8b, 0x84, 0x24, 0xd8, 0x00, 0x00, 0x00, 0x4c, 0x8b, 0x40, 0x10, 0x48, 0x89, 0x6c, 0x24, 0x20, 0x48, 0x8d, 0x15,
+      0x21, 0x5e, 0xe2, 0x03, 0x4c, 0x8d, 0x0d, 0x19, 0x05, 0xf0, 0x03, 0x4c, 0x89, 0xf9, 0xe8, 0x49, 0x2d, 0x95, 0x02},
+     39},
+    {0x1418154b3ull - kImageBase, 0x1418154d0ull - kImageBase,
+     {0x4d, 0x8b, 0x87, 0x60, 0x06, 0x00, 0x00, 0x48, 0x89, 0x5c, 0x24, 0x20, 0x48, 0x8d, 0x15, 0xf3, 0x0c,
+      0xe2, 0x03, 0x4c, 0x8d, 0x0d, 0xd0, 0xb3, 0xef, 0x03, 0x48, 0x89, 0xe9, 0xe8, 0x1b, 0xdc, 0x94, 0x02},
+     34},
+    {0x141815572ull - kImageBase, 0x14181558full - kImageBase,
+     {0x4d, 0x8b, 0x87, 0x60, 0x06, 0x00, 0x00, 0x48, 0x89, 0x5c, 0x24, 0x20, 0x48, 0x8d, 0x15, 0x34, 0x0c,
+      0xe2, 0x03, 0x4c, 0x8d, 0x0d, 0x2c, 0xb3, 0xef, 0x03, 0x48, 0x89, 0xe9, 0xe8, 0x5c, 0xdb, 0x94, 0x02},
+     34},
+    {0x14181843full - kImageBase, 0x14181845cull - kImageBase,
+     {0x4c, 0x8b, 0x83, 0x60, 0x06, 0x00, 0x00, 0x48, 0x89, 0x7c, 0x24, 0x20, 0x48, 0x8d, 0x15, 0x67, 0xdd,
+      0xe1, 0x03, 0x4c, 0x8d, 0x0d, 0x44, 0x84, 0xef, 0x03, 0x4c, 0x89, 0xf9, 0xe8, 0x8f, 0xac, 0x94, 0x02},
+     34},
+    {0x141818511ull - kImageBase, 0x14181852eull - kImageBase,
+     {0x4c, 0x8b, 0x83, 0x60, 0x06, 0x00, 0x00, 0x48, 0x89, 0x7c, 0x24, 0x20, 0x48, 0x8d, 0x15, 0x95, 0xdc,
+      0xe1, 0x03, 0x4c, 0x8d, 0x0d, 0x8d, 0x83, 0xef, 0x03, 0x4c, 0x89, 0xf9, 0xe8, 0xbd, 0xab, 0x94, 0x02},
+     34},
+    {0x141810460ull - kImageBase, 0x141810482ull - kImageBase,
+     {0x48, 0x8b, 0x84, 0x24, 0xd8, 0x00, 0x00, 0x00, 0x4c, 0x8b, 0x40, 0x10, 0x48, 0x89, 0x6c, 0x24, 0x20, 0x48, 0x8d, 0x15,
+      0x41, 0x5d, 0xe2, 0x03, 0x4c, 0x8d, 0x0d, 0x5b, 0xb8, 0xef, 0x03, 0x4c, 0x89, 0xf9, 0xe8, 0x69, 0x2c, 0x95, 0x02},
+     39},
+    {0x141815653ull - kImageBase, 0x141815670ull - kImageBase,
+     {0x4d, 0x8b, 0x87, 0x60, 0x06, 0x00, 0x00, 0x48, 0x89, 0x5c, 0x24, 0x20, 0x48, 0x8d, 0x15, 0x53, 0x0b,
+      0xe2, 0x03, 0x4c, 0x8d, 0x0d, 0x6d, 0x66, 0xef, 0x03, 0x48, 0x89, 0xe9, 0xe8, 0x7b, 0xda, 0x94, 0x02},
+     34},
+    {0x1418185feull - kImageBase, 0x14181861bull - kImageBase,
+     {0x4c, 0x8b, 0x83, 0x60, 0x06, 0x00, 0x00, 0x48, 0x89, 0x7c, 0x24, 0x20, 0x48, 0x8d, 0x15, 0xa8, 0xdb,
+      0xe1, 0x03, 0x4c, 0x8d, 0x0d, 0xc2, 0x36, 0xef, 0x03, 0x4c, 0x89, 0xf9, 0xe8, 0xd0, 0xaa, 0x94, 0x02},
+     34},
+};
+constexpr size_t kNumArtSites = sizeof(kArtSites) / sizeof(kArtSites[0]);
+
+using TabSelectFn = void (*)(uintptr_t *holder, uint32_t idx);
+using TabEnableFn = void (*)(uintptr_t tabs, uintptr_t node, uint32_t enabled);
+
+TabSelectFn g_tab_select = nullptr;
+TabEnableFn g_tab_enable = nullptr;
+uintptr_t g_open_tail = 0;
+uintptr_t g_ret_stub = 0;
+uintptr_t g_dept_card_vt = 0;
+
+safetyhook::MidHook g_open_hook;
+safetyhook::MidHook g_compare_hook;
+safetyhook::MidHook g_art_hooks[kNumArtSites];
+safetyhook::MidHook g_cost_hook;
+safetyhook::MidHook g_back_diag_hook;
+safetyhook::MidHook g_option_diag_hook;
+safetyhook::MidHook g_purchase_diag_hook;
+
+std::atomic<int> g_open_log{0};
+std::atomic<int> g_compare_log{0};
+std::atomic<int> g_art_log{0};
+std::atomic<int> g_cost_log{0};
+std::atomic<int> g_back_log{0};
+std::atomic<int> g_option_log{0};
+std::atomic<int> g_purchase_log{0};
+
+bool find_tyres_tab(uintptr_t C, uintptr_t &elem, uintptr_t &card)
+{
+    if (!region_readable(reinterpret_cast<void *>(C + 0x280), 0x10)
+        || !region_readable(reinterpret_cast<void *>(C + 0x548), 0x10))
+        return false;
+    uintptr_t cb = rd_ptr(C + 0x280), ce = rd_ptr(C + 0x288);
+    uintptr_t sb = rd_ptr(C + 0x548), se = rd_ptr(C + 0x550);
+    if (!cb || ce < cb || (ce - cb) % 8 || (ce - cb) / 8 > 16 || !sb || se < sb || (se - sb) % 0x10
+        || (se - sb) / 0x10 > 32)
+        return false;
+    for (uintptr_t p = cb; p < ce; p += 8) {
+        uintptr_t k = rd_ptr(p);
+        if (!k || !region_readable(reinterpret_cast<void *>(k + 0x268), 0x478))
+            continue;
+        if (rd_ptr(k) != g_dept_card_vt || *reinterpret_cast<const uint8_t *>(k + 0x6d8) != kDeptFake)
+            continue;
+        for (uintptr_t s = sb; s < se; s += 0x10) {
+            uintptr_t obj = rd_ptr(s + 8);
+            if (!obj || !region_readable(reinterpret_cast<void *>(obj), 0x28))
+                continue;
+            if (rd_ptr(obj + 0x20) == k + 0x268 && rd_ptr(obj + 8) != 0) {
+                elem = p;
+                card = k;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+void on_open_dispatch(safetyhook::Context &c)
+{
+    uint32_t h = static_cast<uint32_t>(c.rax & 0xffffffffu);
+    if (h != kHashTyresTab && h != kHashErrDept)
+        return;
+    const char *tok = h == kHashTyresTab ? "tyres" : "error_department";
+    uintptr_t C = c.rsi;
+    uintptr_t elem = 0, card = 0;
+    bool first = g_open_log.fetch_add(1) < 64;
+    if (g_tab_select && g_open_tail && find_tyres_tab(C, elem, card)) {
+        uintptr_t holder = C;
+        g_tab_select(&holder, 0);
+        if (g_tab_enable)
+            g_tab_enable(C + 0x2d8, card + 0x268, 1);
+        c.rax = elem;
+        c.rip = g_open_tail;
+        if (first)
+            swofty::log("[rnd-tyres] develop-upgrade back/open \"%s\" -> Tyres tab (card=0x%llx slot elem=0x%llx); "
+                        "department mode restored",
+                        tok, (unsigned long long)card, (unsigned long long)elem);
+        return;
+    }
+    c.rax = (c.rax & ~0xffffffffull) | kHashMaint;
+    if (first)
+        swofty::log("[rnd-tyres] develop-upgrade back/open \"%s\": no Tyres tab with a slot (container=0x%llx) -> "
+                    "routed to Durability so Back never dead-ends",
+                    tok, (unsigned long long)C);
+}
+
+void on_compare_dept(safetyhook::Context &c)
+{
+    if (!g_screen_enabled.load())
+        return;
+    uint8_t *d = reinterpret_cast<uint8_t *>(c.rsp + 0x108);
+    if (*d != kDeptFake || !region_readable(reinterpret_cast<void *>(c.rsi + 0x6a8), 8))
+        return;
+    uintptr_t inst = rd_ptr(c.rsi + 0x6a8);
+    if (!inst || !region_readable(reinterpret_cast<void *>(inst), kInstSize))
+        return;
+    int idx = our_index(inst);
+    if (idx < 0)
+        return;
+    *d = kEffectDept[idx];
+    if (g_compare_log.fetch_add(1) < 12)
+        swofty::log("[rnd-tyres] vehicle performance comparison: tyres_thermal_%d \"%s\" department 4 -> %u (%s) for "
+                    "the team bars",
+                    idx + 1, inst_name(inst), static_cast<unsigned>(kEffectDept[idx]),
+                    kEffectDept[idx] == 1 ? "Chassis" : "Durability");
+}
+
+int match_our_name(const char *s, const char *&suffix)
+{
+    for (int i = 0; i < 3; ++i) {
+        const char *n = kOurNames[i];
+        size_t k = 0;
+        while (n[k] && s[k] == n[k])
+            ++k;
+        if (n[k] == '\0' && (s[k] == '\0' || s[k] == '_')) {
+            suffix = s + k;
+            return i;
+        }
+    }
+    return -1;
+}
+
+char *next_art_buf()
+{
+    static char bufs[8][96];
+    static std::atomic<unsigned> slot{0};
+    return bufs[slot.fetch_add(1) & 7];
+}
+
+template <size_t I> void on_part_art(safetyhook::Context &c)
+{
+    if (!g_screen_enabled.load())
+        return;
+    const char **arg = reinterpret_cast<const char **>(c.rsp + 0x20);
+    const char *name = *arg;
+    if (!name || !region_readable(name, 1))
+        return;
+    if (cstr_eq(name, "error_department", 17)) {
+        *arg = kTyresIconFrame;
+        if (g_art_log.fetch_add(1) < 24)
+            swofty::log("[rnd-tyres] card art: site %u department icon \"error_department\" -> borrowed \"%s\"",
+                        static_cast<unsigned>(I), kTyresIconFrame);
+        return;
+    }
+    const char *suffix = nullptr;
+    int idx = match_our_name(name, suffix);
+    if (idx < 0)
+        return;
+    const char *pkg = reinterpret_cast<const char *>(c.r8);
+    bool omxm = false;
+    if (pkg && region_readable(pkg, 1)) {
+        for (size_t i = 0; i < 160 && pkg[i]; ++i)
+            if (pkg[i] == 'o' && pkg[i + 1] == 'm' && pkg[i + 2] == '_' && pkg[i + 3] == 'x' && pkg[i + 4] == 'm') {
+                omxm = true;
+                break;
+            }
+    }
+    char *buf = next_art_buf();
+    size_t o = 0;
+    auto put = [&](const char *t) {
+        for (; *t && o + 1 < 96; ++t)
+            buf[o++] = *t;
+    };
+    if (omxm)
+        put("om_xm_");
+    put(kArtBase[idx]);
+    put(suffix);
+    buf[o] = '\0';
+    *arg = buf;
+    if (g_art_log.fetch_add(1) < 24)
+        swofty::log("[rnd-tyres] card art: site %u \"%s\" -> borrowed \"%s\"", static_cast<unsigned>(I), name, buf);
+}
+
+using ArtFn = void (*)(safetyhook::Context &);
+template <size_t... I> constexpr auto make_art_fns(std::index_sequence<I...>)
+{
+    return std::array<ArtFn, sizeof...(I)>{&on_part_art<I>...};
+}
+constexpr auto kArtFns = make_art_fns(std::make_index_sequence<kNumArtSites>{});
+
+void on_cost(safetyhook::Context &c)
+{
+    if (!g_price_enabled.load())
+        return;
+    uintptr_t inst = c.rdx;
+    if (!inst || *reinterpret_cast<const uint8_t *>(inst + kInstDept) != kDeptFake)
+        return;
+    int idx = our_index(inst);
+    if (idx < 0)
+        return;
+    c.rax = kTestPrice;
+    c.rip = g_ret_stub;
+    if (g_cost_log.fetch_add(1) < 16)
+        swofty::log("[rnd-tyres] test price: tyres_thermal_%d \"%s\" option=0x%x -> %u research points", idx + 1,
+                    inst_name(inst), static_cast<unsigned>(c.r9 & 0xffffffffu), kTestPrice);
+}
+
+void on_back_diag(safetyhook::Context &c)
+{
+    uintptr_t panel = c.rsi;
+    if (!region_readable(reinterpret_cast<void *>(panel + 0x6a8), 0x48))
+        return;
+    unsigned dept = *reinterpret_cast<const uint8_t *>(panel + 0x6e8);
+    int n = g_back_log.fetch_add(1);
+    if (dept < 4 && n >= 4)
+        return;
+    if (n >= 48)
+        return;
+    uintptr_t inst = rd_ptr(panel + 0x6a8);
+    const char *nm = (inst && region_readable(reinterpret_cast<void *>(inst), kInstSize)) ? inst_name(inst) : "?";
+    const char *to = reinterpret_cast<const char *>(c.rdx);
+    char tob[48];
+    copy_cstr(to, tob, sizeof tob);
+    swofty::log("[rnd-tyres] develop-upgrade back_pressed: upgrade \"%s\" dept=%u -> open \"%s\"%s", nm, dept, tob,
+                dept >= 4 ? " (handled by the Tyres-tab route)" : "");
+}
+
+void on_option_diag(safetyhook::Context &c)
+{
+    uintptr_t panel = c.rcx;
+    if (!region_readable(reinterpret_cast<void *>(panel + 0x6a8), 0x48))
+        return;
+    uintptr_t inst = rd_ptr(panel + 0x6a8);
+    if (!inst || !region_readable(reinterpret_cast<void *>(inst), kInstSize))
+        return;
+    int idx = our_index(inst);
+    if (idx < 0 || g_option_log.fetch_add(1) >= 40)
+        return;
+    uintptr_t sb = 0, se = 0;
+    bool ok = states_of(inst, sb, se) && se != sb;
+    const uint8_t *p = reinterpret_cast<const uint8_t *>(panel);
+    swofty::log("[rnd-tyres] develop-upgrade options: tyres_thermal_%d \"%s\" arg=0x%x state=%s blocked: "
+                "cannot-develop=%u insufficient-points=%u research-limit=%u",
+                idx + 1, inst_name(inst), static_cast<unsigned>(c.rdx & 0xffffffffu),
+                ok ? state_name(*reinterpret_cast<const uint8_t *>(se - 8)) : "?", p[0x6d0], p[0x6d1], p[0x6d2]);
+}
+
+void on_purchase_diag(safetyhook::Context &c)
+{
+    uintptr_t inst = c.r8;
+    if (!inst || !region_readable(reinterpret_cast<void *>(inst), kInstSize))
+        return;
+    int idx = our_index(inst);
+    if (idx < 0 || g_purchase_log.fetch_add(1) >= 40)
+        return;
+    uintptr_t sb = 0, se = 0;
+    bool ok = states_of(inst, sb, se) && se != sb;
+    swofty::log("[rnd-tyres] purchase request: tyres_thermal_%d \"%s\" team=0x%x option=%u state=%s", idx + 1,
+                inst_name(inst), static_cast<unsigned>(c.rdx & 0xffffffffu), static_cast<unsigned>(c.r9 & 0xffu),
+                ok ? state_name(*reinterpret_cast<const uint8_t *>(se - 8)) : "?");
+}
+
+bool hook_at(safetyhook::MidHook &slot, uintptr_t addr, void (*fn)(safetyhook::Context &), const char *what)
+{
+    auto r = safetyhook::MidHook::create(reinterpret_cast<void *>(addr), fn);
+    if (!r) {
+        swofty::log("[rnd-tyres] %s MidHook::create failed @0x%llx (err %d); NOT installed (SAFE)", what,
+                    (unsigned long long)addr, (int)r.error().type);
+        return false;
+    }
+    slot = std::move(*r);
+    swofty::log("[rnd-tyres] %s installed @0x%llx", what, (unsigned long long)addr);
+    return true;
+}
+
+void install_card_colour(uintptr_t base)
+{
+    uint32_t *tbl = reinterpret_cast<uint32_t *>(base + kRvaCardColour);
+    if (!region_readable(tbl, 6 * sizeof(uint32_t))) {
+        swofty::log("[rnd-tyres] card colour table not readable; left stock (SAFE)");
+        return;
+    }
+    if (tbl[4] == kColTyres) {
+        swofty::log("[rnd-tyres] card colour[4] already Tyres orange");
+        return;
+    }
+    for (int i = 0; i < 6; ++i)
+        if (tbl[i] != kCardColourStock[i]) {
+            swofty::log("[rnd-tyres] card colour table differs from stock at [%d]=%08x; left stock (SAFE)", i, tbl[i]);
+            return;
+        }
+    DWORD old = 0;
+    if (!VirtualProtect(&tbl[4], sizeof(uint32_t), PAGE_READWRITE, &old)) {
+        swofty::log("[rnd-tyres] card colour VirtualProtect failed; left stock (SAFE)");
+        return;
+    }
+    *reinterpret_cast<volatile uint32_t *>(&tbl[4]) = kColTyres;
+    DWORD tmp = 0;
+    VirtualProtect(&tbl[4], sizeof(uint32_t), old, &tmp);
+    swofty::log("[rnd-tyres] upgrade card colour[4] (dept 4) white -> Tyres 0x%08x @0x%llx", kColTyres,
+                (unsigned long long)(uintptr_t)&tbl[4]);
+}
+
+void install_upgrade_screen(uintptr_t base)
+{
+    if (!tyres_upgrade_screen.get()) {
+        swofty::log("[rnd-tyres] tyres_upgrade_screen off; Develop Upgrade screen fixes NOT installed (Back from a "
+                    "Tyres upgrade dead-ends, as in v0.6.0)");
+        return;
+    }
+    uintptr_t hit = 0;
+    int matches = swofty::api->scan(".xtls",
+                                    "3D 0A 0E 23 10 0F 84 BF 01 00 00 3D 0C FD 93 7C 0F 84 D0 01 00 00 3D 68 EC 31 5C "
+                                    "0F 85 28 02 00 00",
+                                    &hit);
+    if (matches != 1 || hit != base + kRvaOpenDispatch) {
+        swofty::log("[rnd-tyres] tab-open dispatch signature matched %d time(s) (hit 0x%llx); Develop Upgrade screen "
+                    "fixes NOT installed (SAFE)",
+                    matches, (unsigned long long)hit);
+        return;
+    }
+    if (!bytes_are(base + kRvaOpenTail, kOpenTailBytes, sizeof kOpenTailBytes)
+        || !bytes_are(base + kRvaTabSelect, kTabSelectBytes, sizeof kTabSelectBytes)) {
+        swofty::log("[rnd-tyres] tab-open tail / tab-select bytes differ; Back route NOT installed (SAFE)");
+    } else {
+        g_open_tail = base + kRvaOpenTail;
+        g_dept_card_vt = base + kRvaDeptCardVt;
+        g_tab_select = reinterpret_cast<TabSelectFn>(base + kRvaTabSelect);
+        if (bytes_are(base + kRvaTabEnable, kTabEnableBytes, sizeof kTabEnableBytes))
+            g_tab_enable = reinterpret_cast<TabEnableFn>(base + kRvaTabEnable);
+        else
+            swofty::log("[rnd-tyres] tab-enable stub bytes differ; the Tyres tab is selected without the explicit "
+                        "enable");
+        if (hook_at(g_open_hook, hit + kOpenSiteOff, &on_open_dispatch,
+                    "Back route (container open \"tyres\"/\"error_department\" -> Tyres tab)"))
+            swofty::log("[rnd-tyres] Back route LIVE: purchase back_pressed, perks back and cross-department jumps for "
+                        "department 4 now open the Tyres tab (Durability if it has no slot)");
+    }
+
+    if (bytes_are(base + kRvaCompareWin, kCompareBytes, sizeof kCompareBytes))
+        hook_at(g_compare_hook, base + kRvaCompareSite, &on_compare_dept,
+                "vehicle performance comparison department alias");
+    else
+        swofty::log("[rnd-tyres] comparison call bytes differ; comparison alias NOT installed (SAFE)");
+
+    for (size_t i = 0; i < kNumArtSites; ++i) {
+        if (!bytes_are(base + kArtSites[i].win_rva, kArtSites[i].bytes, kArtSites[i].len)) {
+            swofty::log("[rnd-tyres] card art site %u bytes differ; NOT hooked (SAFE)", static_cast<unsigned>(i));
+            continue;
+        }
+        char what[64];
+        snprintf(what, sizeof what, "card art site %u", static_cast<unsigned>(i));
+        hook_at(g_art_hooks[i], base + kArtSites[i].call_rva - 10, kArtFns[i], what);
+    }
+
+    install_card_colour(base);
+
+    if (bytes_are(base + kRvaBackWin, kBackBytes, sizeof kBackBytes))
+        hook_at(g_back_diag_hook, base + kRvaBackSite, &on_back_diag, "develop-upgrade back_pressed diagnostic");
+    if (bytes_are(base + kRvaOptionFn, kOptionBytes, sizeof kOptionBytes))
+        hook_at(g_option_diag_hook, base + kRvaOptionFn, &on_option_diag, "develop-upgrade options diagnostic");
+    if (bytes_are(base + kRvaPurchaseFn, kPurchaseBytes, sizeof kPurchaseBytes))
+        hook_at(g_purchase_diag_hook, base + kRvaPurchaseFn, &on_purchase_diag, "purchase request diagnostic");
+}
+
+void install_test_price(uintptr_t base)
+{
+    if (!tyres_test_price.get()) {
+        swofty::log("[rnd-tyres] tyres_test_price off; the Tyres upgrades use the database cost");
+        return;
+    }
+    uintptr_t hit = 0;
+    int matches = swofty::api->scan(".xtls",
+                                    "41 57 41 56 41 54 56 57 55 53 48 81 EC A0 00 00 00 C5 78 29 84 24 90 00 00 00 C5 "
+                                    "F8 29 BC 24 80 00 00 00 C5 F8 29 74 24 70 44 89 CF 31 C0 40 F6 C7 06 0F 95 C0 44 "
+                                    "8B 64 82 5C 80 7A",
+                                    &hit);
+    if (matches != 1 || hit != base + kRvaCostFn || !bytes_are(hit, kCostBytes, sizeof kCostBytes)) {
+        swofty::log("[rnd-tyres] upgrade cost signature matched %d time(s) (hit 0x%llx); test price NOT installed (SAFE)",
+                    matches, (unsigned long long)hit);
+        return;
+    }
+    if (!bytes_are(base + kRvaRetWin, kRetBytes, sizeof kRetBytes)) {
+        swofty::log("[rnd-tyres] ret stub bytes differ; test price NOT installed (SAFE)");
+        return;
+    }
+    g_ret_stub = base + kRvaRetWin + 6;
+    if (hook_at(g_cost_hook, hit, &on_cost, "upgrade cost (test price)"))
+        swofty::log("[rnd-tyres] TEST PRICE LIVE: tyres_thermal_1/2/3 cost %u research points for research, development, "
+                    "standard and rush (temporary; turn tyres_test_price off to restore the database cost)",
+                    kTestPrice);
+}
+
 } // namespace
 
 SWOFTY_ON_LOAD
@@ -1864,14 +2415,22 @@ SWOFTY_ON_LOAD
     g_select_enabled.store(select_fifth_dept.get());
     install_box_name_guard(base);
 
+    // R&D department page instance-query diagnostic - its OWN scan gate + flag. Scanned
+    // before the v0.6.0 page sanitizer patches the first bytes of the same signature.
+    g_diag_inst_enabled.store(diag_tyres_instances.get());
+    install_page_instance_diag(base);
+
     // v0.6.0: give the three Tyres upgrade instances real R&D states (the actual
     // reason the Tyres page was empty) - its OWN one-scan gate + feature flag.
     g_inst_enabled.store(instantiate_tyres_upgrades.get());
     install_instantiate_tyres(base);
 
-    // R&D department page instance-query diagnostic - its OWN scan gate + flag.
-    g_diag_inst_enabled.store(diag_tyres_instances.get());
-    install_page_instance_diag(base);
+    // v0.6.1: the Develop Upgrade screen (Back route, comparison, card art) and the
+    // temporary test price - each behind its own one-scan gate + feature flag.
+    g_screen_enabled.store(tyres_upgrade_screen.get());
+    install_upgrade_screen(base);
+    g_price_enabled.store(tyres_test_price.get());
+    install_test_price(base);
 
     uintptr_t hit = 0;
     int matches = swofty::api->scan(".xtls", "75 06 B1 03 EB 02 31 C9 88 8F 40 03 00 00", &hit);

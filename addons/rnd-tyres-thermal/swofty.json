@@ -73,6 +73,22 @@
       "description": "Read-only: each time an R&D department page is built, log the team's upgrade-instance count per department (the Tyres page should show 4:3) and the state of every Fake/Tyres instance.",
       "default": true,
       "binds": "native"
+    },
+    {
+      "id": "tyres_upgrade_screen",
+      "type": "toggle",
+      "label": "Fix the Tyres Develop Upgrade screen",
+      "description": "Back from a Tyres upgrade's Develop Upgrade screen returns to the Tyres page (never traps), and the card art and vehicle performance comparison fill in. Install-time; relaunch after turning it off.",
+      "default": true,
+      "binds": "native"
+    },
+    {
+      "id": "tyres_test_price",
+      "type": "toggle",
+      "label": "Tyres upgrades cost 5 points (test)",
+      "description": "Temporary test price: the three Tyres & Thermal upgrades cost 5 research points for research and development, standard or rush. Turn off to use the database cost.",
+      "default": true,
+      "binds": "native"
     }
   ],
   "operations": {
