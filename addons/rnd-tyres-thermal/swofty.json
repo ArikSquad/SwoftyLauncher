@@ -2,13 +2,23 @@
   "schema_version": 1,
   "id": "swofty.rnd-tyres-thermal",
   "name": "R&D: Tyres & Thermal Management",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": "Swofty",
   "description": "Adds a new career R&D department, Tyres & Thermal Management, alongside the stock four.",
   "license": "AGPL-3.0-or-later",
   "kind": ["database", "native"],
   "compat": { "game": "f1_25", "game_builds": [">=25251167"], "seasons": ["f1_2026"] },
   "requires": [{ "id": "swofty.core", "version": ">=0.1.0" }],
+  "options": [
+    {
+      "id": "render_fifth_box",
+      "type": "toggle",
+      "label": "Render the 5th R&D box",
+      "description": "Inject the Tyres & Thermal Management box into the career R&D > Performance department grid. Experimental; disable if the Performance page misbehaves.",
+      "default": true,
+      "binds": "native"
+    }
+  ],
   "operations": {
     "database": ["db/departments.json", "db/tyres_tree.json"],
     "assets": ["assets/text.json"],
