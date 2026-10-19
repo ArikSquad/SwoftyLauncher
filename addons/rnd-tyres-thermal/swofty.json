@@ -38,7 +38,7 @@
       "id": "render_fifth_pie",
       "type": "toggle",
       "label": "Render the 5th development-potential pie slice",
-      "description": "Five-sector R&D Performance development-potential pie with a Tyres slice (the addon ships the 5-sector pie UI files). Master switch for the three pie_tyres_* options. Install-time; relaunch after changing.",
+      "description": "Five-sector R&D Performance development-potential pie with a Tyres slice (the addon ships the 5-sector pie UI files). Master switch for the pie_tyres_* options. Install-time; relaunch after changing.",
       "default": true,
       "binds": "native"
     },
@@ -63,6 +63,14 @@
       "type": "toggle",
       "label": "Tyres pie development potential",
       "description": "With render_fifth_pie on: publish department_performance.tyres (orange) with current/potential derived from the car attributes the Tyres upgrades develop. Install-time.",
+      "default": true,
+      "binds": "native"
+    },
+    {
+      "id": "pie_tyres_counts",
+      "type": "toggle",
+      "label": "Tyres tile upgrade count",
+      "description": "With render_fifth_pie on: the Tyres tile on R&D > Performance shows its fitted/total upgrades and progress ring like the stock four (it showed 0/0). Install-time.",
       "default": true,
       "binds": "native"
     },

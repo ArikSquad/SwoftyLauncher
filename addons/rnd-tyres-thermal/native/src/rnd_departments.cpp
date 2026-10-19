@@ -713,6 +713,7 @@ PieReg g_pie_reg[kPieRegCap];
 std::atomic<int> g_pie_live{0};
 std::atomic<uint64_t> g_pie_gen{0};
 uintptr_t g_pie_base = 0;
+std::atomic<bool> g_pie_installed{false};
 
 safetyhook::MidHook g_pie_ctor_hook;
 safetyhook::MidHook g_pie_dtor_hook;
@@ -1106,10 +1107,172 @@ void install_fifth_pie(uintptr_t base)
         return;
     }
 
+    g_pie_installed.store(true);
     swofty::log("[rnd-tyres] pie 5th slice INSTALLED: buffer 0x%x->0x%x (5 slots + footer), slot 4 constructed after "
                 "the ctor and destroyed with the stock four, populate gate @0x%llx, guard cmp r14d,3->4 @0x%llx",
                 kPieBufStock, kPieBufNew, (unsigned long long)(base + kRvaPieGate),
                 (unsigned long long)(base + kRvaPieGuard1Imm - 3));
+}
+
+// ---------------------------------------------------------------------------
+// v0.7.2 - the Tyres tile's fitted/total count and progress ring (pie_tyres_counts).
+//
+// The tile binds `upgrades_fitted` / `total_upgrades` (progress_value label) and
+// `upgrades_fitted_percent` (ring) on its VM child. A pie slot holds those as its
+// handles 0..3 (FUN_14180b660: total_upgrades, upgrades_fitted,
+// upgrades_fitted_percent, the x100 percent). Career_Build_RnDPieOverview and its
+// 0x141f4a760 callback fill them right after the populate and an
+// Upgrades_QueryEnabled call, with FUN_141f49bc0(this = rdi, query = rsi):
+//   0x141f49c1e  movzx ecx,[r13] ; cmp cl,3 ; ja next    codes 0..3 only
+//   0x141f49c28  cmp ebx,3 ; ja exit                      slot index 0..3 only
+//   per code: total = query results with +0x72 == code, fitted = those whose last
+//   state is Completed (3); writes [this+0x670] +0x88/+0xa8/+0xc8/+0xe8 + idx*0x220.
+// Slot 4 was never written, so the Tyres tile showed 0/0 and an empty ring.
+//   0x141f49c25  cmp cl,3  -> 4   code 4 is counted (code 5 still skipped)
+//   0x141f49c2a  cmp ebx,3 -> 4   slot index 4 is allowed
+//   0x141f49c31  gate (after both guards, before any write): index 4 runs only on a
+//                pie object this addon built with slot 4 (registry, footer, 17 slot-4
+//                vtables). Otherwise rip = 0x141f49f5b, the function's own exit, which
+//                is exactly what the stock `ja exit` does for index 4.
+// The handles of slot 4 are bound by the populate (code 4, same object) before this
+// runs; unbound handles (populate skipped) are null and the stock writes skip them.
+
+SWOFTY_SETTING(bool, pie_tyres_counts, true);
+
+SWOFTY_ON_CHANGE(pie_tyres_counts, bool on)
+{
+    swofty::log("[rnd-tyres] pie_tyres_counts toggled -> %s; install-time, relaunch to apply", on ? "on" : "off");
+}
+
+constexpr uintptr_t kRvaCountsSig   = 0x141f49c1eull - kImageBase;
+constexpr uintptr_t kRvaCountsCode  = 0x141f49c25ull - kImageBase;
+constexpr uintptr_t kRvaCountsIndex = 0x141f49c2aull - kImageBase;
+constexpr uintptr_t kRvaCountsGate  = 0x141f49c31ull - kImageBase;
+constexpr uintptr_t kRvaCountsHead  = 0x141f49be2ull - kImageBase;
+constexpr uintptr_t kRvaCountsSlot  = 0x141f49d61ull - kImageBase;
+constexpr uintptr_t kRvaCountsExit  = 0x141f49f5bull - kImageBase;
+constexpr size_t    kQueryCount     = 0xc00;
+constexpr size_t    kQueryCap       = 0x180;
+constexpr size_t    kCountInstSize  = 0xe0;
+
+safetyhook::MidHook g_counts_gate_hook;
+std::atomic<int> g_counts_log{0};
+std::atomic<int> g_counts_skip_log{0};
+
+void on_counts_gate(safetyhook::Context &c)
+{
+    uint32_t index = static_cast<uint32_t>(c.rbx);
+    if (index < 4)
+        return;
+    auto skip = [&](const char *fmt, unsigned long long a, unsigned long long b) {
+        int n = g_counts_skip_log.fetch_add(1);
+        if (n < 8 || (n & 63) == 0) {
+            char why[200];
+            snprintf(why, sizeof why, fmt, a, b);
+            swofty::log("[rnd-tyres] pie5 counts SKIPPED: %s; the Tyres tile keeps 0/0, the stock four are counted", why);
+        }
+        c.rip = g_pie_base + kRvaCountsExit;
+    };
+    if (index != 4) {
+        skip("slot index %llu (code %llu) is past slot 4", index, c.rcx & 0xff);
+        return;
+    }
+    uintptr_t self = c.rdi;
+    if (!self || !region_readable(reinterpret_cast<void *>(self + kPieObjField), sizeof(uintptr_t))) {
+        skip("view model 0x%llx unreadable (index %llu)", self, index);
+        return;
+    }
+    uintptr_t obj = *reinterpret_cast<const uintptr_t *>(self + kPieObjField);
+    uint64_t gen = 0;
+    if (!obj || !pie_reg_find(obj, gen)) {
+        skip("pie object 0x%llx was not built with the 0x%llx-byte buffer by this addon (no slot 4)", obj, kPieBufNew);
+        return;
+    }
+    if (!region_readable(reinterpret_cast<void *>(obj), kPieBufNew) || !pie_footer_ok(obj, gen)) {
+        skip("pie object 0x%llx footer at +0xb20 missing or stale (gen %llu)", obj, gen);
+        return;
+    }
+    int bad = pie_slot4_bad_handle(obj);
+    if (bad >= 0) {
+        skip("pie object 0x%llx slot 4 handle %llu is not the constructed vtable", obj, static_cast<unsigned>(bad));
+        return;
+    }
+    if (g_counts_log.fetch_add(1) >= 6)
+        return;
+    uintptr_t q = c.rsi;
+    unsigned total = 0, fitted = 0;
+    if (q && region_readable(reinterpret_cast<void *>(q), kQueryCount + 8)) {
+        uint64_t n = *reinterpret_cast<const uint64_t *>(q + kQueryCount);
+        for (uint64_t i = 0; i < n && i < kQueryCap; ++i) {
+            uintptr_t u = *reinterpret_cast<const uintptr_t *>(q + i * 8);
+            if (!u || !region_readable(reinterpret_cast<void *>(u), kCountInstSize))
+                continue;
+            if (*reinterpret_cast<const uint8_t *>(u + 0x72) != 4)
+                continue;
+            ++total;
+            uintptr_t se = *reinterpret_cast<const uintptr_t *>(u + 0xc8);
+            if (se && region_readable(reinterpret_cast<void *>(se - 8), 1) && *reinterpret_cast<const uint8_t *>(se - 8) == 3)
+                ++fitted;
+        }
+    }
+    swofty::log("[rnd-tyres] pie5 counts: slot 4 verified (object 0x%llx gen %llu); Tyres tile upgrades_fitted/"
+                "total_upgrades = %u/%u",
+                (unsigned long long)obj, (unsigned long long)gen, fitted, total);
+}
+
+void install_tile_counts(uintptr_t base)
+{
+    if (!pie_tyres_counts.get()) {
+        swofty::log("[rnd-tyres] pie_tyres_counts off; the Tyres tile count stays 0/0");
+        return;
+    }
+    if (!g_pie_installed.load()) {
+        swofty::log("[rnd-tyres] pie5 counts: the 5th pie slot is not installed; Tyres tile count NOT installed (SAFE)");
+        return;
+    }
+    uintptr_t hit = 0;
+    int matches = swofty::api->scan(
+        ".xtls", "41 0F B6 4D 00 80 F9 03 77 EA 83 FB 03 0F 87 2A 03 00 00 48 C7 84 24 30 0C 00 00", &hit);
+    if (matches != 1 || hit != base + kRvaCountsSig) {
+        swofty::log("[rnd-tyres] pie5 counts: signature matched %d time(s) (hit 0x%llx); NOT installed (SAFE)", matches,
+                    (unsigned long long)hit);
+        return;
+    }
+    static const uint8_t kHead[] = {0x48, 0x83, 0xb9, 0x70, 0x06, 0x00, 0x00, 0x00, 0x0f, 0x84, 0x6b, 0x03,
+                                    0x00, 0x00, 0x48, 0x89, 0xd6, 0x48, 0x89, 0xcf};
+    static const uint8_t kSlot[] = {0x48, 0x8b, 0x87, 0x70, 0x06, 0x00, 0x00, 0x89,
+                                    0xd9, 0x4c, 0x69, 0xe1, 0x20, 0x02, 0x00, 0x00};
+    static const uint8_t kExit[] = {0xc5, 0xf8, 0x28, 0xb4, 0x24, 0x50, 0x18, 0x00, 0x00, 0x48,
+                                    0x81, 0xc4, 0x68, 0x18, 0x00, 0x00, 0x5b, 0x5d, 0x5f, 0x5e};
+    if (!pie_bytes_are(base + kRvaCountsHead, kHead, sizeof kHead)
+        || !pie_bytes_are(base + kRvaCountsSlot, kSlot, sizeof kSlot)
+        || !pie_bytes_are(base + kRvaCountsExit, kExit, sizeof kExit)) {
+        swofty::log("[rnd-tyres] pie5 counts: this/query/slot/exit bytes differ from the disassembly; NOT installed "
+                    "(SAFE)");
+        return;
+    }
+    auto r = safetyhook::MidHook::create(reinterpret_cast<void *>(base + kRvaCountsGate), &on_counts_gate);
+    if (!r) {
+        swofty::log("[rnd-tyres] pie5 counts: MidHook::create failed @0x%llx (err %d); NOT installed (SAFE)",
+                    (unsigned long long)(base + kRvaCountsGate), (int)r.error().type);
+        return;
+    }
+    g_counts_gate_hook = std::move(*r);
+    swofty::log("[rnd-tyres] pie5 counts: hooked tile-count slot-4 gate @0x%llx (base+0x%llx)",
+                (unsigned long long)(base + kRvaCountsGate), (unsigned long long)kRvaCountsGate);
+    const uint8_t four = 0x04;
+    if (!pie_patch(base + kRvaCountsIndex, &four, 1, "tile-count index guard")) {
+        swofty::log("[rnd-tyres] pie5 counts: index guard not relaxed; Tyres tile count stays 0/0 (SAFE)");
+        return;
+    }
+    if (!pie_patch(base + kRvaCountsCode, &four, 1, "tile-count code guard")) {
+        swofty::log("[rnd-tyres] pie5 counts: code guard not relaxed; Tyres tile count stays 0/0 (SAFE)");
+        return;
+    }
+    swofty::log("[rnd-tyres] pie5 counts INSTALLED: FUN_141f49bc0 counts code 4 into slot 4 (cmp cl,3->4 @0x%llx, cmp "
+                "ebx,3->4 @0x%llx, gate @0x%llx)",
+                (unsigned long long)(base + kRvaCountsCode), (unsigned long long)(base + kRvaCountsIndex),
+                (unsigned long long)(base + kRvaCountsGate));
 }
 
 // ---------------------------------------------------------------------------
@@ -2714,6 +2877,10 @@ SWOFTY_ON_LOAD
     // department_performance.tyres data for the 5-sector pie (rnd_fifth_pie.cpp).
     // Inert unless render_fifth_pie is on; slice + focus also need its patches live.
     rnd_fifth_pie::install(base, g_pie_enabled.load());
+
+    // v0.7.2: the Tyres tile's fitted/total and progress ring (pie_tyres_counts), on the
+    // slot-4 machinery install_fifth_pie just set up.
+    install_tile_counts(base);
 
     // v0.7.1: Durability-equivalent research capacity and R&D modifiers for department 4
     // (rnd_capacity.cpp) - its OWN one-scan gate + feature flag.
