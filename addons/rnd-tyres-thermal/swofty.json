@@ -22,7 +22,7 @@
       "id": "attach_tyres_tree",
       "type": "toggle",
       "label": "Attach the Tyres upgrade tree",
-      "description": "Resolve and log the per-save R&D upgrade container the Tyres (code-4 'fake') department reads, so its research tree can be populated. The upgrade rows (upgrade_department=Fake) ship in the database; this logs the exact container hash to finalise their placement.",
+      "description": "Resolve and log the per-save R&D upgrade container the code-4 'fake' Tyres department reads. The upgrade rows ship in the database; this logs the exact container hash.",
       "default": true,
       "binds": "native"
     },
@@ -38,7 +38,7 @@
       "id": "render_fifth_pie",
       "type": "toggle",
       "label": "Render the 5th development-potential pie slice",
-      "description": "Grow the R&D > Performance development-potential pie to a 5th slice for Tyres & Thermal Management. Experimental and highest-risk: the pie wedge is authored art, so the slice is populated but no wedge draws yet. Default off; enable only to test.",
+      "description": "Grow the R&D Performance development-potential pie to a 5th Tyres slice. Highest-risk and experimental: the wedge is authored art, so the slice is built but no wedge draws yet. Default off.",
       "default": false,
       "binds": "native"
     }
