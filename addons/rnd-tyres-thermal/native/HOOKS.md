@@ -85,3 +85,68 @@ Caveat: `department = Tyres` → per-upgrade `upgrade_department` **ENUM A = 0**
 Aero's slot rather than add a 5th. The team-dept **ENUM B** (Tyres=4, Hook A) is
 separate and drives the dept identity. Whether a 5th tab renders needs the
 in-game test.
+
+## R&D department UI — RESOLVED (hardcoded 4, NOT data-driven) {rnd-tyres UI iteration}
+
+The R&D > Performance page (the 2x2 department box grid + the DEVELOPMENT
+POTENTIAL pie) does **not** enumerate the `UpgradeDepartmentEntry` data model.
+The department set is **hardcoded to 4 in native code**, so the loader-count
+bump to 5 (Hook B) loads a 5th economy row but produces **no** 5th UI box. The
+box grid and the pie are two independent bespoke builders, and the box/pie
+geometry is **pre-authored UIDF** (4 slots), so a 5th box+slice is a
+code + ERP + asset rework, not a data/asset lever. (KB: career.md#dept-ui, all
+L1, build b171e9793323.)
+
+### Box grid — `Career_Build_RnDDeptBoxGrid` @0x141c85f70 (no E8 callers; vtable)
+Populates `view_model_data.laptop_r_and_d_departments_container`. It makes
+**exactly four literal** `Career_Construct_RnDDeptCard` (0x141c7aac0) calls with
+compile-time `(lang_key, icon, enum)` triples:
+
+| slot | lang key | icon (`rnd_dept_icons_small.*`) | enum | colour |
+|---|---|---|---|---|
+| 0 | `lng_rnd_dept_aero`        | `aero`        | 0 | 0xffeead00 blue   |
+| 1 | `lng_rnd_dept_chassis`     | `chassis`     | 1 | 0xff3ec58d green  |
+| 2 | `lng_rnd_dept_engine`      | `engine`      | 3 | 0xff7a2aed pink   |
+| 3 | `lng_rnd_dept_maintenance` | `maintenance` | 2 | 0xff16deff yellow |
+
+(`engine` = Powertrain, `maintenance` = Durability.) Plus two non-dept panel
+cards (`tab_rnd_upgrade_purchase_panel`, `tab_rnd_perks`). The card vector is
+sized to **exactly 6 pointers (0x30)** and truncated. Initial selection =
+`DAT_145f93c08` clamped `<4` against the 4-entry `k_Career_RnDDeptNameTable`
+(0x145755e58). The card constructor reads the colour from
+`k_Career_RnDDeptColourTable` (0x145755e78) with bound `<6`; slots **[4] and [5]
+are 0xffffffff white spares**.
+
+### Pie + overview — `Career_Build_RnDPotentialPie` @0x141f41d60
+Loops `k_Career_UpgradeDeptCodeTable` (0x145735d60 = `00 01 02 03 04 05 …`) but
+is **gated `if (code < 4)` and `if (4 < i) break`**, with a per-case `switch`
+mapping `code -> lng_rnd_dept_%s / _overview_description` and **inline hardcoded
+colours** (same 4; default white + lang `error_department`). Pie sectors are
+pre-authored VM nodes driven by `init_pie_sector` / `highlight_pie_sector`
+(`Career_Build_RnDPieSector` @0x141f45d30) — **4 sector nodes only**.
+
+### Why the 5th box is excluded
+The UI never consults the department data model; it builds 4 cards from
+compile-time constants (box grid = 4 unrolled calls; pie = table loop gated
+`<4`). There is no code path that creates a 5th card, and no UIDF node for a
+5th box or 5th pie sector.
+
+### Smallest correct lever for a genuine 5th box+slice (deferred rework)
+A multi-site native + UIDF + asset change:
+1. `Career_Build_RnDDeptBoxGrid` (0x141c85f70): grow the card vector 6 -> 7
+   (change the `0x30` truncation), inject a 5th `Career_Construct_RnDDeptCard`
+   for Tyres with `(lng_rnd_dept_tyres, rnd_dept_icons_small.tyres, 4)`, and
+   relax the `<4` selection clamp.
+2. `Career_Build_RnDPotentialPie` (0x141f41d60): relax `code<4 -> <5` and
+   `4<i -> 5<i`, add a `case 4:` colour.
+3. Colour: write a distinct ABGR at `k_Career_RnDDeptColourTable[4]`
+   (0x145755e78, currently white).
+4. Assets: `lng_rnd_dept_tyres` + `lng_rnd_dept_tyres_overview_description`, a 5th
+   `tyres` frame in `rnd_dept_icons_small`.
+5. UIDF (`laptop_r_and_d_departments.ui`): a 5th box layout node and a 5th
+   pie-sector node (the box/pie geometry is authored, not computed).
+
+Several sites write into fixed-stride per-entry arrays (0x220 stride in the pie
+builder); mis-sizing risks a crash, and the pie physically cannot show a 5th
+slice without the extra UIDF sector node — so this is **not** safely
+implementable blind and is scoped as a following iteration.

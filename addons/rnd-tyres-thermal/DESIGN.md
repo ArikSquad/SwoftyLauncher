@@ -100,8 +100,19 @@ install) it logs and installs nothing, so the DLL stays benign.
   the same slot as Aerodynamics - so the economy entry may collide with Aero's
   slot rather than form a distinct 5th entry. Whether a distinct 5th *tab* then
   renders (the tab list may enumerate via a different path) is the test question.
-- **UI tab rendering** - whether the departments container spawns a 5th tab from
-  the collection, and which lang key it binds for the name.
+- **UI tab rendering** - RESOLVED (RE, build b171e9793323): the R&D > Performance
+  department box grid + the DEVELOPMENT POTENTIAL pie are **hardcoded to 4 in
+  native code** and do **not** enumerate the `UpgradeDepartmentEntry` data model,
+  so the loader-count bump does **not** add a 5th box. The box grid
+  (`Career_Build_RnDDeptBoxGrid` @0x141c85f70) makes four literal card-constructor
+  calls with compile-time `(lang_key, icon, enum)`; the pie
+  (`Career_Build_RnDPotentialPie` @0x141f41d60) loops the dept-code table gated
+  `code<4`; both the box layout and the pie sectors are pre-authored UIDF nodes
+  (4 slots). A genuine 5th box+slice is a multi-site code + ERP + asset rework,
+  **not** a data/asset lever; see `native/HOOKS.md` for the full mechanism and the
+  exact patch spec. The lang/icon/colour groundwork (`lng_rnd_dept_tyres`,
+  `rnd_dept_icons_small.tyres`, colour table slot `[4]`) matches what that rework
+  would reference.
 - **Upgrade-tree attachment** - which container the Tyres tab loads.
 - **Save tolerance** - whether a career save accepts the new row/enum value.
 - **Enum overflow** - no fixed array keyed by the department byte was found
