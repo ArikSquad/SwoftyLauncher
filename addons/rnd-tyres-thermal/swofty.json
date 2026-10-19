@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "swofty.rnd-tyres-thermal",
   "name": "R&D: Tyres & Thermal Management",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "author": "Swofty",
   "description": "Adds a new career R&D department, Tyres & Thermal Management, alongside the stock four.",
   "license": "AGPL-3.0-or-later",
