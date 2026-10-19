@@ -2351,6 +2351,12 @@ void install_page_instance_diag(uintptr_t base)
 // upgrades for the panel's department; nothing exists for department 4, so every bar is empty.
 // The comparison's department byte is aliased to the effect's stock department for our upgrades.
 //
+// v0.7.2 Tyres tile -> Tyres page (pie_tyres_open): the departments screen's box grid picks its first
+// tab at 0x141c86d03 (`mov rax,[rax] ; mov [rsi+0x7b8],rax`, rax = the card-vector element chosen
+// from the stock selection index). While the Performance page's last focused tile is Tyres
+// (rnd_fifth_pie::tyres_focus_pending), rax becomes the Tyres card's element if that card owns a
+// container slot; the stock tail then stores, enables and selects it. No slot -> stock tab.
+//
 // Test price: the cost of an upgrade is FUN_143525b60(list, instance, team modifiers, option); the
 // affordability list, the research/development cost wrappers and the card all use it. For our
 // three it returns kTestPrice (flag tyres_test_price, temporary).
@@ -2401,6 +2407,7 @@ constexpr uintptr_t kRvaBackSite     = 0x141c8c172ull - kImageBase;
 constexpr uintptr_t kRvaOptionFn     = 0x141c8cbb0ull - kImageBase;
 constexpr uintptr_t kRvaPurchaseFn   = 0x1412414c0ull - kImageBase;
 constexpr uintptr_t kRvaDeptCardVt   = 0x145740250ull - kImageBase;
+constexpr uintptr_t kRvaBoxFirstTab  = 0x141c86d03ull - kImageBase;
 
 const uint8_t kOpenTailBytes[]  = {0x48, 0x8b, 0x00, 0x48, 0x85, 0xc0, 0x74, 0x48, 0x48, 0x89,
                                    0x86, 0xb8, 0x07, 0x00, 0x00, 0x48, 0x8d, 0x8e, 0xd8, 0x02};
@@ -2488,6 +2495,7 @@ safetyhook::MidHook g_cost_hook;
 safetyhook::MidHook g_back_diag_hook;
 safetyhook::MidHook g_option_diag_hook;
 safetyhook::MidHook g_purchase_diag_hook;
+safetyhook::MidHook g_box_first_tab_hook;
 
 std::atomic<int> g_open_log{0};
 std::atomic<int> g_compare_log{0};
@@ -2496,6 +2504,7 @@ std::atomic<int> g_cost_log{0};
 std::atomic<int> g_back_log{0};
 std::atomic<int> g_option_log{0};
 std::atomic<int> g_purchase_log{0};
+std::atomic<int> g_box_tab_log{0};
 
 bool find_tyres_tab(uintptr_t C, uintptr_t &elem, uintptr_t &card)
 {
@@ -2554,6 +2563,57 @@ void on_open_dispatch(safetyhook::Context &c)
         swofty::log("[rnd-tyres] develop-upgrade back/open \"%s\": no Tyres tab with a slot (container=0x%llx) -> "
                     "routed to Durability so Back never dead-ends",
                     tok, (unsigned long long)C);
+}
+
+void on_box_first_tab(safetyhook::Context &c)
+{
+    if (!rnd_fifth_pie::tyres_focus_pending())
+        return;
+    uintptr_t C = c.rsi;
+    uintptr_t elem = 0, card = 0;
+    bool first = g_box_tab_log.fetch_add(1) < 32;
+    if (find_tyres_tab(C, elem, card)) {
+        uintptr_t was = c.rax;
+        c.rax = elem;
+        if (first)
+            swofty::log("[rnd-tyres] departments first tab: Tyres was the focused tile -> Tyres tab (card=0x%llx slot "
+                        "elem=0x%llx, stock element 0x%llx)",
+                        (unsigned long long)card, (unsigned long long)elem, (unsigned long long)was);
+        return;
+    }
+    if (first)
+        swofty::log("[rnd-tyres] departments first tab: Tyres was the focused tile but no Tyres tab owns a slot "
+                    "(container=0x%llx); stock first tab kept",
+                    (unsigned long long)C);
+}
+
+bool hook_at(safetyhook::MidHook &slot, uintptr_t addr, void (*fn)(safetyhook::Context &), const char *what);
+
+void install_box_first_tab(uintptr_t base)
+{
+    if (!rnd_fifth_pie::open_tracking_live()) {
+        swofty::log("[rnd-tyres] Tyres tile -> Tyres page route NOT installed: pie_tyres_open tracking is off or not "
+                    "installed (the departments screen opens the stock-focused department)");
+        return;
+    }
+    uintptr_t hit = 0;
+    int matches = swofty::api->scan(
+        ".xtls", "48 8B 00 48 89 86 B8 07 00 00 48 8D 90 68 02 00 00 48 85 C0 48 0F 44 D0 48 89 F9 41 B0 01", &hit);
+    if (matches != 1 || hit != base + kRvaBoxFirstTab) {
+        swofty::log("[rnd-tyres] box-grid first-tab signature matched %d time(s) (hit 0x%llx); Tyres tile route NOT "
+                    "installed (SAFE)",
+                    matches, (unsigned long long)hit);
+        return;
+    }
+    static const uint8_t kPick[] = {0x48, 0x8b, 0x86, 0x80, 0x02, 0x00, 0x00, 0x48, 0x83, 0xc0, 0x18, 0xeb, 0x18};
+    if (!bytes_are(base + kRvaBoxFirstTab - 0x25, kPick, sizeof kPick)) {
+        swofty::log("[rnd-tyres] box-grid first-tab element bytes differ; Tyres tile route NOT installed (SAFE)");
+        return;
+    }
+    if (hook_at(g_box_first_tab_hook, base + kRvaBoxFirstTab, &on_box_first_tab,
+                "Tyres tile route (box-grid first tab -> Tyres tab while Tyres is the focused tile)"))
+        swofty::log("[rnd-tyres] Tyres tile route LIVE: pressing the Tyres tile on R&D > Performance opens the Tyres "
+                    "department page");
 }
 
 void on_compare_dept(safetyhook::Context &c)
@@ -2797,6 +2857,7 @@ void install_upgrade_screen(uintptr_t base)
                     "Back route (container open \"tyres\"/\"error_department\" -> Tyres tab)"))
             swofty::log("[rnd-tyres] Back route LIVE: purchase back_pressed, perks back and cross-department jumps for "
                         "department 4 now open the Tyres tab (Durability if it has no slot)");
+        install_box_first_tab(base);
     }
 
     if (bytes_are(base + kRvaCompareWin, kCompareBytes, sizeof kCompareBytes))

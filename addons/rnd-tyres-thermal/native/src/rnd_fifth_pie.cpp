@@ -26,6 +26,10 @@
 //                     data string "tyres" now focuses the `tyres` child and raises
 //                     highlight_pie_sector like the stock four, WITHOUT writing
 //                     the box-grid selection index DAT_145f93c08.
+//  pie_tyres_open   - the Tyres tile opens the Tyres department page: a "Tyres is
+//                     the focused department" flag replaces the stale stock
+//                     selection index for the departments screen's first tab, and
+//                     the Performance page restores its focus to the Tyres tile.
 //  pie_tyres_performance
 //                   - publisher: department code 4 is added to the department
 //                     loop that publishes department_performance (and only that
@@ -329,6 +333,7 @@ const uint8_t kFocusJoinBytes[] = {0x88, 0x05, 0xb9, 0x91, 0x04, 0x04, 0x48, 0x8
 std::array<safetyhook::MidHook, 1> g_focus_hooks;
 std::atomic<uintptr_t> g_focus_resume{0};
 std::atomic<int> g_focus_log{0};
+std::atomic<bool> g_tyres_focus{false};
 
 void on_focus(safetyhook::Context &c)
 {
@@ -338,6 +343,7 @@ void on_focus(safetyhook::Context &c)
         return;
     c.rdi = reinterpret_cast<uintptr_t>(kTyresName);
     c.rip = resume;
+    g_tyres_focus.store(true);
     if (g_focus_log.fetch_add(1) < 8)
         swofty::log("[rnd-tyres] pie5 focus: department_focused \"tyres\" -> focused_department = tyres, "
                     "highlight_pie_sector raised (selection index untouched)");
@@ -358,6 +364,106 @@ void install_focus(uintptr_t base)
                     (unsigned long long)g_focus_resume.load());
     else
         g_focus_resume.store(0);
+}
+
+// ---------------------------------------------------------------------------
+// Piece 2b - pie_tyres_open: pressing the Tyres tile.
+//
+// The tile press raises goto_rnd_departments; laptop_container.ui turns it into the
+// goto_rnd command and the departments flow opens. Its box grid
+// (Career_Build_RnDDeptBoxGrid 0x141c85f70) picks the first tab from the stock
+// selection index DAT_145f93c08, clamped < 4. The Tyres focus above never writes
+// that index (every pie and box read clamps it to 0), so the page opened whichever
+// stock department was focused before Tyres: the v0.7.1 log shows "box-grid builder
+// reached ... selection=2" (Durability) right after the Tyres focus.
+//
+// This piece keeps a "Tyres is the focused department" flag next to the index:
+//   set      on_focus (data "tyres")
+//   cleared  at the only two writes of DAT_145f93c08, the stock focus paths:
+//            0x141f4aa49 (class B, R&D > Performance) and 0x141f460a9 (class A, the
+//            Team HQ research overview), `mov [DAT_145f93c08],al`
+//   read     by rnd_departments.cpp at the box-grid first-tab join (0x141c86d03),
+//            which selects the Tyres tab instead (never a dead end: no Tyres tab ->
+//            the stock tab)
+//   restore  populate 0x141f48476 `cmp r14b,al ; jne` (al = clamped index, r14 =
+//            code): with the flag set, code 4 matches and codes 0..3 do not, so the
+//            page's focused_department comes back as tyres when the Performance page
+//            is rebuilt, exactly as the stock index does for the stock four.
+
+SWOFTY_SETTING(bool, pie_tyres_open, true);
+
+SWOFTY_ON_CHANGE(pie_tyres_open, bool on)
+{
+    swofty::log("[rnd-tyres] pie_tyres_open toggled -> %s; install-time, relaunch to apply", on ? "on" : "off");
+}
+
+constexpr uintptr_t kVaStoreB      = 0x141f4aa49ull; // class B stock index store (verified by install_focus)
+constexpr uintptr_t kVaStoreAWin   = 0x141f4609bull; // class A index select + store
+constexpr uintptr_t kVaStoreA      = 0x141f460a9ull;
+constexpr uintptr_t kVaRestoreWin  = 0x141f48465ull; // populate focus-restore compare (scan anchor)
+constexpr uintptr_t kVaRestore     = 0x141f48476ull;
+
+const char kRestoreSig[] = "0F B6 05 9C B7 04 04 3C 04 B9 00 00 00 00 0F 43 C1 41 38 C6 75 2F";
+// 0x141f4609b: mov al,3 ; jmp ; xor eax,eax ; jmp ; mov al,1 ; jmp ; mov al,2 ; mov [DAT_145f93c08],al ; mov rax,[rsi+0x10]
+const uint8_t kStoreABytes[] = {0xb0, 0x03, 0xeb, 0x0a, 0x31, 0xc0, 0xeb, 0x06, 0xb0, 0x01, 0xeb, 0x02,
+                                0xb0, 0x02, 0x88, 0x05, 0x59, 0xdb, 0x04, 0x04, 0x48, 0x8b, 0x46, 0x10};
+
+std::array<safetyhook::MidHook, 3> g_open_hooks;
+std::atomic<bool> g_open_live{false};
+std::atomic<int> g_open_log[3];
+
+void clear_tyres_focus(const safetyhook::Context &c, const char *page)
+{
+    if (!g_tyres_focus.exchange(false))
+        return;
+    if (g_open_log[0].fetch_add(1) < 16)
+        swofty::log("[rnd-tyres] pie5 open: %s focused stock department index %u; Tyres focus cleared", page,
+                    static_cast<unsigned>(c.rax & 0xff));
+}
+
+void on_store_b(safetyhook::Context &c)
+{
+    clear_tyres_focus(c, "R&D > Performance");
+}
+
+void on_store_a(safetyhook::Context &c)
+{
+    clear_tyres_focus(c, "Team HQ research overview");
+}
+
+void on_restore(safetyhook::Context &c)
+{
+    if (!g_tyres_focus.load())
+        return;
+    uint8_t want = code4(c) ? kDeptTyres : 0xff;
+    c.rax = (c.rax & ~0xffull) | want;
+    if (code4(c) && g_open_log[1].fetch_add(1) < 8)
+        swofty::log("[rnd-tyres] pie5 open: populate restores focused_department = tyres (Tyres was the last focused "
+                    "tile)");
+}
+
+void install_open(uintptr_t base)
+{
+    if (!g_focus_resume.load()) {
+        swofty::log("[rnd-tyres] pie5 open: needs pie_tyres_focus installed; NOT installed (SAFE)");
+        return;
+    }
+    if (!scan_one(kRestoreSig, base + rva(kVaRestoreWin), "open"))
+        return;
+    if (!bytes_are(base + rva(kVaStoreAWin), kStoreABytes, sizeof kStoreABytes)) {
+        swofty::log("[rnd-tyres] pie5 open: Team HQ index store bytes differ from the disassembly; NOT installed (SAFE)");
+        return;
+    }
+    static const Site sites[] = {
+        {kVaStoreB, &on_store_b, "R&D > Performance stock index store"},
+        {kVaStoreA, &on_store_a, "Team HQ research overview stock index store"},
+        {kVaRestore, &on_restore, "populate focus restore compare"},
+    };
+    if (!create_all(base, sites, g_open_hooks, "open"))
+        return;
+    g_open_live.store(true);
+    swofty::log("[rnd-tyres] pie5 open INSTALLED: the Tyres focus is tracked for the departments screen's first tab "
+                "and restored on the Performance page");
 }
 
 // ---------------------------------------------------------------------------
@@ -723,8 +829,9 @@ void install(uintptr_t base, bool render_fifth_pie_on)
     bool perf_on = pie_tyres_performance.get();
     bool slice_on = pie_tyres_slice.get();
     bool focus_on = pie_tyres_focus.get();
-    swofty::log("[rnd-tyres] pie5: pie_tyres_slice=%s pie_tyres_focus=%s pie_tyres_performance=%s",
-                slice_on ? "on" : "off", focus_on ? "on" : "off", perf_on ? "on" : "off");
+    bool open_on = pie_tyres_open.get();
+    swofty::log("[rnd-tyres] pie5: pie_tyres_slice=%s pie_tyres_focus=%s pie_tyres_open=%s pie_tyres_performance=%s",
+                slice_on ? "on" : "off", focus_on ? "on" : "off", open_on ? "on" : "off", perf_on ? "on" : "off");
 
     if (perf_on)
         install_perf(base);
@@ -742,6 +849,18 @@ void install(uintptr_t base, bool render_fifth_pie_on)
         install_slice(base);
     if (focus_on)
         install_focus(base);
+    if (open_on)
+        install_open(base);
+}
+
+bool tyres_focus_pending()
+{
+    return g_open_live.load() && g_tyres_focus.load();
+}
+
+bool open_tracking_live()
+{
+    return g_open_live.load();
 }
 
 } // namespace rnd_fifth_pie

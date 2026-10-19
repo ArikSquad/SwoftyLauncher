@@ -59,6 +59,14 @@
       "binds": "native"
     },
     {
+      "id": "pie_tyres_open",
+      "type": "toggle",
+      "label": "Tyres tile opens the Tyres page",
+      "description": "With pie_tyres_focus on: pressing the Tyres tile on R&D > Performance opens the Tyres department page (it opened the last focused stock department), and the page keeps the Tyres tile focused. Install-time.",
+      "default": true,
+      "binds": "native"
+    },
+    {
       "id": "pie_tyres_performance",
       "type": "toggle",
       "label": "Tyres pie development potential",

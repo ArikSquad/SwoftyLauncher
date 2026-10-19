@@ -14,4 +14,12 @@ namespace rnd_fifth_pie {
 // render_fifth_pie_on = the addon's render_fifth_pie setting as read at load.
 void install(uintptr_t base, bool render_fifth_pie_on);
 
+// pie_tyres_open: true while the last department focused on R&D > Performance (or
+// the Team HQ research overview) is the Tyres tile, i.e. while the stock selection
+// index DAT_145f93c08 is stale for it. False when the option or its hooks are off.
+bool tyres_focus_pending();
+
+// True once the pie_tyres_open tracking hooks are installed (read after install()).
+bool open_tracking_live();
+
 } // namespace rnd_fifth_pie
