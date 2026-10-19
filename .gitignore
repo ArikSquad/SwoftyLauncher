@@ -25,6 +25,7 @@ re/trace_plugin/build/
 *.erp
 *.bin
 *.exe
+!/installer/SwoftyLauncherInstaller.exe
 *.dll
 *.lib
 *.pdb

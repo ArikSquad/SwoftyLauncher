@@ -8,7 +8,23 @@ To get started, you'll download the launcher, extract it, then follow the setup 
 - Windows 10 or 11 (x86-64), or Linux with Steam and Proton. Steam Deck, NixOS and Flatpak Steam work. macOS does not.
 - Free disk space: your content changes copies of the game files, so you'll need room for those copies.
 
+## Install with the installer
+
+1. Download the installer for your platform:
+
+   | Platform | Download |
+   |---|---|
+   | Windows | [SwoftyLauncherInstaller.exe](https://github.com/Swofty-Developments/SwoftyLauncher/raw/main/installer/SwoftyLauncherInstaller.exe) |
+   | Linux and Steam Deck | [SwoftyLauncherInstaller-linux.zip](https://github.com/Swofty-Developments/SwoftyLauncher/raw/main/installer/SwoftyLauncherInstaller-linux.zip), then extract it |
+
+2. Run `SwoftyLauncherInstaller.exe` on Windows, or `SwoftyLauncherInstaller` on Linux and Steam Deck.
+3. Choose a folder and select **Install**.
+
+The installer downloads the latest release, checks it, extracts it into that folder, adds a Start menu or app menu entry (and a desktop shortcut if ticked), and opens the launcher. Then follow the setup steps for [Windows](/guide/windows) or [Linux and Steam Deck](/guide/linux).
+
 ## Download and extract
+
+To install by hand instead:
 
 1. Open [Releases](https://github.com/Swofty-Developments/SwoftyLauncher/releases).
 2. Download the archive for your platform:

@@ -1,0 +1,280 @@
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
+mod shortcut;
+
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use eframe::egui::{self, Color32, CornerRadius, Margin, RichText, Stroke};
+use swofty_core::launcher::Progress;
+use swofty_core::update::{self, Install};
+
+const FOLDER_NAME: &str = "SwoftyLauncher";
+
+const BACKGROUND: Color32 = Color32::from_rgb(0x18, 0x1b, 0x22);
+const SURFACE: Color32 = Color32::from_rgb(0x1f, 0x23, 0x2d);
+const BORDER: Color32 = Color32::from_rgb(0x3a, 0x3f, 0x4d);
+const TEXT: Color32 = Color32::from_rgb(0xe9, 0xec, 0xf3);
+const MUTED: Color32 = Color32::from_rgb(0xa3, 0xa8, 0xb7);
+const ACCENT: Color32 = Color32::from_rgb(0x8b, 0x7f, 0xd6);
+const ACCENT_HOVER: Color32 = Color32::from_rgb(0xa1, 0x96, 0xe6);
+const ON_ACCENT: Color32 = Color32::from_rgb(0xf8, 0xf6, 0xff);
+const ERROR: Color32 = Color32::from_rgb(0xf0, 0x6d, 0x78);
+
+enum Stage {
+    Ready,
+    Working { done: f32, text: String },
+    Failed(String),
+    Launched,
+}
+
+struct Reporter {
+    stage: Arc<Mutex<Stage>>,
+    ctx: egui::Context,
+}
+
+impl Reporter {
+    fn set(&self, stage: Stage) {
+        *self.stage.lock().unwrap() = stage;
+        self.ctx.request_repaint();
+    }
+}
+
+impl Progress for Reporter {
+    fn report(&self, done: f32, text: &str) {
+        self.set(Stage::Working {
+            done,
+            text: text.to_owned(),
+        });
+    }
+}
+
+struct Installer {
+    folder: String,
+    desktop: bool,
+    stage: Arc<Mutex<Stage>>,
+}
+
+impl Installer {
+    fn new(cc: &eframe::CreationContext) -> Self {
+        cc.egui_ctx.set_theme(egui::Theme::Dark);
+        cc.egui_ctx.set_visuals_of(egui::Theme::Dark, visuals());
+        let parent = if cfg!(windows) {
+            dirs::data_local_dir().map(|d| d.join("Programs"))
+        } else {
+            dirs::home_dir()
+        };
+        let folder = parent.unwrap_or_default().join(FOLDER_NAME);
+        Self {
+            folder: folder.display().to_string(),
+            desktop: true,
+            stage: Arc::new(Mutex::new(Stage::Ready)),
+        }
+    }
+
+    fn browse(&mut self) {
+        let start = PathBuf::from(&self.folder)
+            .ancestors()
+            .find(|p| p.is_dir())
+            .map(Path::to_path_buf);
+        let mut dialog = rfd::FileDialog::new().set_title("Install the Swofty Launcher in");
+        if let Some(start) = start {
+            dialog = dialog.set_directory(start);
+        }
+        if let Some(picked) = dialog.pick_folder() {
+            self.folder = install_folder(picked).display().to_string();
+        }
+    }
+
+    fn start(&mut self, ctx: &egui::Context) {
+        let root = match resolve(&self.folder) {
+            Ok(root) => root,
+            Err(e) => {
+                *self.stage.lock().unwrap() = Stage::Failed(e);
+                return;
+            }
+        };
+        self.folder = root.display().to_string();
+        let reporter = Reporter {
+            stage: self.stage.clone(),
+            ctx: ctx.clone(),
+        };
+        reporter.report(0.0, "Finding the latest release");
+        let desktop = self.desktop;
+        std::thread::spawn(move || {
+            let stage = match install(&root, desktop, &reporter).and_then(|exe| launch(&exe)) {
+                Ok(()) => Stage::Launched,
+                Err(e) => Stage::Failed(e),
+            };
+            reporter.set(stage);
+        });
+    }
+}
+
+impl eframe::App for Installer {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
+        let (working, progress, error) = match &*self.stage.lock().unwrap() {
+            Stage::Ready => (false, None, None),
+            Stage::Working { done, text } => (true, Some((*done, text.clone())), None),
+            Stage::Failed(e) => (false, None, Some(e.clone())),
+            Stage::Launched => {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                (true, None, None)
+            }
+        };
+        egui::CentralPanel::default_margins()
+            .frame(egui::Frame::new().fill(BACKGROUND).inner_margin(Margin::same(24)))
+            .show(ui, |ui| {
+                ui.label(RichText::new("Swofty Launcher").size(22.0).strong().color(TEXT));
+                ui.label(RichText::new("Installs the latest release for F1 25 and opens it.").color(MUTED));
+                ui.add_space(18.0);
+                ui.label(RichText::new("Install to").color(MUTED));
+                ui.add_enabled_ui(!working, |ui| {
+                    ui.horizontal(|ui| {
+                        let browse = 84.0;
+                        let width = ui.available_width() - browse - ui.spacing().item_spacing.x;
+                        ui.add_sized(
+                            [width, 30.0],
+                            egui::TextEdit::singleline(&mut self.folder).align(egui::Align2::LEFT_CENTER),
+                        );
+                        if ui
+                            .add_sized([browse, 30.0], egui::Button::new("Browse…"))
+                            .clicked()
+                        {
+                            self.browse();
+                        }
+                    });
+                    ui.add_space(6.0);
+                    ui.checkbox(&mut self.desktop, "Add a desktop shortcut");
+                });
+                ui.add_space(18.0);
+                if let Some((done, text)) = progress {
+                    ui.add(
+                        egui::ProgressBar::new(done)
+                            .desired_height(30.0)
+                            .corner_radius(6)
+                            .fill(ACCENT)
+                            .text(RichText::new(text).color(ON_ACCENT)),
+                    );
+                } else if !working {
+                    let label = if error.is_some() { "Try again" } else { "Install" };
+                    let button =
+                        egui::Button::new(RichText::new(label).size(15.0).color(ON_ACCENT)).fill(ACCENT);
+                    if ui.add_sized([ui.available_width(), 34.0], button).clicked() {
+                        self.start(&ctx);
+                    }
+                }
+                if let Some(error) = error {
+                    ui.add_space(10.0);
+                    ui.label(RichText::new(error).color(ERROR));
+                }
+            });
+    }
+}
+
+fn visuals() -> egui::Visuals {
+    let mut v = egui::Visuals::dark();
+    v.panel_fill = BACKGROUND;
+    v.window_fill = BACKGROUND;
+    v.extreme_bg_color = SURFACE;
+    v.override_text_color = Some(TEXT);
+    v.selection.bg_fill = ACCENT;
+    v.selection.stroke = Stroke::new(1.0, ON_ACCENT);
+    v.text_edit_bg_color = Some(SURFACE);
+    for w in [
+        &mut v.widgets.inactive,
+        &mut v.widgets.hovered,
+        &mut v.widgets.active,
+        &mut v.widgets.open,
+    ] {
+        w.corner_radius = CornerRadius::same(6);
+    }
+    v.widgets.inactive.weak_bg_fill = SURFACE;
+    v.widgets.inactive.bg_stroke = Stroke::new(1.0, BORDER);
+    v.widgets.hovered.bg_stroke = Stroke::new(1.0, ACCENT_HOVER);
+    v.widgets.active.bg_stroke = Stroke::new(1.0, ACCENT);
+    v
+}
+
+fn install_folder(picked: PathBuf) -> PathBuf {
+    let empty = std::fs::read_dir(&picked).is_ok_and(|mut d| d.next().is_none());
+    let installed = picked.join("bin").join(update::exe("swofty-launcher")).is_file();
+    let named = picked
+        .file_name()
+        .is_some_and(|n| n.eq_ignore_ascii_case(FOLDER_NAME));
+    if empty || installed || named {
+        picked
+    } else {
+        picked.join(FOLDER_NAME)
+    }
+}
+
+fn resolve(folder: &str) -> Result<PathBuf, String> {
+    let folder = folder.trim();
+    if folder.is_empty() {
+        return Err("Choose a folder to install in.".into());
+    }
+    let path = match folder.strip_prefix("~") {
+        Some(rest) if rest.is_empty() || rest.starts_with(['/', '\\']) => dirs::home_dir()
+            .ok_or("Could not find your home folder.")?
+            .join(rest.trim_start_matches(['/', '\\'])),
+        _ => PathBuf::from(folder),
+    };
+    std::path::absolute(&path).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+fn install(root: &Path, desktop: bool, progress: &Reporter) -> Result<PathBuf, String> {
+    let release = update::fetch_latest(Duration::from_secs(30))
+        .map_err(|e| format!("Could not find the latest release: {e}"))?;
+    std::fs::create_dir_all(root).map_err(|e| format!("Could not create {}: {e}", root.display()))?;
+    let install = Install {
+        root: root.to_path_buf(),
+    };
+    install.update(&release, progress).map_err(|e| e.to_string())?;
+    let exe = install.launcher();
+    progress.report(1.0, "Adding shortcuts");
+    shortcut::create(root, &exe, desktop);
+    Ok(exe)
+}
+
+fn launch(exe: &Path) -> Result<(), String> {
+    let mut command = Command::new(exe);
+    if let Some(root) = exe.parent().and_then(Path::parent) {
+        command.current_dir(root);
+    }
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map(drop)
+        .map_err(|e| {
+            format!(
+                "Installed, but the launcher would not start ({}): {e}",
+                exe.display()
+            )
+        })
+}
+
+fn main() -> eframe::Result {
+    let icon = eframe::icon_data::from_png_bytes(include_bytes!("../../apps/launcher/assets/icon-256.png"))
+        .expect("the bundled icon is a png");
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_title("Swofty Launcher Installer")
+            .with_app_id("net.swofty.ModLauncher.Installer")
+            .with_inner_size([540.0, 290.0])
+            .with_resizable(false)
+            .with_icon(icon),
+        centered: true,
+        ..Default::default()
+    };
+    eframe::run_native(
+        "Swofty Launcher Installer",
+        options,
+        Box::new(|cc| Ok(Box::new(Installer::new(cc)))),
+    )
+}
