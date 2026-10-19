@@ -53,9 +53,9 @@
     {
       "id": "select_fifth_dept",
       "type": "toggle",
-      "label": "Make the 5th R&D department selectable",
-      "description": "Make the 5th R&D department (Tyres, code 4) selectable so its upgrade page can render: guard the dept name table against the code-4 crash, then relax the box-grid and tile-page active-dept clamps. Experimental; disable if the R&D page misbehaves.",
-      "default": true,
+      "label": "Relax the R&D overview selection clamp",
+      "description": "Off by default. Leftover v0.5.0 experiment: lets the R&D overview box grid store selection index 4 (the name read stays guarded). It does not open the Tyres department page.",
+      "default": false,
       "binds": "native"
     }
   ],

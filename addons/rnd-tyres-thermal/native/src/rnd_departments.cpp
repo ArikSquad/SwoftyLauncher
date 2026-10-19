@@ -1107,64 +1107,29 @@ void install_tree_rowcount_probe(uintptr_t base)
 }
 
 // ---------------------------------------------------------------------------
-// R&D department SELECTION: make the 5th department (per-upgrade ENUM A code 4,
-// the "Fake"/Tyres spare) selectable so its upgrade page can be the active one.
+// R&D overview box-grid selection (v0.5.0 leftover, default OFF since v0.6.0).
 //
-// The whole R&D UI keys on the active-department index, the global DAT_145f93c08
-// (u8). The tile data for code 4 is already loaded (loaders
-// Career_Load_UpgradeTreeNodes @0x14353b030 and Career_Load_UpgradeRows
-// @0x143539bc0 both loop codes 0..4 and the diag_tree_rowcount probe above reports
-// the code-4 row count). The blocker is purely DISPLAY/SELECTION: every reader of
-// DAT_145f93c08 clamps it < 4, so the active dept can never be 4 and the Fake(4)
-// @rows/@tiles are never spawned.
-//
-// Two non-pie sites read + clamp the active-dept index (the pie's four reads are a
-// separate authored-art follow-up and are deliberately left alone):
-//   A. Career_Build_RnDDeptBoxGrid (0x141c85f70): at 0x141c86c7e it reads
-//      DAT_145f93c08, clamps `cmp al,4 ; cmovae eax,0` (immediate at 0x141c86c88),
-//      sign-extends, then `mov rdx,[k_Career_RnDDeptNameTable + idx*8]`
-//      (0x141c86c97) and builds a NeStr from it. k_Career_RnDDeptNameTable
-//      (0x145755e58) has only FOUR entries and k_Career_RnDDeptColourTable
-//      (0x145755e78) immediately follows it, so nameTable[4] reads
-//      colour[0]|colour[1] = 0xff3ec58dffeead00 as a char* -> crash. THIS is the
-//      crash trap.
-//   B. a TeamHQ MyTeam career VM command handler (func @0x142337ff0, the
-//      command-0x55702d31 case @0x1423380e9): the identical clamp (`cmp al,4 ;
-//      cmovae eax,0`, immediate at 0x1423380f3) feeding a DIFFERENT 4-entry dept
-//      code-name table (0x145784d80 = {aero,chassis,maintenance,engine}, used to
-//      resolve the active dept's content key). That table is immediately followed
-//      by unrelated panel-event strings, so its [4] = "open_driver_ratings_rtt_panel"
-//      is a VALID C-string: relaxing this clamp does NOT crash, it only lets the
-//      active-dept content resolver run for index 4. This is the tile-page read.
-//
-// Implement (own exactly-one `.xtls` scans + flag select_fifth_dept, default on;
-// benign on any scan miss/mismatch/>1 match; every read/write region- and
-// value-verified, VirtualProtect-guarded):
-//   1. CRASH FIX FIRST. MidHook the box-grid name read at 0x141c86c9b (right after
-//      the table load; rdx = nameTable[idx], rax = idx). For idx == 4 we overwrite
-//      rdx with a pointer to a static "Tyres & Thermal Management" C-string, so the
-//      nameTable[4]=colour[0] char* is never dereferenced. Installed BEFORE either
-//      clamp is relaxed, and it always protects index 4 once installed (never
-//      runtime-gated off while a clamp is relaxed).
-//   2. Relax the box-grid clamp `cmp al,4` -> `cmp al,5` (one byte) only AFTER the
-//      name hook is live.
-//   3. Relax the tile-page clamp `cmp al,4` -> `cmp al,5` (one byte). No name hook
-//      is needed there (table[4] is a valid string).
-//
-// Both clamp relaxations are inert until the active dept is actually 4, so they
-// cannot misbehave unless the 5th department is genuinely selected. INDEPENDENT of
-// Hooks A/B, the colour write, the box inject, the probes and the tree data - on
-// any miss this installs nothing and they keep working. The box-grid 5th on-screen
-// RECT and the pie wedge are left to their separate authored-asset follow-ups.
+// v0.5.0 relaxed two `cmp al,4 ; cmovae eax,0` clamps on DAT_145f93c08 to make
+// dept 4 "selectable". Both were dead ends:
+//   - DAT_145f93c08 is the R&D > Performance overview box-grid selection. A
+//     hardware watchpoint proved it never changes while the department tab pages
+//     are built, so it does not pick the page that lists upgrade tiles.
+//   - the second clamp (TeamHQ VM command 0x55702d31 @0x1423380e9) indexes a
+//     table whose slot 4 is "open_driver_ratings_rtt_panel"; it is unrelated to
+//     R&D. That relax is REMOVED in v0.6.0.
+// The real blocker is the upgrade-instance state machine, handled separately.
+// What stays: the box-grid name guard (always installed, a no-op for idx 0..3,
+// keeps nameTable[4] = colour[0] from ever being dereferenced) and the box-grid
+// clamp relax behind select_fifth_dept, now default off.
 
-SWOFTY_SETTING(bool, select_fifth_dept, true);
-std::atomic<bool> g_select_enabled{true};
+SWOFTY_SETTING(bool, select_fifth_dept, false);
+std::atomic<bool> g_select_enabled{false};
 safetyhook::MidHook g_name_hook;
 std::atomic<int> g_name_log{0};
 
 SWOFTY_ON_CHANGE(select_fifth_dept, bool on)
 {
-    swofty::log("[rnd-tyres] select_fifth_dept toggled -> %s; the active-dept clamp byte-patches are install-time, "
+    swofty::log("[rnd-tyres] select_fifth_dept toggled -> %s; the box-grid clamp byte-patch is install-time, "
                 "relaunch to apply",
                 on ? "on" : "off");
 }
@@ -1174,18 +1139,15 @@ SWOFTY_ON_CHANGE(select_fifth_dept, bool on)
 const char kTyresDeptName[] = "Tyres & Thermal Management";
 
 // Box-grid name read, hooked right after `mov rdx,[k_Career_RnDDeptNameTable +
-// idx*8]`: rax = idx (0..4), rdx = the loaded name char*. For idx == 4 (which the
-// relaxed clamp now admits) rdx would be colour[0] as a char*; replace it with our
-// Tyres name. For idx 0..3 this is a no-op, so it is safe even if a clamp did not
-// relax.
+// idx*8]`: rax = idx, rdx = the loaded name char*. For idx 4 rdx would be
+// colour[0] as a char*; replace it with our name. No-op for idx 0..3.
 void on_dept_name_read(safetyhook::Context &c)
 {
     if ((c.rax & 0xffull) == 4ull) {
         c.rdx = reinterpret_cast<uintptr_t>(kTyresDeptName);
         int n = g_name_log.fetch_add(1);
         if (n < 16)
-            swofty::log("[rnd-tyres] dept-name[4] overrun intercepted -> \"%s\" (nameTable[4]=colour[0] char* avoided; "
-                        "active R&D dept is now the 5th/Tyres)",
+            swofty::log("[rnd-tyres] dept-name[4] overrun intercepted -> \"%s\" (nameTable[4]=colour[0] char* avoided)",
                         kTyresDeptName);
     }
 }
@@ -1217,36 +1179,26 @@ bool relax_clamp_imm(uintptr_t imm_addr, const char *what)
     return true;
 }
 
-// Independent gate: one unique `.xtls` scan per site. The name hook is installed
-// first and the box clamp relaxed only after it succeeds, so dept 4's name read is
-// always guarded before the clamp can admit index 4.
-void install_select_fifth_dept(uintptr_t base)
+// One unique `.xtls` scan. The name guard is installed regardless of the flag
+// (pure guard); the clamp is relaxed only when select_fifth_dept is on, and only
+// after the guard is live.
+void install_box_name_guard(uintptr_t base)
 {
-    if (!g_select_enabled.load()) {
-        swofty::log("[rnd-tyres] select_fifth_dept off; 5th-dept selection NOT installed (SAFE)");
-        return;
-    }
-
-    // --- Box grid: the crash-trap name read + its active-dept clamp. ---
     uintptr_t hit_box = 0;
     int mb = swofty::api->scan(
         ".xtls", "0F B6 05 83 CF 30 04 31 C9 3C 04 0F 43 C1 48 0F BE C0 48 8D 0D C1 F1 AC 03 48 8B 14 C1", &hit_box);
     if (mb != 1 || !hit_box) {
-        swofty::log("[rnd-tyres] box-grid clamp/name signature matched %d time(s); 5th-dept selection NOT installed "
-                    "(SAFE)",
+        swofty::log("[rnd-tyres] box-grid clamp/name signature matched %d time(s); name guard NOT installed (SAFE)",
                     mb);
         return;
     }
-    uintptr_t name_site = hit_box + 29; // the `mov [rsp+0x50],0` after the name load; rdx=name, rax=idx
-    uintptr_t box_clamp = hit_box + 10; // the `04` immediate of `cmp al,4`
+    uintptr_t name_site = hit_box + 29;
+    uintptr_t box_clamp = hit_box + 10;
     if (!region_readable(reinterpret_cast<void *>(name_site), 16)) {
         swofty::log("[rnd-tyres] box-grid name site @0x%llx not committed; NOT installing (SAFE)",
                     (unsigned long long)name_site);
         return;
     }
-
-    // 1) Crash fix FIRST: the name read must return a valid string for idx 4 before
-    //    the clamp can admit idx 4.
     auto r = safetyhook::MidHook::create(reinterpret_cast<void *>(name_site), &on_dept_name_read);
     if (!r) {
         swofty::log("[rnd-tyres] box-grid name-read MidHook::create failed @0x%llx (err %d); clamp NOT relaxed (SAFE)",
@@ -1254,28 +1206,16 @@ void install_select_fifth_dept(uintptr_t base)
         return;
     }
     g_name_hook = std::move(*r);
-    swofty::log("[rnd-tyres] box-grid name read hooked @0x%llx (base+0x%llx); idx 4 -> \"%s\"",
+    swofty::log("[rnd-tyres] box-grid name guard installed @0x%llx (base+0x%llx); idx 4 -> \"%s\"",
                 (unsigned long long)name_site, (unsigned long long)(name_site - base), kTyresDeptName);
 
-    // 2) Only now relax the box-grid active-dept clamp (cmp al,4 -> 5).
-    if (relax_clamp_imm(box_clamp, "box-grid active-dept clamp"))
-        swofty::log("[rnd-tyres] box-grid 5th-dept selection ENABLED (name-guarded)");
-    else
-        swofty::log("[rnd-tyres] box-grid clamp left intact; dept 4 cannot be the active display index (SAFE)");
-
-    // --- Tile page: the TeamHQ VM active-dept content read (no crash trap). ---
-    uintptr_t hit_tile = 0;
-    int mt = swofty::api->scan(
-        ".xtls", "0F B6 05 18 BB C5 03 31 C9 3C 04 0F 43 C1 48 0F BE C0 48 8D 0D 7E CC 44 03 48 8B 14 C1", &hit_tile);
-    if (mt != 1 || !hit_tile) {
-        swofty::log("[rnd-tyres] tile-page active-dept signature matched %d time(s); tile clamp NOT relaxed (SAFE)",
-                    mt);
+    if (!g_select_enabled.load()) {
+        swofty::log("[rnd-tyres] select_fifth_dept off (default); box-grid clamp left stock. The v0.5.0 TeamHQ clamp "
+                    "relax is removed.");
         return;
     }
-    uintptr_t tile_clamp = hit_tile + 10;
-    if (relax_clamp_imm(tile_clamp, "tile-page active-dept clamp"))
-        swofty::log("[rnd-tyres] tile-page 5th-dept clamp ENABLED @0x%llx (base+0x%llx)", (unsigned long long)tile_clamp,
-                    (unsigned long long)(tile_clamp - base));
+    if (relax_clamp_imm(box_clamp, "box-grid active-dept clamp"))
+        swofty::log("[rnd-tyres] box-grid 5th-dept selection ENABLED (name-guarded; overview only, not the tile page)");
 }
 
 } // namespace
@@ -1313,12 +1253,10 @@ SWOFTY_ON_LOAD
     g_trc_enabled.store(diag_tree_rowcount.get());
     install_tree_rowcount_probe(base);
 
-    // The 5th R&D department SELECTION - its OWN independent gate + feature flag.
-    // Name-guard the box-grid name read (the crash fix) first, then relax the
-    // box-grid and tile-page active-dept clamps so dept code 4 (Tyres) can be the
-    // active, displayed page.
+    // Box-grid name guard (always) + the v0.5.0 overview clamp relax (select_fifth_dept,
+    // default off). The v0.5.0 TeamHQ clamp relax is gone.
     g_select_enabled.store(select_fifth_dept.get());
-    install_select_fifth_dept(base);
+    install_box_name_guard(base);
 
     uintptr_t hit = 0;
     int matches = swofty::api->scan(".xtls", "75 06 B1 03 EB 02 31 C9 88 8F 40 03 00 00", &hit);
