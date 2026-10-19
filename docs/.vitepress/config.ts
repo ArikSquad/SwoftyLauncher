@@ -199,6 +199,8 @@ export default defineConfigWithTheme<DocsThemeConfig>({
               { text: "UI scenes (.idf)", link: "/reference/ui/idf", icon: "file" },
               { text: "Editing menus", link: "/reference/ui/editing-menus", icon: "file" },
               { text: "Swofty UI", link: "/reference/ui/swofty-ui", icon: "file" },
+              { text: "Techniques for UI mods", link: "/reference/ui/techniques", icon: "file" },
+              { text: "Debugging live", link: "/reference/ui/debugging", icon: "file" },
             ],
           },
           {

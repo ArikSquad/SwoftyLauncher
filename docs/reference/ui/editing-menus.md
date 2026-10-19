@@ -119,3 +119,5 @@ The launcher restores the rewritten archives when the game exits. `swofty restor
 - **New art needs new textures or meshes.** A scene can reuse art: a clone keeps its geoms, and an `eXRef` can point at another scene. A new image is a new texture resource ([Textures and models](/reference/mods/erp-assets)), and a new shape, such as a narrower pie wedge, is a new mesh.
 - **A reference loads the scene its `xref` id names.** The game finds an `eXRef`'s scene by its `xref` id, the md5-64 of the scene's path, not by its `fileRef` path. A scene written by another tool with a new `fileRef` and the old `xref` still shows the old scene in game. Swofty UI draws the scene the id names, marks the mismatch and refuses to export it; see [References](./idf#references).
 - **A scene replaces the whole stock scene.** When a game update changes a scene your addon ships, export it again from the new stock scene. The `.edits.json` holds your edits for [replaying them](./swofty-ui#http-api).
+
+For tracing what draws an element, counts fixed in native code and patching them safely, see [Techniques for UI mods](./techniques).
