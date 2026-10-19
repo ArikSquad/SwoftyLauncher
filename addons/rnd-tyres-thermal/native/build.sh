@@ -20,7 +20,7 @@ SH=third_party
 [[ build/safetyhook.o -nt $SH/safetyhook.cpp ]] || "${CXX[@]}" -O2 -I$SH -c $SH/safetyhook.cpp -o build/safetyhook.o
 
 "${CXX[@]}" -O2 -Wall -Wextra -Iinclude -I$SH -D__USE_MINGW_ANSI_STDIO=1 -shared -s \
-    -o rnd_departments.dll src/rnd_departments.cpp src/rnd_fifth_pie.cpp build/safetyhook.o build/Zydis.o
+    -o rnd_departments.dll src/rnd_departments.cpp src/rnd_fifth_pie.cpp src/rnd_capacity.cpp build/safetyhook.o build/Zydis.o
 
 rm -f rnd_departments.lib
 echo "built $(pwd)/rnd_departments.dll"

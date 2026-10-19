@@ -67,6 +67,14 @@
       "binds": "native"
     },
     {
+      "id": "tyres_research_capacity",
+      "type": "toggle",
+      "label": "Tyres research capacity",
+      "description": "Give the Tyres department Durability's research slots and R&D modifiers (cost/time scales, rush, failure) by mirroring Durability's team modifier entries when the Tyres tab or develop-upgrade screen opens. Install-time.",
+      "default": true,
+      "binds": "native"
+    },
+    {
       "id": "diag_tree_rowcount",
       "type": "toggle",
       "label": "Diagnose the upgrade-tree tile source count",

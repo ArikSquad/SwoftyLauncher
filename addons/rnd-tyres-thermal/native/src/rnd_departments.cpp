@@ -55,6 +55,7 @@
 #include <safetyhook.hpp>
 #include <swofty/mixin.hpp>
 
+#include "rnd_capacity.hpp"
 #include "rnd_fifth_pie.hpp"
 
 namespace {
@@ -2713,6 +2714,10 @@ SWOFTY_ON_LOAD
     // department_performance.tyres data for the 5-sector pie (rnd_fifth_pie.cpp).
     // Inert unless render_fifth_pie is on; slice + focus also need its patches live.
     rnd_fifth_pie::install(base, g_pie_enabled.load());
+
+    // v0.7.1: Durability-equivalent research capacity and R&D modifiers for department 4
+    // (rnd_capacity.cpp) - its OWN one-scan gate + feature flag.
+    rnd_capacity::install(base);
 
     // The 5th-box layout diagnostic - its OWN independent gate + feature flag
     // (read-only; captures why the injected box has no visible 2x2 cell).
