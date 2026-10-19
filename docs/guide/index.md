@@ -39,7 +39,7 @@ See [Addons, mods and maps](/guide/addons-mods-maps) for more on the differences
 
 ## Where to start
 
-1. [Installation](/guide/installation) — download and extract the app.
+1. [Installation](/guide/installation) — install the launcher with the installer or by hand.
 2. [Windows](/guide/windows) or [Linux and Steam Deck](/guide/linux) — point it at the game and press Play.
 3. [Addons](/using/addons), [Mods and tracks](/using/mods) and [Profiles](/using/profiles) — install content and set up your profiles.
 

@@ -85,6 +85,12 @@ Menus read `TrackNameData_0.title` on the cloned `TrackData` rows, so they'll sh
 
 You're setting the same field a database mod uses in [Rename a track](./database#_4-rename-a-track).
 
+## Using the package elsewhere
+
+The package is the EGO GameDatabases Editor format, so the same zip also installs with the editor. `copy_slot` needs editor 1.6.1 or later. Neither way replaces a stock track: `copy_slot` adds a new track id, and a package with the track code `bahrain24` fills the game's empty `bahrain24` slot.
+
+The editor adds no text, so a new language key such as `lng_my_track_title` shows no name there. For a package that shows a name in both, set `TrackNameData_0.title` to a stock key, such as the base track's own.
+
 ## Check the build
 
 ```sh

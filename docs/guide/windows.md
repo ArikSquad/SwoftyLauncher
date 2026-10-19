@@ -2,9 +2,9 @@
 
 ## Set up
 
-1. Follow [Installation](/guide/installation) to download and extract the app.
+1. Follow [Installation](/guide/installation) to install the launcher with the installer or by hand.
 2. Make sure you have F1 25 installed, then start Steam.
-3. Open `bin\swofty-launcher.exe`.
+3. Open **Swofty Launcher** from the Start menu, or `bin\swofty-launcher.exe` in the install folder.
 
 Watch the status line next to **Play**: you'll see **Detecting F1 25…** while the launcher looks for the game, then **Ready** when it finds it.
 
@@ -27,6 +27,6 @@ To follow the logs as you play, select the arrow next to **Play** and choose **P
 
 ## If the game crashes
 
-1. Close the game.
-2. Before you play vanilla again, run `swofty restore`. See [Restoring the game](/using/profiles-and-restoring) for the details.
-3. To read a summary of your last session, run `swofty logs`. You'll find the logs in `$DATA\sessions\<id>`.
+The session puts the game folder back to vanilla when the game exits, crash or not. If the launcher was closed first, it puts the folder back the next time it starts. See [Restoring the game](/using/profiles-and-restoring).
+
+To read a summary of your last session, run `swofty logs`. You'll find the logs in `$DATA\sessions\<id>`.

@@ -15,12 +15,12 @@ Swofty UI is a viewer and editor for F1 25's menu [scenes](./idf). It runs on yo
 
 ### From a release
 
-Launcher releases after 1.0.6 include Swofty UI. Download and extract the launcher as in [Installation](/guide/installation), then:
+Launcher releases after 1.0.6 include Swofty UI. Install the launcher as in [Installation](/guide/installation), then:
 
 | System | Start Swofty UI |
 |---|---|
-| Windows | Double-click `bin\swofty-ui.exe` in the extracted folder |
-| Linux and Steam Deck | Run `bin/swofty-ui` from a terminal. The archive also has a desktop entry and icons under `share/` |
+| Windows | Double-click `bin\swofty-ui.exe` in the install folder |
+| Linux and Steam Deck | Run `bin/swofty-ui` from a terminal. The install folder also has a desktop entry and icons under `share/` |
 
 It needs no Python.
 

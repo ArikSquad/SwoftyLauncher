@@ -1,6 +1,6 @@
 # Installation
 
-To get started, you'll download the launcher, extract it, then follow the setup steps for your platform. You'll play modded games in single-player, offline.
+Install the launcher with the installer or by hand, then follow the setup steps for [Windows](/guide/windows) or [Linux and Steam Deck](/guide/linux). You'll play modded games in single-player, offline.
 
 ## Requirements
 
@@ -17,14 +17,21 @@ To get started, you'll download the launcher, extract it, then follow the setup 
    | Windows | [SwoftyLauncherInstaller.exe](https://github.com/Swofty-Developments/SwoftyLauncher/raw/main/installer/SwoftyLauncherInstaller.exe) |
    | Linux and Steam Deck | [SwoftyLauncherInstaller-linux.zip](https://github.com/Swofty-Developments/SwoftyLauncher/raw/main/installer/SwoftyLauncherInstaller-linux.zip), then extract it |
 
-2. Run `SwoftyLauncherInstaller.exe` on Windows, or `SwoftyLauncherInstaller` on Linux and Steam Deck.
+2. Run `SwoftyLauncherInstaller.exe` on Windows, or `SwoftyLauncherInstaller` on Linux and Steam Deck. Windows may show **Windows protected your PC**; select **More info**, then **Run anyway**.
 3. Choose a folder and select **Install**.
 
-The installer downloads the latest release, checks it, extracts it into that folder, adds a Start menu or app menu entry (and a desktop shortcut if ticked), and opens the launcher. Then follow the setup steps for [Windows](/guide/windows) or [Linux and Steam Deck](/guide/linux).
+The installer downloads the latest release, checks it against the release's `SHA256SUMS` and extracts it into that folder. It adds **Swofty Launcher** to the Start menu on Windows or the app menu on Linux, adds a desktop shortcut if **Add a desktop shortcut** is ticked, then opens the launcher.
 
-## Download and extract
+| Platform | Default folder |
+|---|---|
+| Windows | `%LOCALAPPDATA%\Programs\SwoftyLauncher` |
+| Linux and Steam Deck | `~/SwoftyLauncher` |
 
-To install by hand instead:
+With **Flatpak Steam**, choose a folder inside `~/.var/app/com.valvesoftware.Steam/`, such as `~/.var/app/com.valvesoftware.Steam/SwoftyLauncher`.
+
+You only need the installer once. After that, open the launcher from the Start menu or app menu, and it [updates itself](#updating).
+
+## Install by hand
 
 1. Open [Releases](https://github.com/Swofty-Developments/SwoftyLauncher/releases).
 2. Download the archive for your platform:
@@ -34,11 +41,22 @@ To install by hand instead:
    | Windows | `swofty-launcher-<version>-windows-x86_64.zip` |
    | Linux and Steam Deck | `swofty-launcher-<version>-linux-x86_64.tar.gz` |
 
-3. Extract it where you want to keep the launcher, such as `Documents\SwoftyLauncher` or `~/SwoftyLauncher`.
+3. Extract it where you want to keep the launcher, such as `Documents\SwoftyLauncher` or `~/SwoftyLauncher`. With **Flatpak Steam**, extract it inside `~/.var/app/com.valvesoftware.Steam/`.
 
-Inside, you'll find `bin/`, which holds the launcher `swofty-launcher` and the command line `swofty`. The in-game loader lives in `loader/`; keep that folder next to `bin/`.
+A hand install adds no menu entries or shortcuts; open the launcher from `bin/`.
 
-Now follow the setup steps for [Windows](/guide/windows) or [Linux and Steam Deck](/guide/linux).
+## The install folder
+
+Either way, the install folder holds:
+
+| Path | Contents |
+|---|---|
+| `bin/swofty-launcher` | The launcher |
+| `bin/swofty` | The command line |
+| `bin/swofty-ui` | [Swofty UI](/reference/ui/swofty-ui) |
+| `loader/` | The in-game loader; keep it next to `bin/` |
+
+On Windows, the files in `bin/` end in `.exe`. The setup guides call this folder the install folder.
 
 ## Updating
 
@@ -49,6 +67,8 @@ When you open the launcher, it checks for a new release, at most once every 6 ho
 3. Select **Restart**.
 
 If a step fails, you'll see the error and the old files stay in place. An update interrupted partway is rolled back the next time you start the launcher.
+
+Running the installer again on the same folder also installs the latest release.
 
 If you built from source or installed through Nix, you'll see **Download** instead; it opens the release page. From a terminal, `swofty update` does the same.
 
@@ -62,4 +82,4 @@ When these docs refer to `$DATA`, they mean the folder below for your platform:
 | Flatpak Steam | `~/.var/app/com.valvesoftware.Steam/data/swofty` |
 | Windows | `%LOCALAPPDATA%\Swofty` |
 
-Your addons, mods, profiles, backups and session logs live here. Because it holds your backups, keep this folder until you've [restored the game to stock](/using/profiles-and-restoring).
+Your addons, mods, profiles, backups and session logs live here, apart from the install folder. Because it holds your backups, keep this folder until you've [restored the game to stock](/using/profiles-and-restoring).
