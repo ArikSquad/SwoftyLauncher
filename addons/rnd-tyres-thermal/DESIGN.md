@@ -87,33 +87,46 @@ conventions.
 Hooks A and B are gated on an exactly-one scan match - on 0 or >1 matches (or a
 failed install) they log and install nothing, so the DLL stays benign.
 
-The same DLL also carries the first instalment of the R&D > Performance UI
-rework (v0.2.0):
+The same DLL also carries the R&D > Performance UI rework:
 
-- **Colour groundwork** - `k_Career_RnDDeptColourTable[4]` (`0x145755e88`, the
-  stock white spare a fifth card would read via the `< 6` bound in the card
-  constructor) is written to a distinct Tyres colour (`0xff0078ff`, orange). The
-  write only happens after a layout probe confirms all six colour entries match
-  the decompile on this build (`[0]=ffeead00 [1]=ff3ec58d [2]=ff16deff
-  [3]=ff7a2aed [4]=[5]=ffffffff`); on any mismatch nothing is written. The slot
-  is unused until a fifth card exists, so the write is inert-but-correct.
-- **Builder instrumentation** - once the colour probe confirms the RVAs,
-  `Career_Build_RnDDeptBoxGrid` (`0x141c85f70`) and `Career_Build_RnDPotentialPie`
-  (`0x141f41d60`) get one-shot entry probes that log that the page opened, the
-  card-vector shape, the sector-buffer facts and the live selection index -
-  ground truth for the next (crash-prone) pass.
+- **Colour groundwork** (v0.2.0) - `k_Career_RnDDeptColourTable[4]`
+  (`0x145755e88`, the stock white spare the fifth card reads via the `< 6` bound
+  in the card constructor) is written to a distinct Tyres colour (`0xff0078ff`,
+  orange). The write only happens after a layout probe confirms all six colour
+  entries match the decompile on this build (`[0]=ffeead00 [1]=ff3ec58d
+  [2]=ff16deff [3]=ff7a2aed [4]=[5]=ffffffff`); on any mismatch nothing is
+  written.
+- **The live 5th box** (v0.3.0) - a real fifth `Career_Construct_RnDDeptCard` for
+  Tyres & Thermal Management is injected into `Career_Build_RnDDeptBoxGrid`
+  (`0x141c85f70`) so the stock grid renders a fifth department box. Behind its own
+  independent gate (one unique `.xtls` scan, hook site `0x141c86567`) and a
+  feature flag (`render_fifth_box`, default on), separate from Hooks A/B and the
+  colour write. The card vector (six pointers) is grown to seven, a 0x950 card is
+  built the game's way with name `lng_rnd_dept_tyres`, a borrowed `aero` icon
+  frame (no new texture) and enum 4 (colour slot [4]), and the builder's own
+  attach loop binds it. The `< 4` selection clamp is left intact, so the box only
+  renders; it is never the selected card. Full mechanism + addresses in
+  `native/HOOKS.md`.
 
-**Why the live 5th box / 5th slice is NOT shipped yet.** The decompiles confirm
-both builders are hardcoded to four with exactly-sized, per-slot-initialised
-buffers: the box card vector is six pointers (four dept cards + two non-dept
-panels) all used, and the pie sector array is allocated at exactly `0x900`
-(`0x80 + 4*0x220`) with its prologue initialising exactly four slots via the
-game's own (non-decompiled) slot constructor. Relaxing either `< 4` guard blind
-overruns that buffer / writes an uninitialised slot -> crash. On top of that, a
-fifth box binds to a per-dept UIDF node that the launcher's declarative
-UIDF/ERP-patch pipeline (`operations.ui`, `patch-pkg`) does not build yet, so the
-fifth authored node cannot be produced through this addon. That rework is the
-next iteration; see `native/HOOKS.md` for the exact multi-site patch spec.
+**Correction to the earlier scoping note.** The dept card's compile-time
+`%s.%s.%s` argument is the **icon atlas path**
+(`<pkg>.rnd_dept_icons_small.<frame>`), not a per-dept UIDF node path; the name is
+a separate lang-key argument. So a dept card needs **no authored UIDF node** and
+**no launcher UIDF/ERP pipeline** - it renders through the same card VM node the
+stock four use. The v0.2.0 note claiming a fifth box needs an unbuilt UIDF node
+was based on a misread of the card constructor arguments.
+
+**Why the 5th pie slice is NOT shipped yet.** The live Performance-page pie is
+built by `Career_Build_RnDPieOverview` (`0x141f46eb0`, + populate helper
+`0x141f48030`) - NOT the canonical `Career_Build_RnDPotentialPie` (`0x141f41d60`),
+which belongs to a parallel research-overview screen that does not open here. The
+live pie allocates its per-sector array at exactly `0x900` (`0x80 + 4*0x220`) and
+constructs exactly four slots, with a `code < 4` loop guard. A fifth slice needs
+the buffer grown to `0xb20`, a fifth constructed slot, the guards relaxed, a
+`case 4` colour/name - and, unlike the box, a **5th pie-wedge authored in art**
+(the wedge geometry is authored, not computed). That rework is the next
+iteration; see `native/HOOKS.md` for the exact multi-site patch spec against the
+live builder.
 
 ## Residual unknowns (the in-game test resolves these)
 
@@ -128,19 +141,16 @@ next iteration; see `native/HOOKS.md` for the exact multi-site patch spec.
   the same slot as Aerodynamics - so the economy entry may collide with Aero's
   slot rather than form a distinct 5th entry. Whether a distinct 5th *tab* then
   renders (the tab list may enumerate via a different path) is the test question.
-- **UI tab rendering** - RESOLVED (RE, build b171e9793323): the R&D > Performance
-  department box grid + the DEVELOPMENT POTENTIAL pie are **hardcoded to 4 in
-  native code** and do **not** enumerate the `UpgradeDepartmentEntry` data model,
-  so the loader-count bump does **not** add a 5th box. The box grid
-  (`Career_Build_RnDDeptBoxGrid` @0x141c85f70) makes four literal card-constructor
-  calls with compile-time `(lang_key, icon, enum)`; the pie
-  (`Career_Build_RnDPotentialPie` @0x141f41d60) loops the dept-code table gated
-  `code<4`; both the box layout and the pie sectors are pre-authored UIDF nodes
-  (4 slots). A genuine 5th box+slice is a multi-site code + ERP + asset rework,
-  **not** a data/asset lever; see `native/HOOKS.md` for the full mechanism and the
-  exact patch spec. The lang/icon/colour groundwork (`lng_rnd_dept_tyres`,
-  `rnd_dept_icons_small.tyres`, colour table slot `[4]`) matches what that rework
-  would reference.
+- **UI box rendering** - the R&D > Performance department box grid is **hardcoded
+  to 4 in native code** and does **not** enumerate the `UpgradeDepartmentEntry`
+  data model, so the loader-count bump alone does **not** add a 5th box. v0.3.0
+  therefore injects a real fifth card natively into
+  `Career_Build_RnDDeptBoxGrid` (`0x141c85f70`) - see the v0.3.0 section above and
+  `native/HOOKS.md`. **Open for the in-game test:** whether the box container lays
+  the fifth card out visibly (it may be a fixed 4-slot 2x2 grid, or an auto-flow)
+  - the injection is faithful either way; this is the one thing static analysis
+  cannot settle. The 5th pie slice is deferred (authored wedge art); the live pie
+  builder is `0x141f46eb0` (not `0x141f41d60`).
 - **Upgrade-tree attachment** - which container the Tyres tab loads.
 - **Save tolerance** - whether a career save accepts the new row/enum value.
 - **Enum overflow** - no fixed array keyed by the department byte was found

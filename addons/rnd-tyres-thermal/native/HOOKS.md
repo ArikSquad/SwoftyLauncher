@@ -150,3 +150,127 @@ Several sites write into fixed-stride per-entry arrays (0x220 stride in the pie
 builder); mis-sizing risks a crash, and the pie physically cannot show a 5th
 slice without the extra UIDF sector node — so this is **not** safely
 implementable blind and is scoped as a following iteration.
+
+## v0.3.0 — the LIVE 5th BOX, shipped (box only; pie deferred)
+
+A genuine 5th department box now renders on R&D > Performance behind its own
+independent gate. Two earlier assumptions were **wrong** and are corrected here.
+
+### Correction 1 — the dept card does NOT bind a per-dept UIDF node
+`Career_Construct_RnDDeptCard` (0x141c7aac0) takes
+`(card, ctx, builder, allocator, name_cstr, icon_cstr, enum_byte)` — confirmed by
+the call-site disassembly at 0x141c861bc-0x141c861e3 (5th arg [rsp+0x20] = name,
+6th arg [rsp+0x28] = icon, 7th arg [rsp+0x30] = enum). The exe string bytes are:
+- 5th arg = the **name lang key**: `lng_rnd_dept_aero` (0x1457407d6),
+  `lng_rnd_dept_chassis`, `lng_rnd_dept_engine`, `lng_rnd_dept_maintenance`.
+- 6th arg = the **icon atlas path**, formatted `%s.%s.%s` = `<pkg>` (from
+  `*(lVar8+0x660)`) `.` `rnd_dept_icons_small` (0x14570bcda) `.` `<frame>`
+  (`aero`/`chassis`/`engine`/`maintenance`). So the `%s.%s.%s` suffix is the icon
+  **frame name in the `rnd_dept_icons_small` atlas**, NOT a view-model/UIDF node
+  path. ctor stores icon at card+0x818 (param_1[0x103]), name at card+0x830
+  (param_1[0x106]), enum at card+0x6d8 (param_1[0xdb]), colour at card+0x948
+  (param_1[0x129]) = `k_Career_RnDDeptColourTable[enum]` (bound `<6`).
+
+Consequence: a dept card needs **no per-dept authored UIDF node** and **no
+launcher UIDF/ERP pipeline**. It renders through the same card VM node
+(card+0x268) the other four use, attached to the container `builder+0x2d8` by the
+builder's own attach loop. This removes the blocker the v0.2.0 notes recorded.
+
+### The box injection (implemented)
+- **Gate (independent of Hooks A/B + the colour write):** one `.xtls` scan of
+  `48 C7 40 18 00 00 00 00 48 8B 8E 98 02 00 00` (unique, count=1; match =
+  0x141c8655f). Hook site = **match+8 = 0x141c86567**, the `mov rcx,[rsi+0x298]`
+  that starts the purchase-panel alloc, right after the 4th dept card is stored
+  and before the panels are built. safetyhook MidHook. Feature flag
+  `render_fifth_box` (toggle, default on). On any scan miss / layout mismatch /
+  >1 match it logs and injects nothing.
+- **At the site:** `rsi` = builder (param_1), `rdi` = the icon-prefix object
+  (lVar8, non-volatile, set at 0x141c8601e, clobbered at 0x141c8657f, so live
+  here); begin[0..3] = the four dept cards; panels not yet built.
+- **Grow:** the card-pointer vector (begin `[self+0x280]`, end `[+0x288]`, cap
+  `[+0x290]` in pointer units, allocator `[+0x278]`) is sized to exactly 6
+  (end-begin==0x30). If cap<7, reallocate to 8 via the allocator vtable (alloc =
+  `vt+0x18(allocator,bytes,align)`, free = `vt+0x38(allocator,ptr)`), copy the 6
+  pointers, free the old buffer, set cap=8. Set `end = begin + 0x38` (7 slots).
+  The resumed stock code then fills begin[4]/begin[5] (panels) off a freshly-read
+  begin, leaving **begin[6] = the Tyres card**.
+- **Construct:** allocate a 0x950 card via the card allocator `[self+0x298]`;
+  build the icon NeStr with `Ne_Make_StrFromCStr(&s,"",0,0)` (0x1441974e0) +
+  `Ne_Format_String(&s,"%s.%s.%s", *(char**)(lVar8+0x660), "rnd_dept_icons_small",
+  "aero")` (0x1441630f0); call `Career_Construct_RnDDeptCard(card, *(self+0x28),
+  self, cardAllocator, "lng_rnd_dept_tyres", s->chars, 4)`; store begin[6]=card;
+  release the temp NeStr through `g_Ne_DefaultAllocator` (0x146ca54a8, free =
+  vt+0x38). NeStr chars at +9, refcount (u16) at +4.
+- **Icon:** BORROWED — frame `aero` of `rnd_dept_icons_small` (no new texture).
+  Logged as `icon-borrowed="<pkg>.rnd_dept_icons_small.aero"`.
+- **Colour:** reuses `k_Career_RnDDeptColourTable[4]` (0x145755e88) = Tyres orange
+  0xff0078ff, written by the v0.2.0 colour groundwork; the card ctor reads it via
+  its `<6` bound at construction time (after load).
+- **Name:** our own `"lng_rnd_dept_tyres"` literal (the loc system resolves it at
+  display time; confirmed resolving live).
+- **Selection clamp NOT relaxed.** `DAT_145f93c08` stays clamped `<4` against the
+  4-entry `k_Career_RnDDeptNameTable` (0x145755e58). A saved index 4 would read
+  `name[4]` which overlaps `colour[0]` (the colour table immediately follows the
+  name table at 0x145755e78) → a colour read as a char* → crash. So the 5th box
+  only RENDERS; it is never the selected card this round.
+
+Deviation from the original spec note ("grow at the allocation/truncation site"):
+growing after the 4th card (where lVar8 is live and all four cards exist) is
+cleaner and leaves the stock grow/truncate and the panel stores untouched. The
+builder's own attach loop (begin..end) then binds all seven slots identically.
+
+### Confirmed-safe vs the in-game test
+- **Safe (static-proven):** the scan is unique on this build; the card is built by
+  the real constructor identically to a stock dept card, so the attach loop
+  (`card+0x260` method + `FUN_14431d720(builder+0x2d8, card+0x268,0,0)`) cannot
+  fault on it; selection stays `<4`; every read/write is region-guarded; the two
+  panels still land in begin[4]/begin[5].
+- **The test resolves:** whether the container `builder+0x2d8` lays the 5th card
+  out visibly (it may be a fixed 4-slot 2x2 grid — 5th invisible/overlapping — or
+  an auto-flow that shows a 3rd row). This is the one thing static analysis cannot
+  settle; the injection is faithful either way.
+
+### Pie path — RESOLVED (next iteration), the LIVE builder is NOT 0x141f41d60
+The Performance-page pie did not fire 0x141f41d60 because there are **two parallel
+R&D view-model classes**:
+- Class A (research-overview/graph screen, vtable 0x14575e000): pie builder
+  `0x141f41d60` (+0x98), sector handler `0x141f45d30` (+0x50). NOT this page.
+- **Class B (LIVE, vtable 0x14575e300)**: pie builder
+  **`Career_Build_RnDPieOverview` @0x141f46eb0** (+0x98), sector handler
+  `0x141f4ac40` (+0x50). Built by `0x141c43290` — the **same 0x141c4xxxx screen
+  family that owns the box grid `Career_Build_RnDDeptBoxGrid` @0x141c85f70**.
+  `0x141f46eb0` has no E8 callers; it is reached via VM dispatch (0x14431d720)
+  from vtable-B slot 0x14575e398, binds `onTabActivated`, and emits
+  `init_pie_sector` / `rnd_overview_activated`.
+
+Mechanism: `0x141f46eb0` allocs a **0x900** sector buffer (`0x80 + 4*0x220`) at
+0x141f46f75, constructs 4 slots via `FUN_141f45650` at buf+0x80/+0x2a0/+0x4c0/
++0x6e0 (unrolled, stride 0x220), then populates via helper **`0x141f48030`**:
+loops `k_Career_UpgradeDeptCodeTable`, guard `if(code<4)` (`cmp r14d,3/ja`
+@0x141f48218), index cap `if(4<written)` (`cmp r13d,4/ja` @0x141f4821e, already
+permits 5), a 4-entry jump table (bound `cmp r14d,3` @0x141f4822b, table
+@0x141f48231); **colours are an INLINE switch** (aero 0xffeead00 @0x141f4858e,
+chassis 0xff3ec58d, maintenance 0xff16deff, engine 0xff7a2aed, default white — the
+pie does NOT read the colour table), names formatted `lng_rnd_dept_%s` /
+`lng_rnd_dept_%s_overview_description` from the matched icon name; sector VM nodes
+resolved by name-hash via `Vm_GetOrCreate_ChildNode` under `rnd_wheel_icon`
+(empty handle on miss); highlight clamp `if(3<DAT_145f93c08)`.
+
+5th-slice plan (LIVE path — patch 0x141f46eb0 + 0x141f48030, **NOT** 0x141f41d60):
+1. Buffer grow @0x141f46f75: `mov edx,0x900` (`ba 00 09 00 00`) → `ba 20 0b 00 00`
+   (**0xb20** = 0x80 + 5*0x220). Mandatory before relaxing the guard.
+2. Construct a 5th slot: inject `lea rcx,[rbx+0x900]; call FUN_141f45650` (the four
+   are unrolled at 0x141f46fdf..0x141f4700a; no inline room → code cave/detour).
+3. 0x141f48030 code guard @0x141f48218 `cmp r14d,3`→`4`; jump-table bound
+   @0x141f4822b `cmp r14d,3`→`4` and extend the rel32 table @0x141f48231 to 5
+   entries with a `case 4`; index cap @0x141f4821e already permits 5.
+4. Add a `case 4` colour (e.g. 0xff0078ff) + icon-name `tyres` so
+   `lng_rnd_dept_tyres` / `_overview_description` resolve.
+5. Highlight clamp (line ~254, `3 < DAT_145f93c08`) → `4`.
+6. Assets: a 5th pie-sector node under `rnd_wheel_icon` (resolved by name-hash) +
+   the pie-wheel **geometry reworked for 5 wedges** (authored, not computed), and
+   the two lang keys. This is why the pie slice is deferred — unlike the box, the
+   wedge is authored art.
+
+Decompiles: `re/decomp/141f46eb0.c` (live builder), `re/decomp/141f48030.c`
+(populate loop), plus class-A `141f41d60.c`/`141f45d30.c` for contrast.
