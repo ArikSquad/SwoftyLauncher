@@ -256,6 +256,17 @@ and publishes `department_performance.tyres`. `render_fifth_pie` is on by defaul
 sub-options are `pie_tyres_slice`, `pie_tyres_focus` and `pie_tyres_performance`. Needs a launcher
 with the size-changed archive rewrite (origin/main after PR #138).
 
+## v0.7.2 — the five-sector pie draws, and the Tyres tile behaves like the stock four
+
+| piece | flag | change |
+|---|---|---|
+| five-sector pie on R&D > Performance | assets | the engine resolves an eXRef by its `xref` id (md5-64 of the scene path), not by `fileRef`; v0.7.1 re-pointed only `fileRef`, so `chart_1` still drew the stock pie. `chart_1` and the five sectors now carry the ids of `rnd_dev_potential5.idf` / `rnd_dev_potential_sect72.idf`. The Team HQ research overview keeps the stock four-sector pie (own scene chain, four tiles, no Tyres focus) |
+| Tyres tile fitted/total and ring | `pie_tyres_counts` + `.ui` | the tile-count pass (0x141f49bc0) counts code 4 into slot 4 behind a slot-4 gate; `focusable.trigger` now refreshes the Tyres tile |
+| Tyres icon and colour in R&D lists | `tyres_dept_tags` | In Progress, category rows, perks title, Team HQ popups, upgrade cards: borrowed stock frames (`maintenance` department icon, the stock category icon of the upgrade type) and the Tyres orange |
+| Tyres tile opens the Tyres page | `pie_tyres_open` | a "Tyres is the focused tile" flag picks the Tyres tab as the departments screen's first tab and restores the Tyres focus on the Performance page |
+
+Details, sites and expected log lines: `native/HOOKS.md` v0.7.2.
+
 ## Residual unknowns (the in-game test resolves these)
 
 - **Does the game read the 5th department row?** Resolved by RE + the live

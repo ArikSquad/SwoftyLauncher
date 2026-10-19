@@ -935,3 +935,165 @@ bottom row spans the top row exactly (x 0.0036..8.4961, 0.2 gaps, y −1.708..�
 panel starts at about −5.04). Only those two transforms changed; ids, lookup and animations are byte-identical
 (generator `f1-modding/work/rnd-fifth-box/make_rnd_overview5.py --bottom fill`). `erp/rnd_fifth_pie.json` is
 unchanged.
+
+## v0.7.2 — the pie that actually draws, the Tyres tile count, Tyres tags in lists, the Tyres tile route
+
+### 1. What draws the Performance page pie (and why v0.7.1 still showed the stock 4×90°)
+Chain (`laptop_r_and_d.ui`, `tab_content_rnd_upgrades_alt`): the tab's layout attach is
+`componentId` 0xbe419b0b8324e33c = `art/screens/career/rnd_overview`; the `dev_potential` UIGP attaches to
+node `dev_potential` (an eXRef to `rnd_dev_potential_full.idf`), and each department group attaches by the
+chain `[chart_1, sector_N]`. `rnd_dev_potential_full.idf` is referenced only by `rnd_overview.idf`.
+
+An eXRef element carries two references: the `fileRef` string param and the `xref` field, a u64 that is the
+md5-64 (big-endian, `.idf` stripped) of the referenced scene's eaid, i.e. that scene's `componentId`. Every
+stock eXRef has `xref == md5-64(fileRef)`. v0.7.0/v0.7.1 re-pointed `chart_1.fileRef` at
+`rnd_dev_potential5.idf` but left `chart_1.xref = 10514293220787342744` = `rnd_dev_potential.idf` (the stock
+four-sector pie), and the five sectors of `rnd_dev_potential5.idf` kept `xref = 14655847601348484236` =
+`rnd_dev_potential_sector.idf` (the stock 90° wedge). Evidence:
+- the game's `flow_career_hub.erp` and `flow_team_hq.erp` hold the v0.7.1 `rnd_dev_potential_full.idf`
+  byte-identical to the addon file (sha1 0a37c125…), so the archive rewrite worked, yet the stock pie with
+  its cross renders: the only reference to the stock pie left in the live data is the `xref` id;
+- the viewer resolves eXRefs by `fileRef`, which is why the v0.7.0 previews showed five sectors. A viewer
+  copy that resolves by the `xref` id instead (scratchpad `v072/viewer`, `engine_ref()` in `scene.py`)
+  reproduces the in-game screenshot exactly from the v0.7.1 archives (`[engine-xref] chart_1: xref id
+  10514293220787342744 -> …/rnd_dev_potential.idf (fileRef says …/rnd_dev_potential5.idf)`, four
+  `rnd_dev_potential_sector.idf` wedges, the stock cross backdrop) and five 72° wedges from the v0.7.2 ones.
+
+Fix (assets only, `f1-modding/work/rnd-fifth-pie/tools/build_pie.py` `set_xref`): `chart_1.xref =
+6468277874628786377` (md5-64 of `…/rnd_dev_potential5`), `sector_1..5.xref = 11428019250876246940`
+(md5-64 of `…/rnd_dev_potential_sect72`). Nothing else in the two scenes changes (typed parse compare);
+`tools/validate.py` now fails any eXRef whose `xref` is not md5-64 of its `fileRef` and reports 0 problems on
+the pristine archives.
+
+Team HQ research overview (`tab_content_research_overview`, layout `team_hq/research/overview` →
+`team_hq/research/dev_potential_full.idf` → stock `rnd_dev_potential.idf`) stays four sectors. It is a
+different scene chain and a different view-model class (class A, vtable 0x14575e000: focus handler
+0x141f45d30 compares only aero/chassis/maintenance/engine, pie populate gated `< 4`), with four authored
+tiles and no Tyres focus. Its pie binds the same `focused_team_perf_root.department_performance.*` root, so
+a fifth sector there would get data from the publisher, but without a Tyres tile it would be a wedge nobody
+can focus, and with `pie_tyres_performance` off an empty 72° gap. The Performance page has its own chain, so
+it gets the five sectors and Team HQ keeps the stock pie with no gap.
+
+### 2. The Tyres tile count (flag `pie_tyres_counts`, default on, install-time)
+The tile shows `lng_progress_num_total` with `NUM = upgrades_fitted`, `TOTAL = total_upgrades` and a ring on
+`upgrades_fitted_percent`. A pie slot holds these as handles 0..3 (slot builder 0x14180b660: `total_upgrades`
+0x14180b6ac, `upgrades_fitted` 0x14180b746, `upgrades_fitted_percent` 0x14180b7d0). They are written by
+`FUN_141f49bc0(this = rdi, query = rsi)`, called by `Career_Build_RnDPieOverview` (0x141f46eb0) and its
+0x141f4a760 callback right after the populate and `Upgrades_QueryEnabled`: per code, total = query results
+with `+0x72 == code`, fitted = those whose last state is Completed (3); the four handles are written at
+`[this+0x670] + 0x88/0xa8/0xc8/0xe8 + idx*0x220`. Two guards kept slot 4 out:
+
+| site | bytes | v0.7.2 |
+|---|---|---|
+| 0x141f49c1e | scan anchor `41 0F B6 4D 00 80 F9 03 77 EA 83 FB 03 0F 87 2A 03 00 00 48 C7 84 24 30 0C 00 00` (unique) | — |
+| 0x141f49c25 | `cmp cl,3` (code guard) | imm → 4 |
+| 0x141f49c2a | `cmp ebx,3` (slot index guard) | imm → 4 |
+| 0x141f49c31 | `mov qword [rsp+0xc30],0` (after both guards, before any write) | MidHook gate: index 4 needs a registered pie object with an intact footer and 17 slot-4 vtables, else `rip = 0x141f49f5b` (the function's exit = stock behaviour) |
+| verified | 0x141f49be2 (null check, `mov rsi,rdx ; mov rdi,rcx`), 0x141f49d61 (`mov rax,[rdi+0x670] ; imul r12,rcx,0x220`), 0x141f49f5b (epilogue) | — |
+
+The hook is created first, then the index guard, then the code guard (either alone is inert). Installed only
+when `install_fifth_pie` completed. The `.ui` also missed the tile's refresh: `focusable.trigger` (raised by
+`onTabActivated`) sent `Trigger` to the four stock tiles only, and the tile's `Trigger` is what runs
+`progress_value.refreshTextInst` and the ring's `slowRefresh`; it now also targets `focusable.tyres`.
+
+### 3. Tyres icon and colour in the R&D lists (flag `tyres_dept_tags`, default on, install-time)
+`src/rnd_dept_tags.cpp`. Every tag names its frame `dept < 4 ? table[dept] : "error_department"` (0x14587e10d,
+51 references) and reads a `< 6` colour table whose [4] is white. The name was already right through the
+`lng_rnd_dept_error_department` lang key. Sweep of every `%s.%s.%s` icon path on the R&D atlases
+(`rnd_dept_icons_small` ×12, `rnd_category_icons` ×6, `rnd_department_strips` ×1, `rnd_wheel_icon` ×2):
+
+| hook (`lea r9,[atlas]`, frame in `[rsp+0x20]`) | screen | department 4 frame |
+|---|---|---|
+| 0x141f3da29 (fn 0x141f3bec0) | R&D In Progress list ("Part Information") part icon | `error_department_<type>` → stock `<dept>_<type>` (`chassis_tyre_wear`, `chassis_brakes`, `maintenance_general_maintenance`) |
+| 0x141f3d71d (fn 0x141f3bec0) | same list, Driver Career colour strip | `rnd_error_department_strip` → `rnd_maintenance_strip` |
+| 0x141c83920 (fn 0x141c82470) | department page category rows (`rnd_category_row`, keyed by the card's +0x6d8) | category mapping |
+| 0x141c78018 (fn 0x141c76b60) | research category rows (`research_upgrades_category_row`) | category mapping |
+| 0x1419bf600 (fn 0x1419be1e0) | Team HQ R&D popups (research/development completed, failed, delayed) | category mapping |
+| 0x14174dc04 (fn 0x14174cb20), 0x14174eea5 (fn 0x14174e170) | upgrade lists in the 0x1417 family | `error_department` → `maintenance` |
+| 0x1417f87af (fn 0x1417f8090) | upgrade card (`Career_Bind_UpgradeCard`, car monitor objectives) | `maintenance` |
+| 0x141c8876f (fn 0x141c87af0) | department perks title icon (`return_department_name`) | `maintenance` |
+
+Each window (`mov [rsp+0x20],reg` … `call Ne_Format_String`, 27 bytes) is verified, and the hook sits on the
+7-byte `lea r9`; none contains an in-function branch target (the three whole-`.xtls` rel8 candidates into
+0x141c88771/0x141c7801d/0x141c83925 are bytes inside `lea r15/r14,[rsp+..]`). Gate: the In Progress strip
+format at 0x141f3d6b0 (`4C 8D 0D 56 0A 94 03 40 80 FF 03 77 0B 48 8D 05 AC 10 83 03 4C 8B 0C F8 BA 80 00 00
+00`, unique). The v0.6.1 card-binder department icons (0x141810478/0x141815666/0x141818611) now borrow
+`maintenance` too (was `chassis`), so Tyres has one department icon, the one its tile shows.
+
+Colours: 0x14570ddd8[4] (fn 0x14174e170) → 0xff0078ff and its light twin 0x14570ddf0[4] → 0xff99c9ff;
+0x145736548[4] (fn 0x1419be1e0) → 0xff0078ff; each after a full six-entry layout check, single reader each.
+The In Progress list's table 0x14576f5d8 is shared with the Driver Career rewards (0x1420bcfb0,
+0x1420c1bd0), so that list gets a MidHook on its colour store instead: 0x141f3dacf `mov [rsp+0x6c],eax`
+(window from 0x141f3dab5 verified), `eax` white → 0xff0078ff when `[r13+0x72] == 4`. Not touched:
+0x145784c18 (Team HQ department tiles 0x1422fe430 and department events 0x1422e5af0 index it by an event
+department, where [4] may not mean Tyres) and the perks title colour (the perks panel maps unknown names to
+index 5).
+
+### 4. The Tyres tile opens Durability (flag `pie_tyres_open`, default on, install-time)
+Tile press → `focusable.select_pressed` → `raiseEvent goto_rnd_departments` → `laptop_container.ui`
+`raise_command goto_rnd` → the departments flow → `Career_Build_RnDDeptBoxGrid` picks the first tab from
+`DAT_145f93c08` clamped `< 4` (0x141c86c7e) and maps the name to a card (aero/chassis/engine, else
+`cards[3]` = Durability). `pie_tyres_focus` deliberately never writes `DAT_145f93c08` (every pie/box read
+clamps it), so the screen opened the last stock department focused before Tyres. The v0.7.1 log has
+`box-grid builder reached: … selection=2` right after `department_focused "tyres"`, and the box-layout probe
+right after shows the Tyres card already owns slot[6] (`bound-node=0x32a091068 = card+0x268`), so the
+Back-route fallback was not involved.
+
+`DAT_145f93c08` has exactly two writers (RIP-xref): 0x141f4aa49 (class B, Performance page focus) and
+0x141f460a9 (class A, Team HQ research overview focus). Fix:
+
+| site | kind | does |
+|---|---|---|
+| on_focus (0x141f4aa28, existing) | flag | data `tyres` sets "Tyres is the focused tile" |
+| 0x141f4aa49 `mov [DAT_145f93c08],al` | MidHook | a stock focus on the Performance page clears the flag |
+| 0x141f460a9 `mov [DAT_145f93c08],al` (window 0x141f4609b verified) | MidHook | a stock focus on the Team HQ research overview clears it |
+| 0x141f48476 `cmp r14b,al ; jne` (populate focus restore; scan 0x141f48465 `0F B6 05 9C B7 04 04 3C 04 B9 00 00 00 00 0F 43 C1 41 38 C6 75 2F`, unique) | MidHook | flag set: al = 4 for code 4, 0xff for codes 0..3, so the rebuilt page focuses the Tyres tile again |
+| 0x141c86d03 `mov rax,[rax] ; mov [rsi+0x7b8],rax` (box-grid first-tab join; scan of the 30 bytes from there, unique; 0x141c86cde verified) | MidHook | flag set and the Tyres card (vtable 0x145740250, `+0x6d8 == 4`) owns a container slot: `rax` = its card-vector element, and the stock tail stores, enables and selects it. No such slot: stock first tab |
+
+All windows pass the in-function branch-target check; the whole-`.xtls` scan finds no branch into them. The
+route hook is installed by `install_upgrade_screen` next to the Back route (it reuses `find_tyres_tab`), only
+when the tracking hooks are live. Other ways in already land on the Tyres tab: the departments tab bar, Back
+from a Tyres upgrade, the perks back and cross-department jumps (v0.6.1 open dispatch).
+
+### Expected log (v0.7.2 additions)
+Install:
+```
+[rnd-tyres] pie5: pie_tyres_slice=on pie_tyres_focus=on pie_tyres_open=on pie_tyres_performance=on
+[rnd-tyres] pie5 open: hooked R&D > Performance stock index store @0x141f4aa49 (base+0x1f4aa49)
+[rnd-tyres] pie5 open: hooked Team HQ research overview stock index store @0x141f460a9 (base+0x1f460a9)
+[rnd-tyres] pie5 open: hooked populate focus restore compare @0x141f48476 (base+0x1f48476)
+[rnd-tyres] pie5 open INSTALLED: the Tyres focus is tracked for the departments screen's first tab and restored on the Performance page
+[rnd-tyres] pie5 counts: hooked tile-count slot-4 gate @0x141f49c31 (base+0x1f49c31)
+[rnd-tyres] pie5 counts INSTALLED: FUN_141f49bc0 counts code 4 into slot 4 (cmp cl,3->4 @0x141f49c25, cmp ebx,3->4 @0x141f49c2a, gate @0x141f49c31)
+[rnd-tyres] dept tag: hooked <site> @0x… (base+0x…)                       (x9)
+[rnd-tyres] dept tag: hooked in-progress list colour store @0x141f3dacf (base+0x1f3dacf)
+[rnd-tyres] dept tag: R&D upgrade list 0x14174e170 colour [4] white -> 0xff0078ff (@0x14570dde8)
+[rnd-tyres] dept tag: R&D upgrade list 0x14174e170 light colour [4] white -> 0xff99c9ff (@0x14570de00)
+[rnd-tyres] dept tag: Team HQ R&D popup 0x1419be1e0 colour [4] white -> 0xff0078ff (@0x145736558)
+[rnd-tyres] dept tags INSTALLED: 9/9 icon sites; …
+[rnd-tyres] Tyres tile route (box-grid first tab -> Tyres tab while Tyres is the focused tile) installed @0x141c86d03
+[rnd-tyres] Tyres tile route LIVE: pressing the Tyres tile on R&D > Performance opens the Tyres department page
+```
+R&D > Performance:
+```
+[rnd-tyres] pie5 counts: slot 4 verified (object 0x… gen N); Tyres tile upgrades_fitted/total_upgrades = 0/3
+```
+Focus Tyres, press it:
+```
+[rnd-tyres] pie5 focus: department_focused "tyres" -> focused_department = tyres, …
+[rnd-tyres] box-grid builder reached: … selection=2 …
+[rnd-tyres] departments first tab: Tyres was the focused tile -> Tyres tab (card=0x… slot elem=0x…, stock element 0x…)
+```
+Focus a stock tile afterwards: `[rnd-tyres] pie5 open: R&D > Performance focused stock department index N;
+Tyres focus cleared`. In Progress with a Tyres upgrade listed: `dept tag: in-progress list 0x141f3bec0 part
+icon "error_department_tyre_wear" -> "chassis_tyre_wear"` and `dept tag: in-progress list colour for
+department 4 white -> 0xff0078ff`. Refusals end in `(SAFE)` (`pie5 counts SKIPPED: …`, `dept tag: … NOT
+hooked (SAFE)`, `… stock first tab kept`).
+
+### Live checks (gdb under Wine, `handle all nostop noprint pass` + `handle SIGTRAP stop noprint nopass`)
+Hardware breakpoints on the instruction after each hook window:
+- `hbreak *0x141f49c3d if $rbx==4` on R&D > Performance → `x/gx $rdi+0x670`, then `p *(char*)0x141f49c25`
+  = 4; after the function returns, slot 4's `total_upgrades` node is the one the tile shows.
+- `hbreak *0x141c86d0d` when the departments screen opens from the Tyres tile → `x/gx $rsi+0x7b8` is the
+  Tyres card (`x/bx $rax+0x6d8` = 4).
+- `hbreak *0x141f3da30` with a Tyres upgrade in development → `x/s *(char**)($rsp+0x20)` = `chassis_tyre_wear`.
