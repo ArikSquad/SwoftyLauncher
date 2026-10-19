@@ -715,9 +715,13 @@ static void check_activation_gate(void)
     uintptr_t rva = 0xe550;
     uint8_t *at = (uint8_t *)m + rva;
     MEMORY_BASIC_INFORMATION mi;
-    if (page_live((uintptr_t)at, &mi))
-        ediag("  reference: RVA 0x%llx = 0x%02X (the test al,al; the verdict branch is at RVA 0x%llx)",
-              (unsigned long long)rva, *at, (unsigned long long)(rva + 2));
+    if (page_live((uintptr_t)at, &mi)) {
+        uint8_t br = at[2];
+        const char *v = br == 0xEB ? "answered (jmp)"
+                       : (br == 0x75 || br == 0x74) ? "NOT answered" : "unexpected byte";
+        ediag("  reference: RVA 0x%llx = 0x%02X (test al,al); verdict branch RVA 0x%llx = 0x%02X -> %s",
+              (unsigned long long)rva, *at, (unsigned long long)(rva + 2), br, v);
+    }
 }
 
 static void gate3_verdict(const char *when, int reached_window)

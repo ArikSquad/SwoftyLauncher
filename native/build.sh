@@ -47,15 +47,37 @@ import json, sys
 steam = json.load(open(sys.argv[1]))
 EA = {"exe": "F1_25.exe", "sha256": "cc506879c1c834aa54d3478b2f2133d2ec243f2f2d313397631145ea618ff7f4",
       "size": 342936448, "pe_timestamp": 1789128892, "image_base": "0x140000000", "distribution": "EA App"}
-note = ("EA App build template: the on-disk EA exe is fully packed (no plaintext code), so patterns cannot be "
-        "derived statically. The loader scans decrypted process memory at runtime; fill each 'pattern' (and "
-        "'expect') from a decrypted-memory dump. Section is '.rdata' (EA runtime engine code), not '.xtls'.")
+# EA anchor-function bases: the function holding each anchor string's code xref on
+# the EA App build, captured by the loader's EA per-binding diagnostics on the
+# shipping exe (decrypted code at the window stage). String anchors stay
+# build-agnostic; these RVAs tell the resolver what it must find. In-function
+# offsets are kept from the Steam rows and shape-verified at runtime, so a build
+# whose code layout differs fails closed instead of hooking the wrong site.
+EA_FUNC_RVA = {
+    "#customisation_flow.fe_screen_selected_button": 0x1738350,
+    "notification_type": 0x1691f60,
+    "void game::championship::Weekend::start(const game::EntrantPointers &, const NEbool)": 0xaeedd0,
+    "virtual void game::FEHomeViewModel::onCommandRaised(const neon::NeUIString &, const neon::NeUIPrimitiveType &)": 0x1bae090,
+    "DevSessionDataContract.ForceStaggeredStart": 0x600160,
+}
+note = ("EA App build set: string anchors with captured EA function bases resolve at runtime against the "
+        "decrypted code (bulk-decrypted at the window stage). In-function offsets come from the Steam rows and "
+        "are shape-verified before any hook is installed. Rows without a string anchor (pattern-only) stay "
+        "pending until a decrypted-memory dump yields an EA anchor.")
 out = []
 for b in steam["bindings"]:
     nb = dict(b); nb["status"] = "pending-dump"; nb["section"] = ".rdata"
     nb["steam_rva"] = b.get("rva"); nb["steam_pattern"] = b["pattern"]; nb["pattern"] = ""
     if nb.get("expect") is not None: nb["expect"] = ""
     nb.pop("rva", None); nb["build"] = EA["sha256"]
+    sa = nb.get("string_anchor")
+    if isinstance(sa, dict):
+        sa = dict(sa)
+        f = EA_FUNC_RVA.get(sa.get("string"))
+        if f is not None:
+            sa["func_rva"] = f
+            nb["status"] = "ea-anchored"
+        nb["string_anchor"] = sa
     out.append(nb)
 json.dump({"schema": 1, "generator": "native/build.sh EA template", "build": EA, "note": note, "bindings": out},
           open(sys.argv[2], "w"), indent=1)

@@ -626,10 +626,25 @@ void ea_binding_report(const char *when)
                    dec ? "" : " [WARNING: code reads encrypted, treat the address as unverified]");
         } else {
             enc++;
+            /* Show the candidate site so a single run on the target build
+               recaptures any in-function offset drift: the bytes at
+               anchor-func + func_offset + anchor are what a corrected row
+               must describe. */
+            char bytes[64] = {0};
+            uintptr_t site = f + (uintptr_t)b.sa_func_off + (uintptr_t)b.anchor;
+            int o = 0;
+            for (int i = 0; i < 12 && o < (int)sizeof bytes - 4; i++) {
+                if (!page_readable(site + i, 1))
+                    break;
+                o += snprintf(bytes + o, sizeof bytes - o, "%02X ", *(uint8_t *)(site + i));
+            }
+            if (o)
+                bytes[o - 1] = 0;
             ea_log("[ea] binding %-30s string @base+0x%llx, func @base+0x%llx, func-page entropy %.2f (%s) -> VERDICT "
-                   "%s (%s)",
+                   "%s (%s); candidate site @base+0x%llx bytes [%s]",
                    b.id.c_str(), rva(sVA), rva(f), e < 0 ? 0 : e, ent_word(e),
-                   dec ? "resolve-failed" : "code-still-encrypted", why);
+                   dec ? "resolve-failed" : "code-still-encrypted", why, (unsigned long long)rva(site),
+                   bytes[0] ? bytes : "unreadable");
         }
     }
     ea_log("[ea] per-binding summary (%s): %zu resolved, %zu code-still-encrypted, %zu xref-not-found, %zu "

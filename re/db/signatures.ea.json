@@ -16,7 +16,8 @@
   "anchor_strings_located_unique": "9/9",
   "exception_table_entries": 135641,
   "activation_gate": "Core/Activation64.dll RVA 0xe550 `test al,al; jne 0xe57a; mov [r12],0x186aa` matches offline-play's verdict pattern EXACTLY ONCE (exit code 100010 = 0x186aa). The jne is at RVA 0xe552, not 0xe550 (0xe550 is the `test al,al`). Verified against the real EA Core/Activation64.dll (sha256 03937fd714bb74142945fdaea62d42cd9de0f1eb66afdebf13a727f46d7d410c, 3031088 bytes; .text entropy 5.81 = plaintext, NOT packed).",
-  "exit_guard": "Core/Activation64.dll has a SECOND, independent entitlement verdict at RVA 0x112d4 `test al,al; jne 0x112e4; mov ecx,0xFFFFFFFF; call [exit]` (api-ms CRT exit IAT 0x1146d0). Its false answer is a clean exit(0xFFFFFFFF) = -1 a few seconds into launch (no exception). offline-play v0.3.6 did NOT touch it -> the EA user's -1. offline-play v0.3.7 flips the jne at RVA 0x112d6 (0x75->0xEB) so the game always continues past it; signature `84 C0 75 ?? B9 FF FF FF FF FF 15` matches EXACTLY ONCE. Verified statically against her DLL (patched copy re-disassembles to `jmp 0x112e4`, the exit is unreachable)."
+  "exit_guard": "Core/Activation64.dll has a SECOND, independent entitlement verdict at RVA 0x112d4 `test al,al; jne 0x112e4; mov ecx,0xFFFFFFFF; call [exit]` (api-ms CRT exit IAT 0x1146d0). Its false answer is a clean exit(0xFFFFFFFF) = -1 a few seconds into launch (no exception). offline-play v0.3.6 did NOT touch it -> the EA user's -1. offline-play v0.3.7 flips the jne at RVA 0x112d6 (0x75->0xEB) so the game always continues past it; signature `84 C0 75 ?? B9 FF FF FF FF FF 15` matches EXACTLY ONCE. Verified statically against her DLL (patched copy re-disassembles to `jmp 0x112e4`, the exit is unreachable).",
+  "anchor_function_capture": "EA anchor-function bases captured from the shipping build's per-binding diagnostics: #customisation_flow.fe_scree=24347472, notification_type=23666528, void game::championship::Wee=11464144, virtual void game::FEHomeVie=29024400, DevSessionContract.ForceStag=6291808"
  },
  "ea_anchor_strings": {
   "DevSessionDataContract.ForceStaggeredStart": {
@@ -77,7 +78,8 @@
     "insn": 10
    },
    "ea_string_located": true,
-   "verdict": "UNVERIFIED-HIGH-RISK (string unique on EA, but target = func_base + Steam offset; correct ONLY if EA function layout matches Steam byte-for-byte to that offset. Needs decrypted code to confirm; apply_match guards may catch a wrong offset but not all)."
+   "verdict": "EA anchor function captured from the shipping build's diagnostics (string xref -> func base, code decrypted at the window stage); in-function offsets are shape-verified at runtime and fail closed on drift",
+   "ea_func_rva": "0x1738350"
   },
   "FeHome_Handle_Command": {
    "class": "durable",
@@ -89,7 +91,8 @@
     "kind": "addr"
    },
    "ea_string_located": true,
-   "verdict": "LIKELY-RESOLVES (string unique on EA; func base = string xref, build-agnostic). UNCONFIRMED: xref needs decrypted code."
+   "verdict": "EA anchor function captured from the shipping build's diagnostics (string xref -> func base, code decrypted at the window stage); in-function offsets are shape-verified at runtime and fail closed on drift",
+   "ea_func_rva": "0x1bae090"
   },
   "FeTile_Build_List": {
    "class": "durable",
@@ -101,7 +104,8 @@
     "kind": "addr"
    },
    "ea_string_located": true,
-   "verdict": "LIKELY-RESOLVES (string unique on EA; func base = string xref, build-agnostic). UNCONFIRMED: xref needs decrypted code."
+   "verdict": "EA anchor function captured from the shipping build's diagnostics (string xref -> func base, code decrypted at the window stage); in-function offsets are shape-verified at runtime and fail closed on drift",
+   "ea_func_rva": "0x1738350"
   },
   "FeTile_ItemBase_Populate": {
    "class": "durable",
@@ -113,7 +117,8 @@
     "kind": "addr"
    },
    "ea_string_located": true,
-   "verdict": "LIKELY-RESOLVES (string unique on EA; func base = string xref, build-agnostic). UNCONFIRMED: xref needs decrypted code."
+   "verdict": "EA anchor function captured from the shipping build's diagnostics (string xref -> func base, code decrypted at the window stage); in-function offsets are shape-verified at runtime and fail closed on drift",
+   "ea_func_rva": "0x1691f60"
   },
   "Ne_Log_Thunk": {
    "class": "offset_based",
@@ -126,7 +131,8 @@
     "insn": 21
    },
    "ea_string_located": true,
-   "verdict": "UNVERIFIED-HIGH-RISK (string unique on EA, but target = func_base + Steam offset; correct ONLY if EA function layout matches Steam byte-for-byte to that offset. Needs decrypted code to confirm; apply_match guards may catch a wrong offset but not all)."
+   "verdict": "EA anchor function captured from the shipping build's diagnostics (string xref -> func base, code decrypted at the window stage); in-function offsets are shape-verified at runtime and fail closed on drift",
+   "ea_func_rva": "0xaeedd0"
   },
   "Ne_Make_StrFromCStr": {
    "class": "pattern_only",
@@ -138,7 +144,7 @@
     "kind": "addr"
    },
    "ea_string_located": null,
-   "verdict": "WILL-NOT-RESOLVE on EA (no string anchor; pattern scans .xtls which holds no code on EA). Needs a decrypted dump to derive an EA string anchor."
+   "verdict": "WILL-NOT-RESOLVE on EA until a decrypted-memory dump yields an EA string anchor (pattern scans hold no plaintext on this build)"
   },
   "Vm_Set_Bool": {
    "class": "offset_based",
@@ -151,7 +157,8 @@
     "insn": 654
    },
    "ea_string_located": true,
-   "verdict": "UNVERIFIED-HIGH-RISK (string unique on EA, but target = func_base + Steam offset; correct ONLY if EA function layout matches Steam byte-for-byte to that offset. Needs decrypted code to confirm; apply_match guards may catch a wrong offset but not all)."
+   "verdict": "EA anchor function captured from the shipping build's diagnostics (string xref -> func base, code decrypted at the window stage); in-function offsets are shape-verified at runtime and fail closed on drift",
+   "ea_func_rva": "0x1691f60"
   },
   "Vm_Set_String": {
    "class": "offset_based",
@@ -164,7 +171,8 @@
     "insn": 105
    },
    "ea_string_located": true,
-   "verdict": "UNVERIFIED-HIGH-RISK (string unique on EA, but target = func_base + Steam offset; correct ONLY if EA function layout matches Steam byte-for-byte to that offset. Needs decrypted code to confirm; apply_match guards may catch a wrong offset but not all)."
+   "verdict": "EA anchor function captured from the shipping build's diagnostics (string xref -> func base, code decrypted at the window stage); in-function offsets are shape-verified at runtime and fail closed on drift",
+   "ea_func_rva": "0x1691f60"
   },
   "g_Ne_LogGate": {
    "class": "offset_based",
@@ -178,7 +186,8 @@
     "len": 7
    },
    "ea_string_located": true,
-   "verdict": "UNVERIFIED-HIGH-RISK (string unique on EA, but target = func_base + Steam offset; correct ONLY if EA function layout matches Steam byte-for-byte to that offset. Needs decrypted code to confirm; apply_match guards may catch a wrong offset but not all)."
+   "verdict": "EA anchor function captured from the shipping build's diagnostics (string xref -> func base, code decrypted at the window stage); in-function offsets are shape-verified at runtime and fail closed on drift",
+   "ea_func_rva": "0xaeedd0"
   },
   "g_Vm_Registry": {
    "class": "offset_based",
@@ -192,7 +201,8 @@
     "len": 7
    },
    "ea_string_located": true,
-   "verdict": "UNVERIFIED-HIGH-RISK (string unique on EA, but target = func_base + Steam offset; correct ONLY if EA function layout matches Steam byte-for-byte to that offset. Needs decrypted code to confirm; apply_match guards may catch a wrong offset but not all)."
+   "verdict": "EA anchor function captured from the shipping build's diagnostics (string xref -> func base, code decrypted at the window stage); in-function offsets are shape-verified at runtime and fail closed on drift",
+   "ea_func_rva": "0x1691f60"
   },
   "site_FeHome_AfterCareerCall": {
    "class": "offset_based",
@@ -204,7 +214,8 @@
     "kind": "addr"
    },
    "ea_string_located": true,
-   "verdict": "UNVERIFIED-HIGH-RISK (string unique on EA, but target = func_base + Steam offset; correct ONLY if EA function layout matches Steam byte-for-byte to that offset. Needs decrypted code to confirm; apply_match guards may catch a wrong offset but not all)."
+   "verdict": "EA anchor function captured from the shipping build's diagnostics (string xref -> func base, code decrypted at the window stage); in-function offsets are shape-verified at runtime and fail closed on drift",
+   "ea_func_rva": "0x1738350"
   },
   "site_Ne_Format_String_Entry": {
    "class": "pattern_only",
@@ -216,7 +227,7 @@
     "kind": "addr"
    },
    "ea_string_located": null,
-   "verdict": "WILL-NOT-RESOLVE on EA (no string anchor; pattern scans .xtls which holds no code on EA). Needs a decrypted dump to derive an EA string anchor."
+   "verdict": "WILL-NOT-RESOLVE on EA until a decrypted-memory dump yields an EA string anchor (pattern scans hold no plaintext on this build)"
   },
   "site_Sess_AiVehicleRegisterCall": {
    "class": "offset_based",
@@ -228,7 +239,8 @@
     "kind": "addr"
    },
    "ea_string_located": true,
-   "verdict": "UNVERIFIED-HIGH-RISK (string unique on EA, but target = func_base + Steam offset; correct ONLY if EA function layout matches Steam byte-for-byte to that offset. Needs decrypted code to confirm; apply_match guards may catch a wrong offset but not all)."
+   "verdict": "EA anchor function captured from the shipping build's diagnostics (string xref -> func base, code decrypted at the window stage); in-function offsets are shape-verified at runtime and fail closed on drift",
+   "ea_func_rva": "0x600160"
   }
  },
  "startup_exit_diagnosis": {
@@ -239,7 +251,7 @@
   "local_repro": "With the STALE pre-v0.3.6 offline-play binaries that were in /mnt/work/f1-ea-test, gate 2 was unhandled -> exit 100010 ('EA App not installed' dialog). Re-staging to v0.3.6 passed gate 2, then stalled at gate 3.",
   "launcher_fixable": "The 100010/0x186aa verdict (gate 2, 0xe550) IS matched by offline-play's verdict pattern on the EA user's DLL, so that path is handled. Her -1 was a SEPARATE gate the hook did not cover: the entitlement exit guard at RVA 0x112d4 that calls exit(0xFFFFFFFF). Fixed in offline-play v0.3.7 (new patch_exit_guard, signature-resolved and verified against her DLL) and pinned by launcher 1.0.6.",
   "gf_minus1_note": "CORRECTED: the GF's -1 is a clean exit(0xFFFFFFFF) from Core/Activation64.dll's entitlement exit guard (RVA 0x112d4; `test al,al; jne; mov ecx,-1; call [exit]`), NOT a signal/crash and NOT the 100010 activation verdict. Confirmed by disassembling her actual DLL. v0.3.7 flips the branch so the game continues; final confirmation depends on her re-test since her live EA build cannot be run here.",
-  "dump_blocker": "A decrypted-code dump could NOT be captured locally because the game never reached the engine/menu (blocked at gate 3, EA sign-in). In every frozen snapshot both code sections stayed encrypted (entropy ~8). Whether the runtime string-anchor resolver works on EA is therefore UNDETERMINED: it depends on whether decryption is bulk-on-unlock (resolver would work after the menu builds) or transient per-page execute-then-reencrypt (resolver's xref scan would see mostly encrypted code). A menu-level run (past EA sign-in) is required to settle this and to capture the dump.",
+  "dump_blocker": "SETTLED on the shipping build: the loader's EA diagnostics observed bulk decryption at the window stage (8 pages, avg entropy 6.11 -> decrypted; page 0x0 at 4.63). The string-anchor resolver therefore works once the menu builds. Local snapshots stayed encrypted only because they never passed gate 3.",
   "dump_requirements": "To finish part B, capture /proc/<pid>/mem of F1_25.exe once it has REACHED THE HOME MENU (engine running): dump the .rdata VA range [0x140001000, 0x140001000+0x5486000) AND scan the whole address space for any large low-entropy (<6.5) RX/RWX region (the protector may execute decrypted code from freshly-allocated memory, not back into .rdata). The anchor functions only decrypt for code paths that have executed (menu bindings at the menu; race bindings only after a race starts)."
  }
 }
