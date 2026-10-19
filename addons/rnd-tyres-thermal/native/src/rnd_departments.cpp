@@ -1010,6 +1010,102 @@ void install_tree_probe(uintptr_t base)
                 (unsigned long long)hit, (unsigned long long)(hit - base));
 }
 
+// ---------------------------------------------------------------------------
+// R&D upgrade tiles: tile-source-count diagnostic (why the code-4 page is empty).
+//
+// The upgrade-tree tiles (laptop_research_upgrades, F1TS row_spawner over the VM
+// collection @rows) are data-bound: node widgets are spawned from the loaded tree
+// model, positioned by grid_coordinates and wired by links. Two loaders feed that
+// model and BOTH loop the same dept-code table (0x145735d60, codes 0..4, break at
+// 5) with NO exclusion of code 4:
+//   - Career_Load_UpgradeRows (0x143539bc0): the flat 0x80-byte UpgradeRecord
+//     vector (upgrade_name/type/size/department/cost/...), no grid.
+//   - the grid/tree-node loader (0x14353b030, reached from the model builder
+//     0x14353abb0, which also calls it per linked team): reads grid_coordinates.x/y
+//     + every column and appends all departments' nodes into one combined model at
+//     UpgradesComponent+0x68+0x28. Node labels resolve via Gdb_Find_RowByLabel
+//     (0x1445a2bd0), a linear scan of rows 0..(_upgrade_instancecount_-1) - so rows
+//     at index >= instancecount are INVISIBLE to link resolution. Our db bumps the
+//     46 fake containers' _upgrade_instancecount_ 1->4 so upgrade_1/2/3 are in range.
+//
+// Both loaders get the per-container row count from Gdb_Init_TableCursor
+// (<container>._upgrade_instancecount_). This read-only probe sits in the grid/tree
+// loader at the first row_count test (0x14353b1af), right after that cursor init:
+// rsp-frame [rsp+0x378] = cursor row_count (= cursor(+rsp+0x178)+0x200), [rsp+0x58]
+// = &current dept-code byte. It logs, per code (esp. code 4 = the "fake"/Tyres
+// container), how many rows the TILE DATA SOURCE yields. That bisects the
+// invisible-tiles cause: row_count 4 for code 4 => our nodes ARE in the tree model
+// (blocker is the display/active-department filter, not the data); row_count 1 =>
+// the instancecount bump is not honoured at runtime (a data problem). SAFE: no
+// writes, region-guarded reads only, one unique scan + flag diag_tree_rowcount.
+
+SWOFTY_SETTING(bool, diag_tree_rowcount, true);
+std::atomic<bool> g_trc_enabled{true};
+safetyhook::MidHook g_trc_hook;
+std::atomic<int> g_trc_log{0};
+
+SWOFTY_ON_CHANGE(diag_tree_rowcount, bool on)
+{
+    g_trc_enabled.store(on);
+    swofty::log("[rnd-tyres] diag_tree_rowcount toggled -> %s", on ? "on" : "off");
+}
+
+void on_tree_rowcount(safetyhook::Context &c)
+{
+    if (!g_trc_enabled.load())
+        return;
+    uintptr_t rsp = c.rsp;
+    const void *code_pp = reinterpret_cast<const void *>(rsp + 0x58);
+    const void *rc_p = reinterpret_cast<const void *>(rsp + 0x378);
+    if (!region_readable(code_pp, 8) || !region_readable(rc_p, 4))
+        return;
+    uintptr_t code_ptr = *reinterpret_cast<const uintptr_t *>(code_pp);
+    if (!region_readable(reinterpret_cast<const void *>(code_ptr), 1))
+        return;
+    unsigned code = *reinterpret_cast<const uint8_t *>(code_ptr);
+    uint32_t row_count = *reinterpret_cast<const uint32_t *>(rc_p);
+    int n = g_trc_log.fetch_add(1);
+    if (code == 4) {
+        if (n < 48)
+            swofty::log("[rnd-tyres] tree-rows code=4 FAKE/TYRES: tree-view data source row_count=%u "
+                        "(tiles the data layer yields for the Tyres branch; 4 = hub+our 3 loaded -> blocker is "
+                        "the DISPLAY/active-dept filter; 1 = _upgrade_instancecount_ bump NOT honoured -> data)",
+                        row_count);
+    } else if (n < 16) {
+        swofty::log("[rnd-tyres] tree-rows code=%u: tree-view data source row_count=%u", code, row_count);
+    }
+}
+
+void install_tree_rowcount_probe(uintptr_t base)
+{
+    if (!g_trc_enabled.load()) {
+        swofty::log("[rnd-tyres] diag_tree_rowcount off; tree-rows diagnostic NOT installed (SAFE)");
+        return;
+    }
+    uintptr_t hit = 0;
+    int matches =
+        swofty::api->scan(".xtls", "83 BC 24 78 03 00 00 00 0F 84 F3 FE FF FF 45 31 C0 EB 2A 66", &hit);
+    if (matches != 1 || !hit) {
+        swofty::log("[rnd-tyres] tree-rows site signature matched %d time(s); diagnostic NOT installed (SAFE)",
+                    matches);
+        return;
+    }
+    if (!region_readable(reinterpret_cast<void *>(hit), 16)) {
+        swofty::log("[rnd-tyres] tree-rows site @0x%llx not committed; NOT hooking (SAFE)",
+                    (unsigned long long)hit);
+        return;
+    }
+    auto r = safetyhook::MidHook::create(reinterpret_cast<void *>(hit), &on_tree_rowcount);
+    if (!r) {
+        swofty::log("[rnd-tyres] tree-rows MidHook::create failed @0x%llx (err %d); NOT installed (SAFE)",
+                    (unsigned long long)hit, (int)r.error().type);
+        return;
+    }
+    g_trc_hook = std::move(*r);
+    swofty::log("[rnd-tyres] tree-rows diagnostic installed @0x%llx (base+0x%llx); diag_tree_rowcount=on",
+                (unsigned long long)hit, (unsigned long long)(hit - base));
+}
+
 } // namespace
 
 SWOFTY_ON_LOAD
@@ -1039,6 +1135,11 @@ SWOFTY_ON_LOAD
     // (read-only; resolves the per-save <team_link>.fake upgrade container).
     g_tree_enabled.store(attach_tyres_tree.get());
     install_tree_probe(base);
+
+    // Upgrade-tree tile-source-count diagnostic - its OWN independent gate + feature
+    // flag (read-only; logs the code-4 tree-view row count to bisect data vs display).
+    g_trc_enabled.store(diag_tree_rowcount.get());
+    install_tree_rowcount_probe(base);
 
     uintptr_t hit = 0;
     int matches = swofty::api->scan(".xtls", "75 06 B1 03 EB 02 31 C9 88 8F 40 03 00 00", &hit);
