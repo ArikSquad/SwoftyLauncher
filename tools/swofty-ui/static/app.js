@@ -248,6 +248,7 @@ async function api(path, body) {
   if (!r.ok) {
     const err = new Error((data && data.error) || `HTTP ${r.status}`);
     err.status = r.status;
+    err.data = data;
     if (data && data.opIndex !== undefined) err.opIndex = data.opIndex;
     throw err;
   }
@@ -268,6 +269,8 @@ function toast(msg, kind) {
 
 const E = (k) => S.els[k];
 const isRoot = (k) => E(k) && E(k).parent === null;
+const refScene = (e) => (e.ref ? e.ref.scene : null);
+const refBad = (e) => !!(e.ref && !e.ref.ok);
 
 function isSelfOrDesc(k, anc) {
   for (let c = k; c != null; c = E(c) && E(c).parent) if (c === anc) return true;
@@ -313,8 +316,8 @@ function compose() {
     let g = w.aabb;
     for (const c of e.ch) g = unionBox(g, S.world.get(c).gaabb);
     w.gaabb = g;
-    if (e.fileRef) {
-      const gh = S.ghosts.get(ghostKey(e.fileRef));
+    if (refScene(e)) {
+      const gh = S.ghosts.get(ghostKey(refScene(e)));
       if (gh && gh.items) {
         const n = gh.items.length;
         w.ghosts = gh.items.map((it, i) => {
@@ -588,6 +591,32 @@ function render() {
   }
   if (outlines || S.opts.labels === 'all') drawLabels();
   else if (S.sel || S.hov) { const keep = S.opts.labels; S.opts.labels = 'sel'; drawLabels(); S.opts.labels = keep; }
+  drawRefWarnings();
+}
+
+function drawRefWarnings() {
+  ctx.font = '600 11px ui-sans-serif, system-ui, sans-serif';
+  for (const [k, w] of S.world) {
+    const e = E(k);
+    if (!refBad(e) || hiddenEl(e)) continue;
+    const b = w.aabb || w.gaabb;
+    let X = sx(w.pivot[0]), Y = sy(w.pivot[1]);
+    ctx.strokeStyle = '#f87171';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    if (w.poly && w.poly.length >= 3) {
+      pathPoly(w.poly);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    const text = 'xref id ≠ fileRef';
+    const tw = ctx.measureText(text).width + 10;
+    if (b) { X = sx(b[2]) - tw; Y = sy(b[3]); }
+    ctx.fillStyle = '#7f1d1d';
+    ctx.fillRect(X, Y - 17, tw, 16);
+    ctx.fillStyle = '#fecaca';
+    ctx.fillText(text, X + 5, Y - 5);
+  }
 }
 
 /* ---------- textured preview ---------- */
@@ -1028,7 +1057,8 @@ function renderTree() {
       h('span', { class: 'nm' }, e.name),
       h('span', { class: 'ty' }, e.type),
       a !== null && a > 0.01 ? h('span', { class: 'badge', title: 'Z rotation' }, `${fmt(a, 1)}°`) : null,
-      e.fileRef ? h('span', { class: 'badge', title: e.fileRef }, 'xref') : null,
+      e.ref ? h('span', { class: 'badge', title: refScene(e) || e.fileRef }, 'xref') : null,
+      refBad(e) ? h('span', { class: 'badge bad', title: e.ref.message }, 'id≠path') : null,
       !e.idOk ? h('span', { class: 'badge bad', title: 'elementId != djb2(path)' }, 'id!') : null,
       S.clonedPaths.has(e.path) ? h('span', { class: 'badge new' }, 'new') : null);
     frag.append(row);
@@ -1206,15 +1236,7 @@ function renderInspector() {
     insp.append(sec('Box', kv(['source', src], ['local min', fmtVec(e.box.min)], ['local max', fmtVec(e.box.max)])));
   }
 
-  if (e.fileRef) {
-    const x = (S.model.xrefs || {})[e.fileRef] || {};
-    insp.append(sec('XRef', kv(
-      ['fileRef', shortPath(e.fileRef)],
-      ['componentId', e.xref],
-      ['resolved', x.found ? h('span', { class: 'ok' }, `✓ ${x.erp}, ${x.count} box(es)${x.truncated ? ' (truncated)' : ''}`) : h('span', { class: 'warn' }, x.error || 'unresolved')],
-    ), h('div', { class: 'actions', style: 'margin-top:6px' },
-      h('button', { class: 'btn small', onclick: () => openScene(shortPath(e.fileRef)) }, 'Open referenced scene'))));
-  }
+  if (e.ref) insp.append(refSection(e));
 
   insp.append(paramsSection(e));
 
@@ -1251,6 +1273,51 @@ function renderInspector() {
       h('button', { class: 'btn small', onclick: fitSelection }, 'Fit')),
     h('div', { class: 'hint' }, 'Clone copies the subtree as a new sibling, recomputes elementIds (djb2 of the dotted path), gives fresh guids and rebuilds nodeidlookup.')));
   }
+}
+
+function refSection(e) {
+  const r = e.ref;
+  const target = refScene(e);
+  const x = (target && (S.model.xrefs || {})[target]) || {};
+  const hex = (v) => (v ? `0x${v}` : '—');
+  const retarget = (path, desc) => pushOp({ op: 'retarget', key: e.k, fileRef: path }, desc);
+  const input = h('input', { class: 'input', style: 'flex:1;width:auto;min-width:0', value: shortPath(r.path), spellcheck: 'false', title: 'Scene path, such as art/components/career/rnd_tree/rnd_dev_potential.idf' });
+  const commit = () => {
+    const v = input.value.trim();
+    if (v && v !== shortPath(r.path)) retarget(v, `Retarget ${e.name} → ${baseName(v)}`);
+  };
+  input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') commit(); if (ev.key === 'Escape') input.value = shortPath(r.path); });
+  const nested = (x.mismatches || []).length;
+  const out = sec(['XRef', refBad(e) ? h('span', { class: 'bad' }, 'id ≠ path') : null], kv(
+    ['fileRef', shortPath(r.path)],
+    ['xref id', r.id == null ? h('span', { class: 'muted' }, 'none') : h('span', {}, `${hex(r.idHex)} `,
+      h('span', { class: r.ok ? 'ok' : 'bad', title: 'The game finds the referenced scene by this id: the componentId of its scene, md5-64 of the path' },
+        r.ok ? '✓ md5-64(fileRef)' : `✗ md5-64(fileRef) is ${hex(r.pathIdHex)}`))],
+    ['game loads', target ? shortPath(target) : h('span', { class: 'bad' }, `the scene with componentId ${hex(r.idHex)}, not in the loaded archives`)],
+    ['resolved', !target ? null : x.found ? h('span', { class: 'ok' }, `✓ ${x.erp}, ${x.count} box(es)${x.truncated ? ' (truncated)' : ''}`) : h('span', { class: 'warn' }, x.error || 'loading…')],
+  ));
+  if (refBad(e)) {
+    out.append(h('div', { class: 'callout bad' },
+      h('b', {}, 'fileRef and the xref id name different scenes. '),
+      'The game finds a referenced scene by its xref id, so it loads ', h('code', {}, target ? baseName(target) : `the scene with componentId ${hex(r.idHex)}`),
+      ', not ', h('code', {}, baseName(r.path)), '. Swofty UI draws what the game loads. Changing fileRef alone does nothing in game. Export is blocked until both name the same scene.',
+      h('div', { class: 'actions', style: 'margin-top:8px' },
+        h('button', { class: 'btn small primary', onclick: () => retarget(r.path, `Point ${e.name}'s id at ${baseName(r.path)}`) }, `Load ${baseName(r.path)} (set the id)`),
+        target ? h('button', { class: 'btn small', onclick: () => retarget(target, `Point ${e.name}'s fileRef at ${baseName(target)}`) }, `Keep ${baseName(target)} (set fileRef)`) : null)));
+  }
+  if (nested) {
+    out.append(h('div', { class: 'callout warn' },
+      `${nested} reference(s) inside ${baseName(target)} name one scene in fileRef and another by id. They are drawn as the game loads them:`,
+      h('ul', { class: 'list' }, x.mismatches.slice(0, 8).map((m) => h('li', {}, `${baseName(m.inScene)} · ${m.element} → ${m.scene ? baseName(m.scene) : '?'} (fileRef ${baseName(m.path)})`)))));
+  }
+  if (e.parent !== null) {
+    out.append(h('div', { class: 'actions', style: 'margin-top:8px' }, input,
+      h('button', { class: 'btn small', onclick: commit, title: 'Sets fileRef, the xref id and XrefMaterialBinding together' }, 'Retarget')));
+  }
+  out.append(h('div', { class: 'actions', style: 'margin-top:6px' },
+    target ? h('button', { class: 'btn small', onclick: () => openScene(shortPath(target)) }, 'Open referenced scene') : null,
+    refBad(e) && r.path ? h('button', { class: 'btn small', onclick: () => openScene(shortPath(r.path)) }, `Open ${baseName(r.path)}`) : null));
+  return out;
 }
 
 function visualInfo(v) {
@@ -1325,6 +1392,8 @@ function sceneInfo() {
       ['nodeidlookup', h('span', { class: sc.lookupOk ? 'ok' : 'bad' }, `${sc.lookupCount} ${sc.lookupOk ? '✓ sorted djb2(names)' : '✗ differs from sorted djb2(names)'}`)],
       ['elements', String(m.stats.elements)],
       ['xrefs', String(m.stats.xrefs)],
+      ['references', m.stats.refs ? h('span', { class: m.stats.refBad ? 'bad' : 'ok' },
+        m.stats.refBad ? `${m.stats.refBad} of ${m.stats.refs} ✗ xref id ≠ md5-64(fileRef)` : `${m.stats.refs} ✓ xref id == md5-64(fileRef)`) : '0'],
       ['source', S.origin.erp ? `${S.origin.erp}` : S.origin.file || S.origin.label],
     )));
   }
@@ -1484,6 +1553,8 @@ function updateStatus() {
     h('span', { class: m.stats.idBad ? 'bad' : 'ok' }, m.stats.idBad ? `${m.stats.idBad} elementId mismatch` : 'elementIds ✓'),
     h('span', { class: sc.lookupOk ? 'ok' : 'bad' }, sc.lookupOk ? 'nodeidlookup ✓' : 'nodeidlookup ✗'),
     sc.componentIdMatchesPath === null ? null : h('span', { class: sc.componentIdMatchesPath ? 'ok' : 'bad' }, sc.componentIdMatchesPath ? 'componentId ✓' : 'componentId ✗'),
+    m.stats.refs ? h('span', { class: m.stats.refBad ? 'bad' : 'ok', title: 'The game finds a referenced scene by the xref id, not by fileRef' },
+      m.stats.refBad ? `${m.stats.refBad} xref id ≠ fileRef` : 'xref ids ✓') : null,
     `${S.ops.length} edit(s)`,
     S.lastExport ? `last export: ${S.lastExport}` : null,
   ].filter(Boolean);
@@ -1498,7 +1569,7 @@ function hudStatus(world) {
   if (S.opts.textures && textureStats()) parts.push(textureStats());
   if (S.hov && E(S.hov)) {
     const e = E(S.hov);
-    parts.push(`${e.name} [${e.type}]${e.fileRef ? ' → ' + baseName(e.fileRef) : ''}`);
+    parts.push(`${e.name} [${e.type}]${e.ref ? ' → ' + (refScene(e) ? baseName(refScene(e)) : '?') : ''}${refBad(e) ? ' (xref id ≠ fileRef)' : ''}`);
   }
   hud.textContent = parts.join('   ');
 }
@@ -1516,11 +1587,12 @@ const ghostKey = (ref) => (S.opts.reveal ? 'r|' : '') + ref;
 
 function loadGhosts() {
   for (const e of Object.values(S.els)) {
-    const gk = e.fileRef && ghostKey(e.fileRef);
+    const target = refScene(e);
+    const gk = target && ghostKey(target);
     if (!gk || S.ghosts.has(gk)) continue;
     S.ghosts.set(gk, { loading: true });
     const erp = S.origin && S.origin.erp ? `&erp=${encodeURIComponent(S.origin.erp)}` : '';
-    api(`/api/xref?eaid=${encodeURIComponent(e.fileRef)}${erp}${S.opts.reveal ? '&reveal=1' : ''}`)
+    api(`/api/xref?eaid=${encodeURIComponent(target)}${erp}${S.opts.reveal ? '&reveal=1' : ''}`)
       .then((g) => { S.ghosts.set(gk, g); queueCompose(); })
       .catch(() => S.ghosts.set(gk, { error: true }));
   }
@@ -1963,7 +2035,8 @@ async function doExport() {
     S.lastExport = `${baseName(r.file)} ${r.checks.ok ? '✓' : '✗'}`;
     updateStatus();
   } catch (err) {
-    toast(err.message, 'err');
+    if (err.status === 422 && err.data && err.data.checks) showRefused(err.data);
+    else toast(err.message, 'err');
   } finally {
     btn.disabled = false;
   }
@@ -1981,6 +2054,7 @@ function showExport(r) {
       row(c.elementIdsOk, `Every elementId == djb2(dotted path) (${c.elements} elements)${c.elementIdsBad && c.elementIdsBad.length ? ': ' + c.elementIdsBad.join(', ') : ''}`),
       row(c.nodeidlookupOk, 'nodeidlookup == sorted djb2(element names)'),
       c.componentIdsKept !== undefined ? row(c.componentIdsKept, 'Scene componentId unchanged') : null,
+      refRow(c, row),
       row(true, c.identicalToSource ? 'Identical to the source bytes (no effective edits)' : `Differs from the source (${S.ops.length} edit(s) applied)`, true)),
     h('div', { class: 'small muted' }, `${r.size} bytes`),
     pathBox('File', r.file),
@@ -1993,6 +2067,26 @@ function showExport(r) {
       h('a', { class: 'btn primary', href: r.download, download: '' }, 'Download .idf'),
       h('button', { class: 'btn', onclick: revealExports }, 'Open export folder')));
   $('#export-title').textContent = c.ok ? 'Exported and verified' : 'Exported with problems';
+  $('#export-modal').hidden = false;
+}
+
+function refRow(c, row) {
+  return row(c.xrefIdsOk, `Every eXRef's xref id == md5-64(fileRef), so the game loads the scene fileRef names (${c.references} reference(s))`);
+}
+
+function showRefused(r) {
+  const c = r.checks;
+  const row = (ok, text) => h('li', {}, h('b', { class: ok ? 'ok' : 'bad' }, ok ? '✓' : '✗'), h('span', {}, text));
+  const body = $('#export-body');
+  body.textContent = '';
+  body.append(
+    h('p', {}, 'Nothing was written. The game finds a referenced scene by its xref id, and these references name another scene in fileRef, so in game they show the scene their id names. Select each one, choose the scene it should load in the inspector, and export again.'),
+    h('ul', { class: 'checks' }, refRow(c, row)),
+    h('ul', { class: 'list' }, c.xrefMismatches.map((m) => h('li', {},
+      h('div', {}, h('span', { class: 'lbl' }, 'element'), m.element),
+      h('div', {}, h('span', { class: 'lbl' }, 'fileRef'), shortPath(m.path)),
+      h('div', {}, h('span', { class: 'lbl' }, 'game loads'), m.scene ? shortPath(m.scene) : `the scene with componentId 0x${m.idHex}`)))));
+  $('#export-title').textContent = 'Not exported: references disagree';
   $('#export-modal').hidden = false;
 }
 

@@ -29,6 +29,13 @@ md5-64 big-endian of the eaid path WITHOUT the ".idf" suffix; the scene's
 de-duplicated list of djb2(leaf name) for every element, "Scene Root"
 included. It is not the list of elementIds.
 
+An eXRef element references another scene with two fields: the `fileRef`
+param (the scene's eaid path) and the element's `xref` (ui64). The game finds
+the referenced scene by `xref` alone: it is the referenced scene's
+componentId, md5-64 of the `fileRef` path without ".idf". Every stock
+reference keeps the two consistent. Changing `fileRef` without `xref` changes
+nothing in game; set_param('fileRef') and retarget() update both.
+
 The container is parsed and re-serialised byte-identically by pkg.py, so this
 module is read + write capable: mutate the Pkg tree (helpers below) and call
 pkg.Pkg.to_bytes().
@@ -52,6 +59,11 @@ def component_id(path):
     if path.endswith('.idf'):
         path = path[:-4]
     return int.from_bytes(hashlib.md5(path.encode()).digest()[:8], 'big')
+
+
+def material_binding(file_ref):
+    """The `.emb` an eXRef's XrefMaterialBinding names for a referenced scene."""
+    return file_ref.removesuffix('.idf') + '.emb?context=default'
 
 
 def _val(v):
@@ -144,6 +156,21 @@ class Element:
         key = self.path if self.path is not None else self.name
         return key is not None and djb2(key) == self.element_id
 
+    @property
+    def file_ref(self):
+        return self.params.get('fileRef')
+
+    @property
+    def xref(self):
+        """The id the game resolves this reference by (a componentId), or None."""
+        return _val(self.obj.get('xref'))
+
+    def xref_ok(self):
+        """False when `xref` names another scene than `fileRef` does."""
+        if self.xref is None or not isinstance(self.file_ref, str):
+            return True
+        return self.xref == component_id(self.file_ref)
+
     def walk(self, depth=0):
         yield self, depth
         for c in self.children:
@@ -201,6 +228,8 @@ def tree_lines(idf, show_params=False, show_geoms=False):
         for e, d in sc.root.walk():
             pad = '  ' * (d + 1)
             idtag = '' if e.id_ok() else f' !ID(djb2({e.path!r})={djb2(e.path) if e.path else "?"})'
+            if not e.xref_ok():
+                idtag += f' !XREF(xref={e.xref}, md5-64(fileRef)={component_id(e.file_ref)})'
             rect = e.rect()
             bits = [f'{pad}{e.name!r} [{e.type}]']
             if e.position and any(e.position):
@@ -255,7 +284,15 @@ def clone_node(node):
     return node
 
 
-def set_param(elem_obj, name, value, vtype='stri'):
+def get_param(elem_obj, name):
+    pa = elem_obj.get('params')
+    for it in (pa.items if isinstance(pa, Arr) else []):
+        if isinstance(it, Obj) and _val(it.get('name')) == name:
+            return _val(it.get('value'))
+    return None
+
+
+def _put_param(elem_obj, name, value, vtype):
     pa = elem_obj.get('params')
     if not isinstance(pa, Arr):
         pa = Arr([]); elem_obj.set('params', pa)
@@ -264,6 +301,47 @@ def set_param(elem_obj, name, value, vtype='stri'):
             it.set('value', Val(vtype, value)); return
     pa.items.append(Obj([(Val('stri', 'value'), Val(vtype, value)),
                          (Val('stri', 'name'), Val('stri', name))]))
+
+
+def set_param(elem_obj, name, value, vtype='stri'):
+    """Set a named param, adding it when missing. `fileRef` goes through
+    retarget(), so the `xref` id the game resolves follows the new path."""
+    if name == 'fileRef':
+        retarget(elem_obj, value)
+        return
+    _put_param(elem_obj, name, value, vtype)
+
+
+def retarget(elem_obj, file_ref):
+    """Point an eXRef at the scene `file_ref` (a full eaid://….idf path).
+
+    Sets `fileRef`, sets `xref` to component_id(file_ref), which is what the
+    game looks the scene up by, and moves XrefMaterialBinding to the new
+    scene's .emb when it named the old scene's, as every stock reference does."""
+    if not (isinstance(file_ref, str) and file_ref.startswith('eaid://') and file_ref.endswith('.idf')):
+        raise ValueError(f'a reference names an eaid://….idf scene, not {file_ref!r}')
+    old = get_param(elem_obj, 'fileRef')
+    binding = get_param(elem_obj, 'XrefMaterialBinding')
+    _put_param(elem_obj, 'fileRef', file_ref, 'stri')
+    xr = elem_obj.get('xref')
+    elem_obj.set('xref', Val(xr.type if isinstance(xr, Val) else 'ui64', component_id(file_ref)))
+    if isinstance(old, str) and binding == material_binding(old):
+        _put_param(elem_obj, 'XrefMaterialBinding', material_binding(file_ref), 'stri')
+
+
+def xref_mismatches(idf):
+    """Every reference whose `xref` id is not md5-64 of its `fileRef`:
+    [{scene, path, fileRef, xref, pathId}]. The game loads the scene whose
+    componentId is `xref`."""
+    out = []
+    for si, sc in enumerate(idf.scenes):
+        if not sc.root:
+            continue
+        for e, _d in sc.root.walk():
+            if not e.xref_ok():
+                out.append({'scene': si, 'path': e.path, 'fileRef': e.file_ref, 'xref': e.xref,
+                            'pathId': component_id(e.file_ref)})
+    return out
 
 
 def recompute_ids(elem_obj, path, out_ids):
@@ -353,8 +431,8 @@ def clone_slot(idf, src_name, new_name, pos, out_path, guid=None):
 def main(argv):
     if len(argv) < 2:
         print(__doc__.splitlines()[0])
-        print('usage: idf.py {tree|params|geoms|slots|json|find|scene-id|roundtrip|'
-              'clone-slot|set-pos} <file.idf> [args]')
+        print('usage: idf.py {tree|params|geoms|slots|json|find|scene-id|refs|roundtrip|'
+              'clone-slot|set-pos|retarget} <file.idf> [args]')
         return 2
     cmd = argv[1]
     if cmd == 'roundtrip':
@@ -394,6 +472,31 @@ def main(argv):
             if len(argv) > 3:
                 exp = component_id(argv[3])
                 print(f'  md5-64(path)={exp}  match={exp == sc.name}')
+    elif cmd == 'refs':
+        bad = 0
+        for sc in idf.scenes:
+            for e, _ in (sc.root.walk() if sc.root else ()):
+                if e.type != 'eXRef':
+                    continue
+                ok = e.xref_ok()
+                bad += 0 if ok else 1
+                print(f'{"OK      " if ok else "MISMATCH"} {e.path}  fileRef={e.file_ref}  xref={e.xref}'
+                      + ('' if ok else f'  md5-64(fileRef)={component_id(e.file_ref)}'
+                                       f'  (the game loads the scene whose componentId is {e.xref})'))
+        print('mismatches', bad)
+        return 1 if bad else 0
+    elif cmd == 'retarget':
+        # retarget <file> <element> <eaid://….idf> <out>
+        name, ref, out = argv[3], argv[4], argv[5]
+        for sc in idf.scenes:
+            e = sc.root.find(name) if sc.root else None
+            if e and e.type == 'eXRef':
+                retarget(e.obj, ref)
+                open(out, 'wb').write(idf.to_bytes())
+                print(f'{name} -> {ref}  xref={component_id(ref)}; wrote {out}')
+                return 0
+        print('eXRef element not found')
+        return 1
     elif cmd == 'find':
         name = argv[3]
         for sc in idf.scenes:
@@ -410,6 +513,8 @@ def main(argv):
             print(f'  children   = {[c.name for c in e.children]}')
             for k, v in e.params.items():
                 print(f'  param .{k} = {v}')
+            if e.xref is not None:
+                print(f'  xref       = {e.xref} ({"== md5-64(fileRef)" if e.xref_ok() else "!= md5-64(fileRef): the game loads another scene"})')
             for g in e.geoms:
                 print(f'  geom res={g.get("resourceid")} mat={g.get("materialid")}')
     elif cmd == 'clone-slot':

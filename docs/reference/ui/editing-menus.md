@@ -20,7 +20,8 @@ Select an element on the canvas or in the hierarchy, then:
 - drag it, or nudge it with the arrow keys, to move it;
 - type a new position, scale, rotation or param value in the inspector;
 - press <kbd>Ctrl</kbd>+<kbd>D</kbd> to clone it as a new sibling, with a new name and the ids it needs;
-- rename it in the inspector, or press <kbd>Del</kbd> to delete it.
+- rename it in the inspector, or press <kbd>Del</kbd> to delete it;
+- for an `eXRef`, type another scene's path in the inspector's **XRef** section and press **Retarget** to make it draw that scene.
 
 Every edit goes in the **Edits** list, and <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes it. Before moving an element, look for an **Anims** section in the inspector: an animated element's position is replaced when its animation plays, so move its unanimated children instead.
 
@@ -116,4 +117,5 @@ The launcher restores the rewritten archives when the game exits. `swofty restor
 - **Live data needs `.ui` wiring or native code.** A scene holds rectangles, not content. Text, numbers, lists and colours come from the `.ui` node attached to an element and the view model behind it. A new element stays empty until a node attaches to its name, either in the screen's `.ui` or built by an [engine plugin](/reference/addons/in-game-ui). Data the screen's view model doesn't publish needs native code.
 - **Animations and stackers override stored positions.** An animated element takes its transform from its clip while the clip plays. An `eStacker` lays out its children at runtime, so a child's stored position is replaced; a child added to a stacker is placed with the rest.
 - **New art needs new textures or meshes.** A scene can reuse art: a clone keeps its geoms, and an `eXRef` can point at another scene. A new image is a new texture resource ([Textures and models](/reference/mods/erp-assets)), and a new shape, such as a narrower pie wedge, is a new mesh.
+- **A reference loads the scene its `xref` id names.** The game finds an `eXRef`'s scene by its `xref` id, the md5-64 of the scene's path, not by its `fileRef` path. A scene written by another tool with a new `fileRef` and the old `xref` still shows the old scene in game. Swofty UI draws the scene the id names, marks the mismatch and refuses to export it; see [References](./idf#references).
 - **A scene replaces the whole stock scene.** When a game update changes a scene your addon ships, export it again from the new stock scene. The `.edits.json` holds your edits for [replaying them](./swofty-ui#http-api).

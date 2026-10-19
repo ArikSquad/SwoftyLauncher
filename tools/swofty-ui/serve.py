@@ -73,16 +73,9 @@ class App:
         self.docs = Docs()
         self.xrefs = S.XrefResolver(catalog)
         self.assets = A.AssetResolver(catalog) if catalog else None
-        self._components = None
-        self._components_lock = threading.Lock()
 
     def scene_for_component(self, cid):
-        if self.catalog is None:
-            return None
-        with self._components_lock:
-            if self._components is None:
-                self._components = {I.component_id(name): name for name in self.catalog.scenes}
-        return self._components.get(cid)
+        return self.xrefs.scene_for_id(cid)
 
     def identify(self, data, origin):
         if origin.get('eaid') or self.catalog is None:
@@ -120,6 +113,24 @@ class App:
         doc = I.Idf(d['data'])
         results = S.apply_ops(doc, ops or [])
         return d, doc, results
+
+
+class RefusedExport(Exception):
+    def __init__(self, message, checks):
+        super().__init__(message)
+        self.checks = checks
+
+
+def refusal(checks):
+    bad = checks['xrefMismatches']
+    lines = [f'Not exported: {len(bad)} reference(s) name one scene in fileRef and another in their xref id. '
+             f'The game finds a referenced scene by the id, so in game they show the scene their id names. '
+             f'Retarget each one in the inspector, then export again.']
+    for m in bad[:6]:
+        lines.append(f'{m["element"]}: {m["message"]}')
+    if len(bad) > 6:
+        lines.append(f'… and {len(bad) - 6} more')
+    return '\n'.join(lines)
 
 
 def safe_stem(name):
@@ -236,6 +247,8 @@ class Handler(BaseHTTPRequestHandler):
             self.fail(400, f'edit #{ex.index + 1} failed: {ex.message}', opIndex=ex.index)
         except DocExpired as ex:
             self.fail(410, str(ex))
+        except RefusedExport as ex:
+            self.fail(422, str(ex), checks=ex.checks, exported=False)
         except erpsource.NoDecoder as ex:
             self.fail(500, str(ex))
         except (KeyError, ValueError) as ex:
@@ -313,7 +326,9 @@ class Handler(BaseHTTPRequestHandler):
         source = d['data']
         component_ids = [sc.name for sc in I.Idf(source).scenes]
         data = doc.to_bytes()
-        checks = S.verify_bytes(data, source, component_ids)
+        checks = S.verify_bytes(data, source, component_ids, self.app.xrefs.scene_for_id)
+        if not checks['xrefIdsOk']:
+            raise RefusedExport(refusal(checks), checks)
         origin = d['origin']
         stem = safe_stem(req.get('name') or os.path.basename(origin.get('eaid') or origin.get('label') or 'scene'))
         export_dir = self.app.export_dir
@@ -472,6 +487,9 @@ def parse_args(argv):
     ap.add_argument('--export-dir', help='where exports go (default: the launcher data folder, swofty-ui/exports)')
     ap.add_argument('--open', help='scene to open first: an eaid path or a local .idf file')
     ap.add_argument('--no-browser', action='store_true', help='do not open the browser')
+    ap.add_argument('--check-refs', action='store_true',
+                    help='check that every scene reference in the UI archives names the same scene by path and id, '
+                         'then exit')
     ap.add_argument('--self-test', action='store_true', help=argparse.SUPPRESS)
     return ap.parse_args(argv)
 
@@ -484,7 +502,7 @@ def main(argv=None):
     args = parse_args(argv)
     if args.self_test:
         import selftest
-        return selftest.run()
+        return selftest.run(args.game)
 
     print(APP, flush=True)
     catalog = None
@@ -505,6 +523,10 @@ def main(argv=None):
             return fail(f'No .idf scenes were found in {ui_dir}. Pass the F1 25 folder with --game.')
         print(f'Indexed {len(catalog.scenes)} scenes in {len(catalog.erps)} archives ({time.time() - t:.1f}s)',
               flush=True)
+    if args.check_refs:
+        if catalog is None:
+            return fail('--check-refs reads the game archives; leave out --no-game.')
+        return 0 if report_refs(catalog) else 1
 
     export_dir = os.path.abspath(os.path.expanduser(args.export_dir or gamedir.default_export_dir()))
     if game_root and gamedir.is_inside(export_dir, game_root):
@@ -534,6 +556,20 @@ def main(argv=None):
     finally:
         httpd.server_close()
     return 0
+
+
+def report_refs(catalog):
+    t = time.time()
+    r = S.check_archives(catalog)
+    print(f'Checked {r["referencesInCopies"]} references in {r["copies"]} scene copies '
+          f'({r["unique"]} distinct, {r["scenes"]} scenes) in {time.time() - t:.1f}s', flush=True)
+    print(f'{r["notInArchives"]} consistent references name a scene no UI archive holds')
+    for f in r['failures']:
+        print(f'UNREADABLE {f["scene"]} in {f["erp"]}: {f["error"]}')
+    for m in r['mismatches']:
+        print(f'MISMATCH {m["inScene"]} {m["element"]} in {", ".join(m["erps"])}\n  {m["message"]}')
+    print(f'{len(r["mismatches"])} reference(s) whose xref id is not md5-64 of fileRef', flush=True)
+    return r['ok']
 
 
 def open_browser(url):

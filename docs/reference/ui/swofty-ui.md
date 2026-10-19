@@ -83,6 +83,7 @@ Swofty UI never writes to the game folder. It only reads the archives, writes ex
 | `--port <n>` | The first port to try, `7341` by default |
 | `--host <address>` | The address to listen on, `127.0.0.1` by default |
 | `--no-browser` | Don't open the browser |
+| `--check-refs` | Check every scene reference in the game's UI archives, print the result and exit. See [Check every reference](#check-every-reference) |
 
 ## Open a scene
 
@@ -94,9 +95,9 @@ When several archives hold the scene, the picker next to its path in the title b
 
 ## The window
 
-- **Hierarchy**, on the left, is the element tree. Each row shows the element's class, and `xref` marks a reference to another scene. Filter it by name, click a row to select it, and double-click a row to zoom to it. Under it, **Edits** lists every edit in order.
+- **Hierarchy**, on the left, is the element tree. Each row shows the element's class, `xref` marks a reference to another scene, and `id≠path` marks a [reference](#references) whose `xref` id and `fileRef` name different scenes. Filter it by name, click a row to select it, and double-click a row to zoom to it. Under it, **Edits** lists every edit in order.
 - **The canvas**, in the middle, draws the scene. Click an element to select it. The chips at the top left count the elements of each class; click one to hide that class.
-- **Inspector**, on the right, shows the selected element: its path and `elementId` with a check against its path, its local transform with its world position and size, its box, the scene it references, its params and animations. With nothing selected, it shows the scene's `componentId` and `nodeidlookup` checks.
+- **Inspector**, on the right, shows the selected element: its path and `elementId` with a check against its path, its local transform with its world position and size, its box, the scene it references, its params and animations. With nothing selected, it shows the scene's `componentId`, `nodeidlookup` and reference checks.
 - **The status bar** shows the element count, the id checks, the number of edits and the last export.
 
 ### Display
@@ -107,13 +108,26 @@ When several archives hold the scene, the picker next to its path in the title b
 | Outlines | <kbd>O</kbd> | Draws each element's box, coloured by class |
 | Text placeholders | | Writes each text element's name in its box |
 | Reveal anim-collapsed | | Shows elements the game keeps at a scale near 0 until an animation or live data grows them |
-| XRef contents | <kbd>X</kbd> | Draws referenced scenes inside each `eXRef`, clipped by `eWindow` elements |
+| XRef contents | <kbd>X</kbd> | Draws the scene each `eXRef` loads in game inside it, clipped by `eWindow` elements |
 | 1920x1080 frame | | Draws the screen as 19.2 × 10.8 units, centred on the origin |
 | Grid, Pivots, Labels | | Draw the grid, each element's origin and element names |
 
 ![The R&D development-potential pie: on the left its four wedges are collapsed, on the right Reveal anim-collapsed shows them at full size](/swofty-ui/reveal.png)
 
 The canvas is a preview. Gradients, rounded corners and circular fills are approximated, glass blur is a dark panel, and text shows element names instead of the game's strings. Animations and live data are not drawn.
+
+### References
+
+An `eXRef` stores the scene it references twice: its `fileRef` param holds the scene's path, and its `xref` holds the scene's componentId. The game loads the scene whose componentId is `xref` and ignores `fileRef` when it looks the scene up. Swofty UI does the same: it draws, outlines and opens the scene the `xref` id names. See [References](./idf#references).
+
+The inspector's **XRef** section shows `fileRef`, the `xref` id with a check against md5-64 of `fileRef`, and the scene the game loads. When the id and the path name different scenes:
+
+- the hierarchy row shows `id≠path`, and the canvas outlines the element in red with an `xref id ≠ fileRef` tag;
+- the inspector says which scene the game loads, and offers **Load `<fileRef scene>` (set the id)** and **Keep `<id scene>` (set fileRef)**, which retarget the reference to one of the two;
+- the status bar counts the mismatched references;
+- [export](#export-checks) is refused until every reference agrees.
+
+A referenced scene that itself holds such a reference gets a yellow note in the inspector, listing the references inside it and the scenes they load.
 
 ## Edit
 
@@ -124,6 +138,7 @@ The canvas is a preview. Gradients, rounded corners and circular fills are appro
 | Params | Edit numbers, vectors and toggles in the inspector's params. Text params are read-only. |
 | Clone | <kbd>Ctrl</kbd>+<kbd>D</kbd> or **Clone**. The copy is a new sibling with the next free name, such as `tile_5` for `tile_4`. When the element has a numbered sibling before it, the copy continues the spacing between them. |
 | Rename | Type a new name in the inspector. Names must be unique in the scene and can't contain `.`. |
+| Retarget | Type a scene path in the inspector's **XRef** section and press **Retarget**. It sets `fileRef`, the `xref` id the game loads by, and `XrefMaterialBinding` together. Editing `fileRef` alone isn't possible. |
 | Delete | <kbd>Del</kbd> or **Delete** |
 | Undo, redo | <kbd>Ctrl</kbd>+<kbd>Z</kbd>, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> |
 
@@ -152,8 +167,27 @@ An export replaces an earlier export of the same scene. The dialog also has **Do
 | elementIds | Every `elementId` is the djb2 of its element's dotted path |
 | nodeidlookup | `nodeidlookup` is the sorted, de-duplicated djb2 of every element name |
 | componentId | The scene's `componentId` is unchanged, so the build accepts it for the same `.idf` |
+| References | Every `eXRef`'s `xref` id is md5-64 of its `fileRef`: the game loads the scene `fileRef` names |
+
+When the References check fails, Swofty UI writes nothing. The dialog lists each reference, its `fileRef` and the scene the game loads instead. Retarget each one, then export again. Swofty UI's own edits keep references consistent; a mismatch comes from a scene another tool wrote.
 
 The dialog also says whether the file differs from the source. An export with no edits is identical to the source, and the same edits always give the same bytes.
+
+### Check every reference
+
+`--check-refs` reads every scene in the game's UI archives, checks each reference, and exits with status 1 if any `xref` id and `fileRef` disagree. Run it on a built game to check the scenes your addons ship:
+
+```sh
+bin/swofty-ui --check-refs --game "$HOME/.local/share/Steam/steamapps/common/F1 25"
+```
+
+```text
+Checked 58925 references in 26913 scene copies (5208 distinct, 5208 scenes) in 5.5s
+33 consistent references name a scene no UI archive holds
+0 reference(s) whose xref id is not md5-64 of fileRef
+```
+
+On stock archives it finds no mismatch. Each mismatch prints its scene, element, archives and the scene the game loads.
 
 ## Keyboard and mouse
 
@@ -226,7 +260,7 @@ curl -s "$base/api/export" -H 'Content-Type: application/json' \
 | `POST /api/apply` | `{ doc, ops }`: replay the edits and return the model, with each edit's result |
 | `POST /api/export` | `{ doc, ops, name? }`: write and check an export. Returns the file paths, `operations`, `size` and `checks` |
 | `POST /api/reveal` | Open the export folder in the file manager |
-| `GET /api/xref?eaid=<path>[&reveal=1]` | The flattened boxes and geoms of a referenced scene |
+| `GET /api/xref?eaid=<path>[&reveal=1]` | The flattened boxes and geoms of a referenced scene, with nested references resolved by `xref` id, and `mismatches` for references inside it whose `xref` and `fileRef` disagree |
 | `POST /api/visuals` | `{ items: [{ res, mat, erp }] }`: the mesh, material params and texture names of each geom |
 | `GET /api/texture?name=<.tif.image>` | The top mip's BC7 bytes, with its size in `X-Tex-Width` and `X-Tex-Height` |
 | `GET /api/resources?erp=&prefix=`, `GET /api/resource?erp=&name=&frag=` | List an archive's resources, read one fragment |
@@ -242,6 +276,11 @@ curl -s "$base/api/export" -H 'Content-Type: application/json' \
 | `clone` | `key`, `name`, optional `position` | Copy the element as a new sibling named `name` |
 | `rename` | `key`, `name` | Rename the element |
 | `delete` | `key` | Delete the element and its children |
+| `retarget` | `key`, `fileRef` | Point an `eXRef` at the scene `fileRef` (a path such as `art/components/career/rnd_tree/rnd_dev_potential.idf`): sets `fileRef`, `xref` and `XrefMaterialBinding` |
+
+Each element in the model has `fileRef`, `xref` and, for an `eXRef`, `ref`: `{ path, id, pathId, ok, scene }`, where `scene` is the scene the game loads by `id` and `ok` is `id == pathId`. A `param` edit can't change `fileRef`; use `retarget`.
+
+`/api/export` answers HTTP 422 with `error`, `checks` and `exported: false` when a reference's `xref` and `fileRef` disagree, and writes nothing.
 
 An edit that fails returns HTTP 400 with `error` and the failing edit's `opIndex`.
 

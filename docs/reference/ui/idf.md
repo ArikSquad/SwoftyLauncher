@@ -64,6 +64,7 @@ Each element is an object with these keys:
 | `geoms` | `[{ resourceid, materialid, extentsmin, extentsmax, asset }]` | The element's art: a mesh resource, its material bindings and its bounds |
 | `anims` | `[{ asset }]` | The element's animation clips |
 | `children` | elements | Child elements |
+| `xref` | `ui64` | On an `eXRef` only: the [componentId of the scene it references](#references) |
 
 An element's place on screen is its `position`, `rotation` and `scale` composed with those of every parent. Its size is the local box in its `minExtents` and `maxExtents` params, or the bounds of its geoms.
 
@@ -73,7 +74,7 @@ An element's place on screen is its `position`, `rotation` and `scale` composed 
 |---|---|
 | `eScene` | The scene root |
 | `eNull` | A group or transform, the most common class |
-| `eXRef` | A reference to another scene: `fileRef` names the `.idf`, `XrefMaterialBinding` its `.emb` |
+| `eXRef` | A reference to another scene. The game loads the scene whose componentId is the element's `xref`. `fileRef` names that scene's `.idf` and `XrefMaterialBinding` its `.emb`. See [References](#references). |
 | `eText` | A text box: `style`, `boxWidth`, `halign`, `wrapping`, `textcase` |
 | `eStacker` | A container that lays its children out in a line: `stackerType`, `gap`, `useStaticGap` |
 | `eCentre` | A container that centres its children |
@@ -87,7 +88,7 @@ Common params are `className` (the class again), `guid` (a unique id per element
 
 ## Identity
 
-Three hashes tie a scene to the screens that use it. A tool that edits a scene keeps all three consistent.
+Three hashes tie a scene to the screens that use it, and a fourth ties a reference to the scene it loads. A tool that edits a scene keeps all four consistent.
 
 **componentId.** The scene's `name` is the first 8 bytes, big-endian, of the MD5 of its `eaid://` path without the `.idf` suffix:
 
@@ -104,7 +105,32 @@ screen_null.tut_scaler.transition_null_4.tile_4  ->  elementId 2861292184
 
 **nodeidlookup.** The scene's name index is the sorted, de-duplicated list of `djb2(leaf name)` for every element, `Scene Root` included. It holds leaf-name hashes, not elementIds. A new element adds the hash of its name in sorted position.
 
+**xref.** An `eXRef`'s `xref` is the componentId of the scene it references: md5-64 of its `fileRef` path without `.idf`.
+
+```text
+fileRef  eaid://ui_package/art/components/career/rnd_tree/rnd_dev_potential.idf
+xref     md5-64("eaid://ui_package/art/components/career/rnd_tree/rnd_dev_potential") = 0x91ea45fa2953cd98
+```
+
 djb2 runs over the name's UTF-8 bytes: start at `5381`, and for each byte set `h = (h * 33 + byte) mod 2^32`.
+
+## References
+
+An `eXRef` element draws another scene inside this one. It stores the referenced scene twice:
+
+| Field | Value |
+|---|---|
+| `xref` | The referenced scene's componentId (`ui64`) |
+| `fileRef` param | The referenced scene's `eaid://….idf` path |
+| `XrefMaterialBinding` param | The referenced scene's `.emb?context=default` |
+
+The game finds the referenced scene by `xref` alone. It loads the scene whose componentId is `xref`, whatever `fileRef` says. Changing only `fileRef` changes nothing in game: the reference still loads the scene its `xref` names.
+
+To point a reference at another scene, set `fileRef` and set `xref` to md5-64 of the new path. In every stock scene the two agree: all 58,925 references in the 5,208 scenes' 26,913 copies in the UI archives have `xref == md5-64(fileRef)`, and every `XrefMaterialBinding` is the `fileRef` path with `.idf` replaced by `.emb?context=default`.
+
+A reference whose `xref` and `fileRef` disagree shows the scene its `xref` names. For example, a `chart_1` whose `fileRef` was changed to a new `rnd_dev_potential5.idf` with its `xref` left at `0x91ea45fa2953cd98` draws the stock `rnd_dev_potential.idf` in game.
+
+[Swofty UI](./swofty-ui#references) resolves references by `xref` as the game does, marks a reference whose `xref` and `fileRef` disagree, and refuses to export one. Its **Retarget** edit, and `retarget` and `set_param('fileRef', …)` in `tools/idf.py`, set `fileRef`, `xref` and `XrefMaterialBinding` together.
 
 ## How a screen attaches
 
@@ -142,8 +168,12 @@ python3 tools/idf.py tree rnd_overview.idf          # tree with positions, sizes
 python3 tools/idf.py params rnd_overview.idf        # the same, with every param
 python3 tools/idf.py find rnd_overview.idf tile_4   # one element in detail
 python3 tools/idf.py scene-id rnd_overview.idf eaid://ui_package/art/screens/career/rnd_overview.idf
+python3 tools/idf.py refs rnd_dev_potential_full.idf     # each reference, MISMATCH where xref != md5-64(fileRef)
 python3 tools/idf.py roundtrip *.idf                # parse and rewrite, compare bytes
 python3 tools/idf.py clone-slot rnd_overview.idf tile_4 tile_5 0 -2.52 0 out.idf
+python3 tools/idf.py retarget rnd_dev_potential_full.idf chart_1 eaid://ui_package/art/components/career/rnd_tree/rnd_dev_potential5.idf out.idf
 ```
 
-`tools/pkg.py` and `packages/formats/src/pkg.rs` read and write the container. All 5,208 scenes in the UI archives round-trip byte for byte through `tools/idf.py`, with every `elementId`, `nodeidlookup` and `componentId` matching the rules above.
+`refs` exits with status 1 when a reference's `xref` and `fileRef` disagree. To check every scene in the game's UI archives, run `swofty-ui --check-refs` ([Swofty UI](./swofty-ui#check-every-reference)).
+
+`tools/pkg.py` and `packages/formats/src/pkg.rs` read and write the container. All 5,208 scenes in the UI archives round-trip byte for byte through `tools/idf.py`, with every `elementId`, `nodeidlookup`, `componentId` and `xref` matching the rules above.

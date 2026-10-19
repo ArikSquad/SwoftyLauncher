@@ -15,9 +15,13 @@ from pkg import Arr, Obj, Val
 
 import erpsource
 import gamedir
+import scene as S
 import serve
 
 SCENE = 'eaid://ui_package/art/screens/selftest/grid.idf'
+REFS = 'eaid://ui_package/art/screens/selftest/refs.idf'
+TILE_A = 'eaid://ui_package/art/components/selftest/tile_a.idf'
+TILE_B = 'eaid://ui_package/art/components/selftest/tile_b.idf'
 ARCHIVES = ('flow_selftest.erp', 'screens/selftest.erp')
 
 
@@ -30,16 +34,24 @@ def check(cond, what):
         raise Failed(what)
 
 
-def element(name, type_name, path, pos=(0.0, 0.0, 0.0), children=(), extents=None):
+def param_obj(name, vtype, value):
+    return Obj([(Val('stri', 'value'), Val(vtype, value)), (Val('stri', 'name'), Val('stri', name))])
+
+
+def element(name, type_name, path, pos=(0.0, 0.0, 0.0), children=(), extents=None, ref=None):
     params = [Obj([(Val('stri', 'value'), Val('shnm', type_name)), (Val('stri', 'name'), Val('stri', 'className'))]),
               Obj([(Val('stri', 'value'), Val('stri', f'00000000-0000-4000-8000-{I.djb2(name):012x}')),
                    (Val('stri', 'name'), Val('stri', 'guid'))])]
+    if ref:
+        file_ref, target = ref
+        params.append(param_obj('XrefMaterialBinding', 'stri', I.material_binding(file_ref)))
+        params.append(param_obj('fileRef', 'stri', file_ref))
     if extents:
         lo, hi = extents
         params.append(Obj([(Val('stri', 'value'), Val('vec3', [*lo, 0.0])), (Val('stri', 'name'), Val('stri', 'minExtents'))]))
         params.append(Obj([(Val('stri', 'value'), Val('vec3', [*hi, 0.0])), (Val('stri', 'name'), Val('stri', 'maxExtents'))]))
         params.append(Obj([(Val('stri', 'value'), Val('fp32', 0.5)), (Val('stri', 'name'), Val('stri', 'gap'))]))
-    return Obj([
+    items = [
         (Val('stri', 'name'), Val('stri', name)),
         (Val('stri', 'elementId'), Val('ui32', I.djb2(path))),
         (Val('stri', 'typeName'), Val('shnm', type_name)),
@@ -50,7 +62,20 @@ def element(name, type_name, path, pos=(0.0, 0.0, 0.0), children=(), extents=Non
         (Val('stri', 'geoms'), Arr([])),
         (Val('stri', 'anims'), Arr([])),
         (Val('stri', 'children'), Arr(list(children))),
-    ])
+    ]
+    if ref:
+        items.append((Val('stri', 'xref'), Val('ui64', I.component_id(ref[1]))))
+    return Obj(items)
+
+
+def pack_scene(eaid, root):
+    names = [e.name for e, _ in I.Element(root).walk()]
+    entry = Obj([(Val('stri', 'scene'), root),
+                 (Val('stri', 'name'), Val('ui64', I.component_id(eaid))),
+                 (Val('stri', 'nodeidlookup'), Arr([Val('ui32', h) for h in sorted({I.djb2(n) for n in names})]))])
+    pk = P.Pkg()
+    pk.root = Obj([(Val('stri', 'scenelist'), Arr([entry]))])
+    return pk.to_bytes()
 
 
 def scene_bytes(eaid=SCENE):
@@ -59,14 +84,24 @@ def scene_bytes(eaid=SCENE):
              for i in (1, 2)]
     label = element('label', 'eText', 'panel.label', (0.0, 1.0, 0.0))
     panel = element('panel', 'eNull', 'panel', (-1.0, 0.0, 0.0), tiles + [label])
-    root = element('Scene Root', 'eScene', 'Scene Root', children=[panel])
-    names = ['Scene Root', 'panel', 'tile_1', 'tile_2', 'label']
-    entry = Obj([(Val('stri', 'scene'), root),
-                 (Val('stri', 'name'), Val('ui64', I.component_id(eaid))),
-                 (Val('stri', 'nodeidlookup'), Arr([Val('ui32', h) for h in sorted({I.djb2(n) for n in names})]))])
-    pk = P.Pkg()
-    pk.root = Obj([(Val('stri', 'scenelist'), Arr([entry]))])
-    return pk.to_bytes()
+    return pack_scene(eaid, element('Scene Root', 'eScene', 'Scene Root', children=[panel]))
+
+
+def tile_bytes(eaid, face, half_width):
+    box = ((-half_width, -0.5, 0.0), (half_width, 0.5, 0.0))
+    return pack_scene(eaid, element('Scene Root', 'eScene', 'Scene Root',
+                                    children=[element(face, 'eNull', face, extents=box)]))
+
+
+def refs_bytes():
+    good = element('good', 'eXRef', 'good', (0.0, 0.0, 0.0), ref=(TILE_A, TILE_A))
+    stale = element('stale', 'eXRef', 'stale', (5.0, 0.0, 0.0), ref=(TILE_B, TILE_A))
+    return pack_scene(REFS, element('Scene Root', 'eScene', 'Scene Root', children=[good, stale]))
+
+
+def ref_resources():
+    return [(REFS, 'UILayout', refs_bytes()), (TILE_A, 'UILayout', tile_bytes(TILE_A, 'face_a', 1.0)),
+            (TILE_B, 'UILayout', tile_bytes(TILE_B, 'face_b', 3.0))]
 
 
 def write_erp(path, resources):
@@ -132,8 +167,8 @@ def test_discovery(tmp):
         f.write('"AppState"\n{\n\t"appid"\t\t"3059520"\n\t"installdir"\t\t"F1 25"\n\t"buildid"\t\t"1"\n}\n')
     ui = os.path.join(game, *gamedir.UI_PACKAGE)
     data = scene_bytes()
-    for rel in ARCHIVES:
-        write_erp(os.path.join(ui, *rel.split('/')), [(SCENE, 'UILayout', data)])
+    for i, rel in enumerate(ARCHIVES):
+        write_erp(os.path.join(ui, *rel.split('/')), [(SCENE, 'UILayout', data)] + (ref_resources() if i == 0 else []))
 
     saved = {k: os.environ.get(k) for k in ('SWOFTY_STEAM_ROOT', 'SWOFTY_DATA_DIR', 'F1_25_DIR')}
     roots = gamedir.steam_roots
@@ -179,7 +214,7 @@ def test_discovery(tmp):
 def test_server(tmp, game, ui, source):
     catalog = erpsource.ErpCatalog(ui).build()
     check(sorted(catalog.erps) == sorted(ARCHIVES), f'catalog archives {catalog.erps}')
-    check(list(catalog.scenes) == [SCENE], 'catalog scenes')
+    check(sorted(catalog.scenes) == sorted([SCENE, REFS, TILE_A, TILE_B]), 'catalog scenes')
     export_dir = os.path.join(tmp, 'exports')
     httpd = serve.make_server(serve.App(catalog, export_dir, game), '127.0.0.1', 0)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
@@ -196,7 +231,7 @@ def test_server(tmp, game, ui, source):
         check(code == 403, 'a cross-origin POST is refused')
 
         code, cat = c.call('/api/catalog')
-        check(code == 200 and [s[0] for s in cat['scenes']] == ['art/screens/selftest/grid.idf'], 'GET /api/catalog')
+        check(code == 200 and 'art/screens/selftest/grid.idf' in [s[0] for s in cat['scenes']], 'GET /api/catalog')
         code, m = c.call('/api/open?eaid=art/screens/selftest/grid.idf')
         check(code == 200, f'GET /api/open: {m}')
         check(m['stats']['elements'] == 5 and m['stats']['idBad'] == 0, 'scene model ids')
@@ -253,12 +288,84 @@ def test_server(tmp, game, ui, source):
         check(code == 200 and vis == {'visuals': {}}, 'POST /api/visuals')
         code, _ = c.call('/api/resource?erp=../../x.erp&name=a')
         check(code == 400, 'a path outside the UI archives is refused')
+        test_references(c, catalog, export_dir)
     finally:
         httpd.shutdown()
         httpd.server_close()
 
 
-def run():
+def test_references(c, catalog, export_dir):
+    code, m = c.call('/api/open?eaid=art/screens/selftest/refs.idf')
+    check(code == 200, f'open the reference scene: {m}')
+    els = {e['name']: e for e in m['elements'].values()}
+    good, stale = els['good'], els['stale']
+    check(good['ref']['ok'] and good['ref']['scene'] == TILE_A, f'a consistent reference: {good["ref"]}')
+    check(not stale['ref']['ok'] and stale['fileRef'] == TILE_B, f'a mismatched reference is flagged: {stale["ref"]}')
+    check(stale['ref']['scene'] == TILE_A, 'a reference resolves by its xref id, not its fileRef')
+    check(stale['box']['max'][0] == 1.0, 'the referenced bounds are the id\'s scene (tile_a), not fileRef\'s (tile_b)')
+    check(TILE_A in stale['ref']['message'] and 'the game loads' in stale['ref']['message'], 'the mismatch names the scene the game loads')
+    check(m['stats']['refs'] == 2 and m['stats']['refBad'] == 1, f'reference stats {m["stats"]}')
+    check(TILE_B not in m['xrefs'], 'fileRef\'s scene is not loaded for a mismatched reference')
+
+    code, flat = c.call('/api/xref?eaid=' + REFS)
+    names = [it['n'] for it in flat['items']]
+    check(names.count('face_a') == 2 and 'face_b' not in names, f'nested references follow the id: {names}')
+    check(len(flat['mismatches']) == 1 and flat['mismatches'][0]['element'] == 'stale', 'nested mismatches are reported')
+
+    doc = m['doc']
+    before = sorted(os.listdir(export_dir))
+    code, r = c.call('/api/export', {'doc': doc, 'ops': []})
+    check(code == 422 and r.get('exported') is False, f'an export with a mismatched reference is refused: {code} {r}')
+    check(not r['checks']['xrefIdsOk'] and not r['checks']['ok'], 'the reference check fails')
+    check(TILE_A in r['error'] and 'stale' in r['error'], 'the refusal names the element and the scene the game loads')
+    check(sorted(os.listdir(export_dir)) == before, 'a refused export writes nothing')
+
+    code, bad = c.call('/api/apply', {'doc': doc, 'ops': [{'op': 'param', 'key': stale['k'], 'name': 'fileRef', 'value': 'x'}]})
+    check(code == 400 and 'retarget' in bad['error'], 'fileRef is changed only by retarget')
+    code, bad = c.call('/api/apply', {'doc': doc, 'ops': [{'op': 'retarget', 'key': m['scenes'][0]['root'], 'fileRef': TILE_B}]})
+    check(code == 400, 'retarget needs an eXRef')
+
+    for target in (TILE_B, TILE_A):
+        ops = [{'op': 'retarget', 'key': stale['k'], 'fileRef': target.removeprefix('eaid://ui_package/')}]
+        code, fixed = c.call('/api/apply', {'doc': doc, 'ops': ops})
+        check(code == 200, f'retarget to {target}: {fixed}')
+        st = next(e for e in fixed['elements'].values() if e['name'] == 'stale')
+        check(st['ref']['ok'] and st['ref']['scene'] == target and st['fileRef'] == target, f'retarget sets both: {st["ref"]}')
+        check(st['xref'] == str(I.component_id(target)) == fixed['results'][0]['xref'], 'retarget sets the xref id')
+        binding = next(p['v'] for p in st['params'] if p['n'] == 'XrefMaterialBinding')
+        check(binding == I.material_binding(target), 'retarget moves XrefMaterialBinding with fileRef')
+        code, r = c.call('/api/export', {'doc': doc, 'ops': ops, 'name': 'refs_fixed'})
+        check(code == 200 and r['checks']['ok'] and r['checks']['xrefIdsOk'] and r['checks']['references'] == 2,
+              f'a retargeted scene exports: {r.get("checks")}')
+        with open(r['file'], 'rb') as f:
+            check(I.xref_mismatches(I.Idf(f.read())) == [], 'the export has no mismatched reference')
+
+    src = I.Idf(refs_bytes())
+    check(len(I.xref_mismatches(src)) == 1 and any('!XREF' in ln for ln in I.tree_lines(src)), 'idf.py flags the mismatch')
+    obj = src.scenes[0].root.find('stale').obj
+    I.set_param(obj, 'fileRef', TILE_B)
+    check(I.xref_mismatches(src) == [] and I._val(obj.get('xref')) == I.component_id(TILE_B),
+          'idf.set_param(fileRef) keeps the xref id consistent')
+    clone = I.clone_node(obj)
+    check(I.Element(clone).xref_ok(), 'a cloned reference stays consistent')
+
+    report = S.check_archives(catalog)
+    check(len(report['mismatches']) == 1 and report['mismatches'][0]['inScene'] == REFS
+          and report['mismatches'][0]['erps'] == [ARCHIVES[0]] and not report['ok'], f'the archive check: {report}')
+
+
+def check_game(game):
+    try:
+        ui, _how = gamedir.resolve(game)
+    except gamedir.NotFound as ex:
+        raise Failed(f'--game: {ex}')
+    catalog = erpsource.ErpCatalog(ui).build()
+    check(catalog.scenes, f'no scenes in {ui}')
+    print(f'Checking every scene reference in {ui}', flush=True)
+    check(serve.report_refs(catalog), 'every reference in the game archives names one scene by path and id')
+
+
+def run(game_dir=None):
     print('Swofty UI self-test', flush=True)
     check_decoder = erpsource.decoder()
     tmp = tempfile.mkdtemp(prefix='swofty-ui-selftest-')
@@ -270,6 +377,8 @@ def run():
         check(I.Idf(data).to_bytes() == data, 'a synthetic scene round-trips')
         game, ui, source = test_discovery(tmp)
         test_server(tmp, game, ui, source)
+        if game_dir:
+            check_game(game_dir)
     except Failed as ex:
         print(f'self-test FAILED: {ex}', file=sys.stderr, flush=True)
         return 1

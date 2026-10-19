@@ -228,6 +228,11 @@ a.btn { text-decoration: none; }
 .vec .axis.z::before { content: "Z"; color: #60a5fa; }
 .vec .axis.w::before { content: "W"; }
 .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+.callout { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--line-2); border-radius: 6px; background: var(--bg-3); color: var(--text); font-size: 12px; line-height: 1.45; }
+.callout.bad { border-color: var(--bad); background: #2a1517; color: var(--text); }
+.callout.warn { border-color: var(--warn); background: #2a2312; color: var(--text); }
+.callout code { font-family: var(--mono); font-size: 11.5px; }
+.callout .list li { border-bottom: none; padding: 2px 0; }
 .params { width: 100%; border-collapse: collapse; font-size: 12px; }
 .params td { padding: 2px 0; vertical-align: middle; border-bottom: 1px solid #1b2128; }
 .params td.pn { color: var(--text-2); padding-right: 6px; width: 42%; word-break: break-all; }

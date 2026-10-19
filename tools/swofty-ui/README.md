@@ -23,13 +23,15 @@ python3 tools/swofty-ui/serve.py --no-game --open work/rnd_overview.idf
 | `--open SCENE` | An eaid path or a local `.idf` to open first |
 | `--no-browser` | Opens the browser unless given |
 | `--no-game` | No ERP catalog: local files and uploads only |
+| `--check-refs` | Check every `eXRef` in the UI archives (`xref` id == md5-64 of `fileRef`), print mismatches, exit 1 on any |
 
 `SWOFTY_UI_LOG=1` logs every request. `SWOFTY_STEAM_ROOT` adds a Steam folder to search, as it does for the launcher.
 
 ## Build and test
 
 ```sh
-python3 tools/swofty-ui/serve.py --self-test         # synthetic scene and ERP, HTTP round trip, discovery
+python3 tools/swofty-ui/serve.py --self-test         # synthetic scene and ERP, HTTP round trip, discovery, references
+python3 tools/swofty-ui/serve.py --self-test --game "/path/to/F1 25"   # also checks every reference in that game
 python3 -m pip install pyinstaller==6.22.3
 python3 tools/swofty-ui/build.py                      # dist/swofty-ui/swofty-ui[.exe]
 dist/swofty-ui/swofty-ui --self-test
@@ -46,7 +48,7 @@ and its icons.
 | `serve.py` | HTTP server and CLI |
 | `gamedir.py` | Game folder discovery (launcher config, Steam libraries) and the launcher data folder |
 | `erpsource.py` | ERP catalog: `UILayout` scenes, materials, bindings and textures by name; fragment reads |
-| `scene.py` | Model building, op replay, xref expansion, export verification |
+| `scene.py` | Model building, op replay, xref expansion by `xref` id, export verification, the archive-wide reference check |
 | `assets.py` | Geom resolution: mesh, buffers, `.emb` bindings, material cbuffer, surface headers |
 | `selftest.py` | `--self-test` |
 | `build.py` | PyInstaller build |
@@ -55,6 +57,8 @@ and its icons.
 
 It imports `tools/idf.py`, `tools/pkg.py` and `tools/erp.py`.
 
+An `eXRef` is resolved by its `xref` id, the referenced scene's componentId, as the game does; `fileRef` is only compared against it.
+
 ## HTTP API
 
 | Endpoint | |
@@ -62,10 +66,10 @@ It imports `tools/idf.py`, `tools/pkg.py` and `tools/erp.py`.
 | `GET /api/catalog` | Scene list with ERP indexes, and the export folder |
 | `GET /api/open?eaid=<path>[&erp=]` | Open a scene from the ERPs. Returns `doc` and the model. |
 | `GET /api/open-file?path=` / `POST /api/upload?name=` | Open a local or uploaded `.idf` |
-| `POST /api/apply {doc, ops}` | Replay ops and return the model. Ops: `set` (position, scale, rotation), `param`, `clone`, `rename`, `delete`. Keys are child-index paths such as `0.1.3`. |
-| `POST /api/export {doc, ops, name?}` | Write and verify an export |
+| `POST /api/apply {doc, ops}` | Replay ops and return the model. Ops: `set` (position, scale, rotation), `param`, `clone`, `rename`, `delete`, `retarget` (`fileRef`; sets `xref` and `XrefMaterialBinding` with it). Keys are child-index paths such as `0.1.3`. |
+| `POST /api/export {doc, ops, name?}` | Write and verify an export. HTTP 422 and nothing written when an `eXRef`'s `xref` id is not md5-64 of its `fileRef`. |
 | `POST /api/reveal` | Open the export folder in the file manager |
-| `GET /api/xref?eaid=[&reveal=1]` | Flattened boxes and geoms of a referenced scene |
+| `GET /api/xref?eaid=[&reveal=1]` | Flattened boxes and geoms of a referenced scene, nested references followed by `xref` id |
 | `POST /api/visuals {items:[{res, mat, erp}]}` | Resolved mesh, material params and texture names per geom |
 | `GET /api/texture?name=<.tif.image>` | Top-mip BC7 bytes, size in `X-Tex-Width`/`X-Tex-Height` |
 | `GET /api/resources?erp=&prefix=` / `GET /api/resource?erp=&name=&frag=` | Raw ERP resource listing and bytes |

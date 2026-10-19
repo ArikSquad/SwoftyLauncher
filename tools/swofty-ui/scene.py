@@ -1,12 +1,16 @@
+import hashlib
 import math
 import os
 import sys
+import threading
 import uuid
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import idf as I
 from pkg import Arr, Obj, Val
+
+EAID_PREFIX = 'eaid://ui_package/'
 
 IDENT = (1.0, 0.0, 0.0, 0.0,
          0.0, 1.0, 0.0, 0.0,
@@ -138,12 +142,55 @@ def local_box(e):
     return None
 
 
+def ref_info(e, scene_for_id):
+    if e.type != 'eXRef':
+        return None
+    path = e.file_ref if isinstance(e.file_ref, str) else None
+    xid = e.xref
+    path_id = I.component_id(path) if path else None
+    if xid is None:
+        return {'path': path, 'id': None, 'pathId': path_id, 'ok': True, 'scene': path}
+    ok = path is None or xid == path_id
+    scene = scene_for_id(xid) or (path if ok else None)
+    return {'path': path, 'id': xid, 'pathId': path_id, 'ok': ok, 'scene': scene}
+
+
+def ref_message(r):
+    loads = (f'the game loads {r["scene"]}' if r.get('scene')
+             else f'the game loads the scene whose componentId is {r["id"]:#018x}, which is not in the loaded UI archives')
+    return (f'fileRef names {r["path"]}, but its xref id is {r["id"]:#018x}, not md5-64 of that path '
+            f'({r["pathId"]:#018x}). The game finds a referenced scene by its id, so {loads}.')
+
+
+def ref_json(r):
+    if r is None:
+        return None
+    out = jsonable(dict(r))
+    for k in ('id', 'pathId'):
+        if isinstance(r.get(k), int):
+            out[k] = str(r[k])
+            out[k + 'Hex'] = f'{r[k]:016x}'
+    if not r['ok']:
+        out['message'] = ref_message(r)
+    return out
+
+
 class XrefResolver:
     def __init__(self, catalog, max_depth=5, max_items=3000):
         self.catalog = catalog
         self.max_depth = max_depth
         self.max_items = max_items
         self.cache = {}
+        self._by_id = None
+        self._by_id_lock = threading.Lock()
+
+    def scene_for_id(self, cid):
+        if self.catalog is None:
+            return None
+        with self._by_id_lock:
+            if self._by_id is None:
+                self._by_id = {I.component_id(name): name for name in self.catalog.scenes}
+        return self._by_id.get(cid)
 
     def get(self, eaid, prefer=None, stack=(), reveal=False):
         ck = (eaid, reveal)
@@ -168,6 +215,7 @@ class XrefResolver:
             return res
         items = []
         truncated = [False]
+        mismatches = []
 
         def add(item, clip):
             if len(items) >= self.max_items:
@@ -183,8 +231,14 @@ class XrefResolver:
             m = mat_mul(parent_m, mat_trs(e.position, e.rotation, reveal_scale(e.scale) if reveal else e.scale))
             layer = effective_layer(e.params, layer)
             box = local_box(e)
-            if e.type == 'eXRef' and e.params.get('fileRef'):
-                sub = self.get(e.params['fileRef'], rel, stack + (eaid,), reveal)
+            ref = ref_info(e, self.scene_for_id)
+            if ref and not ref['ok'] and len(mismatches) < 50:
+                mismatches.append(dict(ref_json(ref), inScene=eaid, element=e.path))
+            if ref and ref['scene']:
+                sub = self.get(ref['scene'], rel, stack + (eaid,), reveal)
+                for mm in sub.get('mismatches', []):
+                    if len(mismatches) < 50 and mm not in mismatches:
+                        mismatches.append(mm)
                 if sub.get('found'):
                     for it in sub['items']:
                         inner = dict(it, m=mat_mul(m, it['m']), d=depth + 1 + it['d'])
@@ -219,7 +273,7 @@ class XrefResolver:
                 walk(sc.root, IDENT, 0, None, None)
         lo, hi = bounds_of(items)
         res = {'found': True, 'erp': rel, 'items': items, 'min': lo, 'max': hi,
-               'truncated': truncated[0], 'count': len(items)}
+               'truncated': truncated[0], 'count': len(items), 'mismatches': mismatches}
         self.cache[ck] = res
         return res
 
@@ -392,8 +446,21 @@ def apply_op(doc, op, touched):
         vtype = old.type if isinstance(old, Val) else TRANSFORM_FIELDS[field]
         obj.set(field, Val(vtype, coerce(vtype, op.get('value'), old.value if isinstance(old, Val) else None)))
         return {'key': op['key']}
+    if kind == 'retarget':
+        if I._val(obj.get('typeName')) != 'eXRef':
+            raise ValueError('only an eXRef references another scene')
+        ref = op.get('fileRef')
+        if not isinstance(ref, str) or not ref.strip():
+            raise ValueError('fileRef is empty')
+        ref = ref.strip()
+        if not ref.startswith('eaid://'):
+            ref = EAID_PREFIX + ref.lstrip('/')
+        I.retarget(obj, ref)
+        return {'key': op['key'], 'fileRef': ref, 'xref': str(I.component_id(ref))}
     if kind == 'param':
         name = op.get('name')
+        if name == 'fileRef':
+            raise ValueError('use a retarget edit to change fileRef: it also sets the xref id the game resolves')
         pa = obj.get('params')
         for it in (pa.items if isinstance(pa, Arr) else []):
             if isinstance(it, Obj) and I._val(it.get('name')) == name:
@@ -473,6 +540,9 @@ def build_model(doc, xrefs=None, prefer_erp=None, eaid=None):
     scenes = []
     xref_summ = {}
     id_bad = 0
+    ref_bad = 0
+    ref_count = 0
+    scene_for_id = xrefs.scene_for_id if xrefs is not None else (lambda _cid: None)
     for si, sc in enumerate(doc.scenes):
         entry = sc.entry
         root_obj = entry.get('scene')
@@ -482,16 +552,21 @@ def build_model(doc, xrefs=None, prefer_erp=None, eaid=None):
         root.assign_paths()
 
         def walk(e, key, parent_key, depth):
-            nonlocal id_bad
+            nonlocal id_bad, ref_bad, ref_count
             kids = []
             for ci, c in enumerate(e.children):
                 kids.append(walk(c, f'{key}.{ci}', key, depth + 1))
             box = local_box(e)
+            ref = ref_info(e, scene_for_id)
             file_ref = e.params.get('fileRef') if e.type == 'eXRef' else None
-            if file_ref and xrefs is not None:
-                if file_ref not in xref_summ:
-                    xref_summ[file_ref] = xrefs.summary(file_ref, prefer_erp)
-                s = xref_summ[file_ref]
+            if ref:
+                ref_count += 1
+                ref_bad += 0 if ref['ok'] else 1
+            target = ref['scene'] if ref else None
+            if target and xrefs is not None:
+                if target not in xref_summ:
+                    xref_summ[target] = xrefs.summary(target, prefer_erp)
+                s = xref_summ[target]
                 if s.get('found') and s.get('min') is not None:
                     box = (s['min'], s['max'], 'xref')
             ok = e.id_ok()
@@ -507,6 +582,7 @@ def build_model(doc, xrefs=None, prefer_erp=None, eaid=None):
                 'anims': [jsonable(a) for a in e.anims],
                 'xref': jsonable(I._val(e.obj.get('xref'))) if e.obj.get('xref') is not None else None,
                 'fileRef': file_ref,
+                'ref': ref_json(ref),
                 'box': {'min': box[0], 'max': box[1], 'src': box[2]} if box else None,
             }
             return key
@@ -521,10 +597,23 @@ def build_model(doc, xrefs=None, prefer_erp=None, eaid=None):
             'lookupCount': len(lookup), 'lookupOk': lookup == expected_lookup(entry),
         })
     return {'scenes': scenes, 'elements': elements, 'xrefs': xref_summ,
-            'stats': {'elements': len(elements), 'idBad': id_bad, 'xrefs': len(xref_summ)}}
+            'stats': {'elements': len(elements), 'idBad': id_bad, 'xrefs': len(xref_summ),
+                      'refs': ref_count, 'refBad': ref_bad}}
 
 
-def verify_bytes(data, source=None, component_ids=None):
+def scene_refs(doc, scene_for_id=lambda _cid: None):
+    out = []
+    for sc in doc.scenes:
+        if not sc.root:
+            continue
+        for e, _d in sc.root.walk():
+            r = ref_info(e, scene_for_id)
+            if r:
+                out.append((e, r))
+    return out
+
+
+def verify_bytes(data, source=None, component_ids=None, scene_for_id=lambda _cid: None):
     checks = {}
     try:
         doc = I.Idf(data)
@@ -554,6 +643,52 @@ def verify_bytes(data, source=None, component_ids=None):
         checks['componentIdsKept'] = [sc.name for sc in doc.scenes] == component_ids
     if source is not None:
         checks['identicalToSource'] = data == source
+    refs = scene_refs(doc, scene_for_id)
+    checks['references'] = len(refs)
+    checks['xrefMismatches'] = [dict(ref_json(r), element=e.path) for e, r in refs if not r['ok']]
+    checks['xrefIdsOk'] = not checks['xrefMismatches']
     checks['ok'] = (checks['roundtrip'] and checks['elementIdsOk'] and lookup_ok
-                    and checks.get('componentIdsKept', True))
+                    and checks.get('componentIdsKept', True) and checks['xrefIdsOk'])
     return checks
+
+
+def check_archives(catalog):
+    results = {}
+    copies = refs = copy_refs = unresolved = 0
+    found = {}
+    failures = []
+    scene_ids = {I.component_id(name): name for name in catalog.scenes}
+    by_erp = {}
+    for name in sorted(catalog.scenes):
+        for idx in catalog.scenes[name]:
+            by_erp.setdefault(idx, []).append(name)
+    for idx in sorted(by_erp):
+        rel = catalog.erps[idx]
+        for name in by_erp[idx]:
+            copies += 1
+            try:
+                raw = catalog.read_fragment(rel, name, 0)
+            except Exception as ex:
+                failures.append({'scene': name, 'erp': rel, 'error': str(ex)})
+                continue
+            digest = hashlib.sha1(raw).digest()
+            if digest not in results:
+                try:
+                    pairs = scene_refs(I.Idf(raw), scene_ids.get)
+                except Exception as ex:
+                    failures.append({'scene': name, 'erp': rel, 'error': f'parse failed: {ex}'})
+                    continue
+                refs += len(pairs)
+                unresolved += sum(1 for _e, r in pairs if r['ok'] and r['path'] not in catalog.scenes)
+                results[digest] = (len(pairs), [(e.path, r) for e, r in pairs if not r['ok']])
+            count, bad = results[digest]
+            copy_refs += count
+            for element, r in bad:
+                key = (name, element, digest)
+                if key not in found:
+                    found[key] = dict(ref_json(r), inScene=name, element=element, erps=[])
+                found[key]['erps'].append(rel)
+    mismatches = list(found.values())
+    return {'scenes': len(catalog.scenes), 'copies': copies, 'unique': len(results), 'references': refs,
+            'referencesInCopies': copy_refs, 'notInArchives': unresolved, 'mismatches': mismatches, 'failures': failures,
+            'ok': not mismatches and not failures}
