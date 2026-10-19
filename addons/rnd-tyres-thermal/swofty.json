@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "swofty.rnd-tyres-thermal",
   "name": "R&D: Tyres & Thermal Management",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "author": "Swofty",
   "description": "Adds a new career R&D department, Tyres & Thermal Management, alongside the stock four.",
   "license": "AGPL-3.0-or-later",
@@ -16,6 +16,30 @@
       "label": "Render the 5th R&D box",
       "description": "Inject the Tyres & Thermal Management box into the career R&D > Performance department grid. Experimental; disable if the Performance page misbehaves.",
       "default": true,
+      "binds": "native"
+    },
+    {
+      "id": "attach_tyres_tree",
+      "type": "toggle",
+      "label": "Attach the Tyres upgrade tree",
+      "description": "Resolve and log the per-save R&D upgrade container the Tyres (code-4 'fake') department reads, so its research tree can be populated. The upgrade rows (upgrade_department=Fake) ship in the database; this logs the exact container hash to finalise their placement.",
+      "default": true,
+      "binds": "native"
+    },
+    {
+      "id": "render_fifth_box_layout",
+      "type": "toggle",
+      "label": "Diagnose the 5th R&D box layout",
+      "description": "Read-only: on the next R&D > Performance visit, log the department box grid's authored slot vector vs the card vector so the invisible-5th-box cause is captured. Produces no gameplay change.",
+      "default": true,
+      "binds": "native"
+    },
+    {
+      "id": "render_fifth_pie",
+      "type": "toggle",
+      "label": "Render the 5th development-potential pie slice",
+      "description": "Grow the R&D > Performance development-potential pie to a 5th slice for Tyres & Thermal Management. Experimental and highest-risk: the pie wedge is authored art, so the slice is populated but no wedge draws yet. Default off; enable only to test.",
+      "default": false,
       "binds": "native"
     }
   ],

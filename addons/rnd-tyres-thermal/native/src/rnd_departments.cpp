@@ -587,6 +587,429 @@ void install_fifth_box(uintptr_t base)
                 (unsigned long long)site, (unsigned long long)(site - base), g_fifth_enabled.load() ? "on" : "off");
 }
 
+// ---------------------------------------------------------------------------
+// R&D > Performance: the LIVE development-potential pie 5th slice (Tyres).
+//
+// The live Performance-page pie is built by Career_Build_RnDPieOverview
+// (0x141f46eb0) + populate helper Career_Populate_RnDPieSlices (0x141f48030) on
+// class-B vtable 0x14575e300 (NOT the dormant class-A builder 0x141f41d60, which
+// does not open on this page). The builder allocates a per-slice buffer at
+// EXACTLY 0x900 (= 0x80 + 4*0x220) at 0x141f46f75, constructs four slots via
+// FUN_141f45650 (slot i at buf+0x80+i*0x220: +0x80/+0x2a0/+0x4c0/+0x6e0), stores
+// the buffer at builder+0x670, then the populate loop (code table 0x145735d60)
+// writes each dept code < 4 into its slot at builder+0x670 + i*0x220.
+//
+// This piece grows the buffer to 0xb20 (= 0x80 + 5*0x220), constructs a real 5th
+// slot (FUN_141f45650 at buf+0x900), and relaxes the populate loop's `code < 4`
+// guard (cmp r14d,3 @0x141f48218) to `< 5` so dept code 4 (the "fake"/Tyres
+// spare, dept-name-table[4] = "fake") is populated into the 5th slot. These are
+// NOT blind writes: the buffer size, slot stride (0x220) and slot constructor
+// (FUN_141f45650) are exactly what the stock prologue uses for slots 0..3; the
+// populate's second index guard (cmp r13d,4 @0x141f4821e) already permits five
+// writes, so it is left untouched.
+//
+// DEFERRED (authored art, not shippable from a mixin): the pie-wheel WEDGE
+// GEOMETRY and the jump-table `case 4` name/colour. The four wedges are
+// pre-authored 90-degree sector nodes; code 4 takes the populate's DEFAULT
+// jump-table case (name token "error_department", colour white) and resolves its
+// sector node by name-hash under `rnd_wheel_icon`, getting an EMPTY handle on
+// miss (benign - every populate write is node-guarded). So the 5th slice is
+// POPULATED but NO wedge draws, and it is labelled via the error-department
+// default, until a 5th authored sector node + a jump-table `case 4` (name
+// lng_rnd_dept_tyres, colour 0xff0078ff) are added. Extending the 4-entry rel32
+// jump table @0x141f48231 needs a code cave within +-2GB and is exactly the kind
+// of blind patch that risks a crash, so it is NOT done here; see native/HOOKS.md.
+// Because the slice has no visible payoff yet and this is the riskiest piece,
+// render_fifth_pie DEFAULTS OFF.
+//
+// Independent gate: one unique scan of the buffer-alloc site; all sites then
+// addressed by fixed RVA (no ASLR) and region-guarded, with the live immediate
+// bytes verified before any write. The static code patches (buffer size + guard
+// immediate) are applied ONLY when the flag is on at load, together with the
+// slot-construct hook, and the guard patch is applied LAST, so the guard is never
+// relaxed unless the buffer is grown and the 5th slot is constructed. Runtime
+// toggling logs that a relaunch is needed (code patches are install-time).
+
+SWOFTY_SETTING(bool, render_fifth_pie, false);
+std::atomic<bool> g_pie_enabled{false};
+
+SWOFTY_ON_CHANGE(render_fifth_pie, bool on)
+{
+    swofty::log("[rnd-tyres] render_fifth_pie toggled -> %s; pie code patches are install-time, relaunch to apply",
+                on ? "on" : "off");
+}
+
+constexpr uintptr_t kRvaPieAllocSite = 0x141f46f6bull - kImageBase; // scan match: mov rbx,[rsi+0x270]
+constexpr uintptr_t kRvaPieAllocImm  = 0x141f46f76ull - kImageBase; // the 0x900 immediate (4 bytes LE)
+constexpr uintptr_t kRvaPieSlotHook  = 0x141f47012ull - kImageBase; // after the 4th FUN_141f45650; rbx = buffer
+constexpr uintptr_t kRvaPieGuard1Imm = 0x141f4821bull - kImageBase; // the `03` in cmp r14d,3 (code < 4 guard)
+constexpr uintptr_t kRvaPieSlotCtor  = 0x141f45650ull - kImageBase; // FUN_141f45650(slot)
+
+constexpr size_t   kPieSlotStride = 0x220;
+constexpr size_t   kPieSlot4Off   = 0x80 + 4 * kPieSlotStride; // 0x900
+constexpr uint32_t kPieBufNew     = 0x80 + 5 * kPieSlotStride; // 0xb20
+
+using PieSlotCtorFn = void (*)(void *slot);
+
+safetyhook::MidHook g_pie_slot_hook;
+std::atomic<int> g_pie_slot_log{0};
+
+// At 0x141f47012 (right after the 4th slot ctor returns): rbx = the (grown) slice
+// buffer. Construct the 5th slot at buf+0x900 the game's own way so the populate
+// loop can write code 4 into it without touching uninitialised memory.
+void on_pie_slot_construct(safetyhook::Context &c)
+{
+    if (!g_pie_enabled.load())
+        return;
+    uintptr_t base = swofty::api ? swofty::api->module_base() : 0;
+    if (!base)
+        return;
+    uintptr_t buf = c.rbx;
+    void *slot = reinterpret_cast<void *>(buf + kPieSlot4Off);
+    bool first = g_pie_slot_log.fetch_add(1) == 0;
+    if (buf == 0 || !region_writable(slot, kPieSlotStride)) {
+        if (first)
+            swofty::log("[rnd-tyres] pie: 5th slot @0x%llx not writable (buffer not grown?); NOT constructing (SAFE)",
+                        (unsigned long long)(buf + kPieSlot4Off));
+        return;
+    }
+    auto ctor = reinterpret_cast<PieSlotCtorFn>(base + kRvaPieSlotCtor);
+    ctor(slot);
+    if (first)
+        swofty::log("[rnd-tyres] pie: constructed 5th slice slot @0x%llx (buffer=0x%llx stride=0x220)",
+                    (unsigned long long)(buf + kPieSlot4Off), (unsigned long long)buf);
+}
+
+bool pie_bytes_are(uintptr_t addr, const uint8_t *want, size_t n)
+{
+    if (!region_readable(reinterpret_cast<void *>(addr), n))
+        return false;
+    const volatile uint8_t *p = reinterpret_cast<const volatile uint8_t *>(addr);
+    for (size_t i = 0; i < n; ++i)
+        if (p[i] != want[i])
+            return false;
+    return true;
+}
+
+bool pie_patch(uintptr_t addr, const uint8_t *bytes, size_t n, const char *what)
+{
+    void *p = reinterpret_cast<void *>(addr);
+    if (!region_readable(p, n)) {
+        swofty::log("[rnd-tyres] pie: %s @0x%llx not readable; NOT patching (SAFE)", what, (unsigned long long)addr);
+        return false;
+    }
+    DWORD old = 0;
+    if (!VirtualProtect(p, n, PAGE_EXECUTE_READWRITE, &old)) {
+        swofty::log("[rnd-tyres] pie: VirtualProtect failed for %s @0x%llx; NOT patching (SAFE)", what,
+                    (unsigned long long)addr);
+        return false;
+    }
+    for (size_t i = 0; i < n; ++i)
+        reinterpret_cast<volatile uint8_t *>(p)[i] = bytes[i];
+    DWORD tmp = 0;
+    VirtualProtect(p, n, old, &tmp);
+    return true;
+}
+
+// Independent gate: one unique scan of the buffer-alloc site. All sites then by
+// fixed RVA, each region- and value-verified. Installs are ordered so the
+// code-4 guard (the only thing that makes the populate touch the 5th slot) is
+// relaxed LAST, after the buffer is grown and the slot-ctor hook is live.
+void install_fifth_pie(uintptr_t base)
+{
+    if (!g_pie_enabled.load()) {
+        swofty::log("[rnd-tyres] render_fifth_pie off; pie 5th slice NOT installed (SAFE)");
+        return;
+    }
+    uintptr_t hit = 0;
+    int matches = swofty::api->scan(
+        ".xtls", "48 8B 9E 70 02 00 00 48 8B 03 BA 00 09 00 00 41 B8 10 00 00 00 48 89 D9", &hit);
+    if (matches != 1 || !hit) {
+        swofty::log("[rnd-tyres] pie buffer-alloc signature matched %d time(s); pie NOT patched (SAFE)", matches);
+        return;
+    }
+    if (hit != base + kRvaPieAllocSite) {
+        swofty::log("[rnd-tyres] pie scan hit 0x%llx != expected 0x%llx; pie NOT patched (SAFE)",
+                    (unsigned long long)hit, (unsigned long long)(base + kRvaPieAllocSite));
+        return;
+    }
+
+    const uint8_t kImm900[4] = {0x00, 0x09, 0x00, 0x00};
+    const uint8_t kGuard3[4] = {0x41, 0x83, 0xfe, 0x03};
+    uintptr_t imm_at   = base + kRvaPieAllocImm;
+    uintptr_t guard_at = base + kRvaPieGuard1Imm; // the `03` operand (last byte of the cmp)
+    uintptr_t guard_ins = base + (0x141f48218ull - kImageBase);
+    uintptr_t slot_at  = base + kRvaPieSlotHook;
+
+    // Verify every site matches the decompile for THIS build before touching anything.
+    if (!pie_bytes_are(imm_at, kImm900, 4) || !pie_bytes_are(guard_ins, kGuard3, 4)
+        || !region_readable(reinterpret_cast<void *>(slot_at), 16)
+        || !region_readable(reinterpret_cast<void *>(base + kRvaPieSlotCtor), 16)) {
+        swofty::log("[rnd-tyres] pie: site bytes differ from the decompile (imm/guard/slot/ctor); pie NOT patched (SAFE)");
+        return;
+    }
+
+    // 1) 5th-slot constructor hook (does nothing until the buffer is grown).
+    auto r = safetyhook::MidHook::create(reinterpret_cast<void *>(slot_at), &on_pie_slot_construct);
+    if (!r) {
+        swofty::log("[rnd-tyres] pie: slot-ctor MidHook::create failed @0x%llx (err %d); pie NOT patched (SAFE)",
+                    (unsigned long long)slot_at, (int)r.error().type);
+        return;
+    }
+    g_pie_slot_hook = std::move(*r);
+
+    // 2) grow the slice buffer 0x900 -> 0xb20.
+    const uint8_t newimm[4] = {(uint8_t)(kPieBufNew & 0xff), (uint8_t)((kPieBufNew >> 8) & 0xff),
+                               (uint8_t)((kPieBufNew >> 16) & 0xff), (uint8_t)((kPieBufNew >> 24) & 0xff)};
+    if (!pie_patch(imm_at, newimm, 4, "buffer-size immediate")) {
+        swofty::log("[rnd-tyres] pie: buffer not grown; code-4 guard left intact (SAFE)");
+        return;
+    }
+
+    // 3) LAST: relax the populate `code < 4` guard (cmp r14d,3 -> cmp r14d,4).
+    const uint8_t four = 0x04;
+    if (!pie_patch(guard_at, &four, 1, "code<4 guard immediate")) {
+        swofty::log("[rnd-tyres] pie: guard not relaxed; 5th slot is built but unused, buffer grown (SAFE)");
+        return;
+    }
+
+    swofty::log("[rnd-tyres] pie 5th slice INSTALLED: buffer 0x900->0x%x, slot-ctor hook @0x%llx (base+0x%llx), "
+                "guard cmp r14d,3->4 @0x%llx; code 4 populates slot[4]@buf+0x900 (name=error_department default, "
+                "colour=white; wedge geometry + jump-table case 4 DEFERRED - no wedge draws yet)",
+                kPieBufNew, (unsigned long long)slot_at, (unsigned long long)(slot_at - base),
+                (unsigned long long)guard_ins);
+}
+
+// ---------------------------------------------------------------------------
+// R&D > Performance: 5th-box LAYOUT diagnostic (why the injected box is invisible).
+//
+// Static RE (this session) + the live v0.3.0 result settled the mechanism: the
+// department box grid is an embedded UITC tab-container VM at builder+0x2d8.
+// Whether a department gets a VISIBLE, selectable 2x2 cell is governed by the
+// container's authored SLOT VECTOR at container+0x270..+0x278 (= builder+0x548..
+// +0x550; 0x10 per entry: entry+8 = slotObj, slotObj+0x20 = bound card VM-node,
+// slotObj+8 = inner content node). Those slots are created at SCREEN INIT from the
+// authored tab/VM nodes under view_model_data.laptop_r_and_d_departments_container
+// and the authored rnd_card_with_info scene instances in frontend_overlay.idf -
+// keyed by node id, a FIXED set of four. The per-card attach (FUN_14431d720) only
+// registers a child into the container's child collection (+0x28/+0x378); it NEVER
+// adds a +0x270 slot. So the v0.3.0 5th card is parented but has no authored slot
+// and no authored scene cell -> invisible (confirmed in-game).
+//
+// A genuine 5th VISIBLE cell needs an authored (or runtime-cloned) 5th +0x270 slot
+// AND a 5th rnd_card_with_info scene instance with a real cell rect. The
+// slot-register routine (UITC vt[0x48] init / screen builder 0x141c43290) is not in
+// the decompiled corpus, and the 5th cell's rect lives in the frontend_overlay.idf
+// scene (not dumped). Cloning a slot + fabricating a rect blind would risk a crash,
+// and the launcher's declarative UIDF/ERP pipeline is not built - so NO visible-cell
+// lever is shippable SAFELY from this addon this round. This piece ships a SAFE,
+// read-only DIAGNOSTIC: on the next R&D > Performance visit it dumps the live
+// slot-vector vs card-vector shape and every authored slot's bound/inner node, so
+// the follow-up (an external f1-modding ERP scene patch adding a 5th authored cell,
+// or a runtime slot+scene-node clone using the captured node pointers/rects) has
+// exact ground truth. See native/HOOKS.md.
+//
+// Independent gate: one unique scan at a late point in the builder (0x141c86d86,
+// after the selection loop has walked +0x548, so the slot vector is populated and
+// the attach loop has run); rsi = builder there. Read-only, region-guarded, one-shot.
+
+SWOFTY_SETTING(bool, render_fifth_box_layout, true);
+std::atomic<bool> g_layout_enabled{true};
+safetyhook::MidHook g_layout_hook;
+std::atomic<int> g_layout_log{0};
+
+SWOFTY_ON_CHANGE(render_fifth_box_layout, bool on)
+{
+    g_layout_enabled.store(on);
+    swofty::log("[rnd-tyres] render_fifth_box_layout toggled -> %s", on ? "on" : "off");
+}
+
+uintptr_t rd_ptr(uintptr_t a)
+{
+    return region_readable(reinterpret_cast<void *>(a), 8) ? *reinterpret_cast<uintptr_t *>(a) : 0;
+}
+
+// Late in Career_Build_RnDDeptBoxGrid: rsi = builder. Dump the slot vector (the
+// authoritative "which cells are visible" structure) against the card vector, plus
+// each authored slot's bound/inner node, so the invisible-5th-card cause is
+// captured as loader.log ground truth.
+void on_box_layout(safetyhook::Context &c)
+{
+    if (!g_layout_enabled.load())
+        return;
+    if (g_layout_log.fetch_add(1) != 0)
+        return;
+    uintptr_t self = c.rsi;
+    uintptr_t cbeg = rd_ptr(self + 0x280), cend = rd_ptr(self + 0x288);
+    uintptr_t sbeg = rd_ptr(self + 0x548), send = rd_ptr(self + 0x550);
+    unsigned long long cards = (cbeg && cend >= cbeg) ? (cend - cbeg) / 8 : 0;
+    unsigned long long slots = (sbeg && send >= sbeg) ? (send - sbeg) / 0x10 : 0;
+    swofty::log("[rnd-tyres] box-layout: card-vec=%llu slot-vec(container+0x270)=%llu "
+                "(builder=0x%llx cards[0x280]=0x%llx..0x%llx slots[0x548]=0x%llx..0x%llx); a 5th VISIBLE cell needs "
+                "a 5th authored/cloned slot + scene rect (see HOOKS.md)",
+                cards, slots, (unsigned long long)self, (unsigned long long)cbeg, (unsigned long long)cend,
+                (unsigned long long)sbeg, (unsigned long long)send);
+    for (unsigned long long i = 0; i < slots && i < 8; ++i) {
+        uintptr_t slotobj = rd_ptr(sbeg + i * 0x10 + 8);
+        uintptr_t bound = slotobj ? rd_ptr(slotobj + 0x20) : 0;
+        uintptr_t inner = slotobj ? rd_ptr(slotobj + 8) : 0;
+        swofty::log("[rnd-tyres] box-layout slot[%llu]: slotObj=0x%llx bound-node=0x%llx inner-node=0x%llx", i,
+                    (unsigned long long)slotobj, (unsigned long long)bound, (unsigned long long)inner);
+    }
+    for (unsigned long long i = 0; i < cards && i < 8; ++i) {
+        uintptr_t card = rd_ptr(cbeg + i * 8);
+        unsigned en = (card && region_readable(reinterpret_cast<void *>(card + 0x6d8), 1))
+                          ? *reinterpret_cast<uint8_t *>(card + 0x6d8)
+                          : 0xff;
+        swofty::log("[rnd-tyres] box-layout card[%llu]: card=0x%llx node(+0x268)=0x%llx enum(+0x6d8)=%u", i,
+                    (unsigned long long)card, (unsigned long long)(card ? card + 0x268 : 0), en);
+    }
+}
+
+void install_box_layout_probe(uintptr_t base)
+{
+    if (!g_layout_enabled.load()) {
+        swofty::log("[rnd-tyres] render_fifth_box_layout off; box-layout diagnostic NOT installed (SAFE)");
+        return;
+    }
+    uintptr_t hit = 0;
+    int matches = swofty::api->scan(".xtls", "48 8D 8E C0 07 00 00 48 8B 46 10 4C 8D 40 08", &hit);
+    if (matches != 1 || !hit) {
+        swofty::log("[rnd-tyres] box-layout site signature matched %d time(s); diagnostic NOT installed (SAFE)",
+                    matches);
+        return;
+    }
+    auto r = safetyhook::MidHook::create(reinterpret_cast<void *>(hit), &on_box_layout);
+    if (!r) {
+        swofty::log("[rnd-tyres] box-layout MidHook::create failed @0x%llx (err %d); NOT installed (SAFE)",
+                    (unsigned long long)hit, (int)r.error().type);
+        return;
+    }
+    g_layout_hook = std::move(*r);
+    swofty::log("[rnd-tyres] box-layout diagnostic installed @0x%llx (base+0x%llx); render_fifth_box_layout=on",
+                (unsigned long long)hit, (unsigned long long)(hit - base));
+}
+
+// ---------------------------------------------------------------------------
+// Upgrade-tree attachment (piece 2): resolve + instrument the code-4 ("fake")
+// container so the Tyres page can show buyable upgrades.
+//
+// The R&D upgrade loader Career_Load_UpgradeRows (0x143539bc0) loops the dept-code
+// table 0x145735d60 (codes 0..4; breaks at 5) and, per code, formats the container
+// path "%s.%s" = <team_link>.<deptname> from k_Career_UpgradeDeptNameTable
+// (0x14584f880: 0=aerodynamics,1=chassis,2=durability,3=engine,4="fake"), opens the
+// "upgrade" table under it and reads upgrade_<N> rows into one big vector. The
+// "fake" container is NOT empty: it is the R&D tree's central hub - fake.upgrade_0
+// = "central_fake_upgrade" (instancecount 1), linking the branch roots. MyTeam's
+// tree is <handle>.trees.user_defined (engine-supplier choice is irrelevant to
+// it); there are four shipped user_defined.fake containers (season 2025/2026 x a
+// duplicate copy). db/tyres_tree.json therefore writes the 3 Tyres nodes as
+// upgrade_1/2/3 into ALL FOUR (hashes {ae8319a01aa30478} {5927ed801bdb6765}
+// {75a045fd77ae52b9} {f71aa592926ce9d9}), preserving upgrade_0, and bumps each
+// _upgrade_instancecount_ 1 -> 4 so the loader reads the hub + the 3 new nodes.
+//
+// Each loaded upgrade is CLASSIFIED by its own upgrade_department field -> ENUM A
+// (switch @0x14353a6dd: Chassis1/Durability2/Engine3/Fake4/Invalid5, else 0). The
+// record stores only that ENUM-A byte, so the department page shows records whose
+// ENUM A == its code. The Tyres (code-4) page therefore shows records with ENUM A
+// == 4, i.e. upgrade_department = "Fake". db/tyres_tree.json sets
+// upgrade_department = "Fake" (ENUM A = 4), NOT "Tyres" (which -> 0 = Aero's slot):
+// that is the flagged economy-collision fix, and it is pure data.
+//
+// This gated, READ-ONLY hook CONFIRMS the placement on the player's build: at
+// 0x143539c84 (r8 = team_link cstr, r9 = deptname cstr, rdi = code) it logs, per
+// dept code, the formatted path and its FNV-1a-64 container hash; the code-4 line
+// should equal one of the four container hashes above (and reveals the exact
+// {hash} to use if a future build/save differs). SAFE: no writes, region-guarded
+// reads only. Gate: one unique scan + flag attach_tyres_tree.
+
+SWOFTY_SETTING(bool, attach_tyres_tree, true);
+std::atomic<bool> g_tree_enabled{true};
+safetyhook::MidHook g_tree_hook;
+std::atomic<int> g_tree_log{0};
+
+SWOFTY_ON_CHANGE(attach_tyres_tree, bool on)
+{
+    g_tree_enabled.store(on);
+    swofty::log("[rnd-tyres] attach_tyres_tree toggled -> %s", on ? "on" : "off");
+}
+
+constexpr uint64_t kFnvBasis = 0xcbf29ce484222325ull;
+constexpr uint64_t kFnvPrime = 0x100000001b3ull;
+
+uint64_t fnv_add(uint64_t h, const char *s, size_t n)
+{
+    for (size_t i = 0; i < n; ++i)
+        h = (h ^ static_cast<uint8_t>(s[i])) * kFnvPrime;
+    return h;
+}
+
+size_t copy_cstr(const char *src, char *dst, size_t cap)
+{
+    size_t i = 0;
+    if (!src || !region_readable(src, 1)) {
+        dst[0] = 0;
+        return 0;
+    }
+    for (; i < cap - 1 && region_readable(src + i, 1) && src[i]; ++i)
+        dst[i] = src[i];
+    dst[i] = 0;
+    return i;
+}
+
+// At 0x143539c84 in Career_Load_UpgradeRows: r8 = team_link cstr, r9 = deptname
+// cstr, rdi = dept code. Log the resolved container path + FNV hash per code.
+void on_upgrade_tree_load(safetyhook::Context &c)
+{
+    if (!g_tree_enabled.load())
+        return;
+    if (g_tree_log.fetch_add(1) >= 10) // ~one 5-code pass plus slack, then quiet
+        return;
+    unsigned code = static_cast<unsigned>(c.rdi & 0xff);
+    char team[192], dept[48];
+    size_t tlen = copy_cstr(reinterpret_cast<const char *>(c.r8), team, sizeof team);
+    size_t dlen = copy_cstr(reinterpret_cast<const char *>(c.r9), dept, sizeof dept);
+    uint64_t h = fnv_add(fnv_add(fnv_add(kFnvBasis, team, tlen), ".", 1), dept, dlen);
+    if (code == 4) {
+        uint64_t meta0 = fnv_add(h, ".upgrade_0._metadata_", 21);
+        uint64_t cnt = fnv_add(h, "._upgrade_instancecount_", 24);
+        swofty::log("[rnd-tyres] upgrade-tree code=4 FAKE/TYRES: path=\"%s.%s\" container FNV={%016llx} <<< place "
+                    "db/tyres_tree.json rows under this: select \"{%016llx}.upgrade_N\" + \"{%016llx}\" "
+                    "_upgrade_instancecount_ (ex: <team_link>.fake.upgrade_0._metadata_ key=%016llx, "
+                    "_upgrade_instancecount_ key=%016llx)",
+                    team, dept, (unsigned long long)h, (unsigned long long)h, (unsigned long long)h,
+                    (unsigned long long)meta0, (unsigned long long)cnt);
+    } else {
+        swofty::log("[rnd-tyres] upgrade-tree code=%u dept=\"%s\" team_link=\"%s\" container FNV={%016llx}", code,
+                    dept, team, (unsigned long long)h);
+    }
+}
+
+void install_tree_probe(uintptr_t base)
+{
+    if (!g_tree_enabled.load()) {
+        swofty::log("[rnd-tyres] attach_tyres_tree off; upgrade-tree instrument NOT installed (SAFE)");
+        return;
+    }
+    uintptr_t hit = 0;
+    int matches = swofty::api->scan(".xtls", "48 8D 8C 24 98 06 00 00 48 8D 15 E1 53 12 02", &hit);
+    if (matches != 1 || !hit) {
+        swofty::log("[rnd-tyres] upgrade-tree site signature matched %d time(s); instrument NOT installed (SAFE)",
+                    matches);
+        return;
+    }
+    auto r = safetyhook::MidHook::create(reinterpret_cast<void *>(hit), &on_upgrade_tree_load);
+    if (!r) {
+        swofty::log("[rnd-tyres] upgrade-tree MidHook::create failed @0x%llx (err %d); NOT installed (SAFE)",
+                    (unsigned long long)hit, (int)r.error().type);
+        return;
+    }
+    g_tree_hook = std::move(*r);
+    swofty::log("[rnd-tyres] upgrade-tree instrument installed @0x%llx (base+0x%llx); attach_tyres_tree=on; "
+                "db rows use upgrade_department=Fake (ENUM A=4, no Aero collision)",
+                (unsigned long long)hit, (unsigned long long)(hit - base));
+}
+
 } // namespace
 
 SWOFTY_ON_LOAD
@@ -601,6 +1024,21 @@ SWOFTY_ON_LOAD
     // The live fifth department box - its OWN independent gate + feature flag.
     g_fifth_enabled.store(render_fifth_box.get());
     install_fifth_box(base);
+
+    // The live development-potential pie 5th slice - its OWN independent gate +
+    // feature flag (default off; the wedge geometry is deferred, see above).
+    g_pie_enabled.store(render_fifth_pie.get());
+    install_fifth_pie(base);
+
+    // The 5th-box layout diagnostic - its OWN independent gate + feature flag
+    // (read-only; captures why the injected box has no visible 2x2 cell).
+    g_layout_enabled.store(render_fifth_box_layout.get());
+    install_box_layout_probe(base);
+
+    // Upgrade-tree attachment instrument - its OWN independent gate + feature flag
+    // (read-only; resolves the per-save <team_link>.fake upgrade container).
+    g_tree_enabled.store(attach_tyres_tree.get());
+    install_tree_probe(base);
 
     uintptr_t hit = 0;
     int matches = swofty::api->scan(".xtls", "75 06 B1 03 EB 02 31 C9 88 8F 40 03 00 00", &hit);
