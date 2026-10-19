@@ -30,7 +30,7 @@ pub fn create(root: &Path, exe: &Path, desktop: bool) {
         "net.swofty.ModLauncher".into()
     };
     let entry = format!(
-        "[Desktop Entry]\nType=Application\nName={NAME} for F1 25\nComment=Mods and maps for F1 25\n\
+        "[Desktop Entry]\nType=Application\nName={NAME} for F1 25\nComment=Mods and tracks for F1 25\n\
          Exec={}\nPath={}\nIcon={icon}\nTerminal=false\nCategories=Game;\nStartupWMClass=net.swofty.ModLauncher\n",
         quote(&exe.display().to_string()),
         root.display(),

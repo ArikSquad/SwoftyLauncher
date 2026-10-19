@@ -944,7 +944,7 @@ impl Shell {
                     div()
                         .text_size(px(13.))
                         .text_color(p.text_placeholder)
-                        .child("Starts with SwoftyMod and nothing else"),
+                        .child("Starts with SwoftyMod and Simplified for Swofty"),
                 )
                 .on_click(cx.listener(|this, _, window, cx| this.profile_prompt(None, false, window, cx)))
                 .into_any_element(),
