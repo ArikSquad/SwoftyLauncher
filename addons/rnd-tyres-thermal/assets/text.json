@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "ops": [
+    { "op": "lang.set", "language": "*",   "key": "lng_rnd_department_tyres",       "value": "Tyres & Thermal Management" },
+    { "op": "lang.set", "language": "eng", "key": "lng_rnd_department_tyres_desc",  "value": "Manage tyre degradation, brake cooling and thermal reliability." },
+    { "op": "lang.set", "language": "*",   "key": "lng_department_tyres",            "value": "Tyres & Thermal Management" },
+    { "op": "lang.set", "language": "*",   "key": "lng_mt_rnd_tyres_name",           "value": "Tyres & Thermal Management" },
+    { "op": "lang.set", "language": "eng", "key": "lng_mt_rnd_tyres_desc",           "value": "Manage tyre degradation, brake cooling and thermal reliability." }
+  ]
+}
