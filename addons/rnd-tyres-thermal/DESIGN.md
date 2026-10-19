@@ -36,13 +36,22 @@ department. No new enum value is minted.
 
 ### Data (`operations.database`)
 
-1. `db/departments.json` - a new `UpgradeDepartmentEntry_8` row in both season
-   families (`{016caf2bb4d4f128}`, `{3121442cecc7bb08}`), cloned field-for-field
-   (all 21 keys, same types) from the stock Durability row so every backing
-   `MyTeam_RND_*` attribute reference still resolves (a missing key crashes the
-   game). Only two fields change: `_metadata_` = `ModifierTyresThermal`,
-   `department` = `Tyres`. Each family's `UpgradeDepartmentEntry` instance count
-   is set to 5.
+1. `db/departments.json` - a new `UpgradeDepartmentEntry_4` row in the two
+   containers the runtime department loader actually reads,
+   `{5e21a18f9f59dbf6}` and `{1f304d36c3c2b947}` (each ships
+   `UpgradeDepartmentEntry_0..3` = Aero/Chassis/Durability/Powertrain and
+   `_UpgradeDepartmentEntry_instancecount_ = 4`). The row is cloned
+   field-for-field (all 21 keys, same types) from the stock Durability row so
+   every backing `MyTeam_RND_*` attribute reference still resolves (a missing key
+   crashes the game). Only two fields change: `_metadata_` =
+   `ModifierTyresThermal`, `department` = `Tyres`. The row count is **not** set in
+   data - the native mixin bumps it to 5 at the source (see Code below), which is
+   what makes the loader's `for i in 0..count-1` read our row `_4` as the fifth.
+
+   (The static containers `{016caf2bb4d4f128}`/`{3121442cecc7bb08}` an earlier
+   read-only pass used - rows at `_4..7`, no `_instancecount_` key - are a
+   different, unread copy; the live `rnd-probe` loop proved the loader reads
+   indices `0..3` from `{5e21…}`/`{1f30…}`.)
 2. `db/tyres_tree.json` - a small three-node upgrade tree (Tyre Wear, Brakes,
    Upgrade All Durability) in a dedicated container, each node a valid clone of
    the stock durability node schema with `upgrade_department = Tyres`. This is
@@ -59,20 +68,38 @@ conventions.
 
 ### Code (`operations.native`)
 
-`native/rnd_departments.dll` - one mid-function hook at the team-department enum
-resolver's store (`mov byte [rdi+0x340], cl`; signature
-`75 06 B1 03 EB 02 31 C9 88 8F 40 03 00 00`). When the token being resolved is
-`Tyres` it forces the stored enum byte to 4; every resolution is logged. Gated
-on an exactly-one scan match - on 0 or >1 matches it logs and installs nothing.
-Forcing 4 is a confirm/activate of the spare, never a new value.
+`native/rnd_departments.dll` - two independently-gated mid-function hooks:
+
+- **Hook A (team-dept enum store)** `mov byte [rdi+0x340], cl`; signature
+  `75 06 B1 03 EB 02 31 C9 88 8F 40 03 00 00`. When the token being resolved is
+  `Tyres` it forces the stored enum byte to 4 (a confirm/activate of the spare,
+  never a new value); every resolution is logged.
+- **Hook B (department row count)** `mov [rsi+0x200], ecx` @`0x1445a28df` inside
+  `Gdb_Init_TableCursor`; signature `89 8E 00 02 00 00 48 81 C4 20 01 00 00`
+  (KB binding `gamedb.dept_count_store`). This is the single point where the
+  `UpgradeDepartmentEntry` row count (from
+  `<container>._UpgradeDepartmentEntry_instancecount_`, stock 4) is written into
+  the cursor. The handler only acts when the cursor's row word (`cursor+0x100`)
+  is `UpgradeDepartmentEntry` and the count is the stock 4, forcing it to 5, so
+  every consumer that inits that table cursor agrees. The loader then reads
+  `UpgradeDepartmentEntry_0..4`, i.e. our row `_4`.
+
+Each hook is gated on an exactly-one scan match - on 0 or >1 matches (or a failed
+install) it logs and installs nothing, so the DLL stays benign.
 
 ## Residual unknowns (the in-game test resolves these)
 
-- **Does the game read the 5th department row?** The `UpgradeDepartmentEntry`
-  table has no discoverable `_instancecount_` record; the count (4) is built at
-  runtime, and the rows sit at indices 4-7. The row is added at index 8 with the
-  count set to 5. If the game ignores it, the tab simply will not appear (no
-  crash) and a native count-bump becomes the next step.
+- **Does the game read the 5th department row?** Resolved by RE + the live
+  `rnd-probe` trace: the count comes from the DB key
+  `<container>._UpgradeDepartmentEntry_instancecount_` (= 4), read by
+  `Gdb_Init_TableCursor` and used as the loader's `for i in 0..count-1` bound.
+  The loader reads indices `0..3` from `{5e21a18f9f59dbf6}`/`{1f304d36c3c2b947}`.
+  The native Hook B bumps that count to 5 so index `4` (our row) is read. **Open
+  for the in-game test:** `department = Tyres` maps to the per-upgrade
+  `upgrade_department` **ENUM A = 0** (default) in this loader's inline switch -
+  the same slot as Aerodynamics - so the economy entry may collide with Aero's
+  slot rather than form a distinct 5th entry. Whether a distinct 5th *tab* then
+  renders (the tab list may enumerate via a different path) is the test question.
 - **UI tab rendering** - whether the departments container spawns a 5th tab from
   the collection, and which lang key it binds for the name.
 - **Upgrade-tree attachment** - which container the Tyres tab loads.

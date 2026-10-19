@@ -56,3 +56,32 @@ scaffold verdict above:
 5. Save-game tolerance of the new enum value/rows.
 6. Enum overflow: a consumer that indexes a fixed array by `[obj+0x340]` and over-runs at value 4 (none
    found; `rsi+0x738+N*0x48` has ~18 slots).
+
+## Count mechanism — RESOLVED (rnd-tyres iteration, RE + live rnd-probe trace)
+
+The department row count is **not** a literal 4 and **not** "built from nothing".
+`Career_Load_DepartmentEntries` (0x1412326e0) loops `r8d = 0 .. row_count-1`
+(`cmp r8d,[rsp+0xa4]` @0x141232a28), calling `Gdb_Get_RowByIndex(cursor, out, i)`
+which reads the row **`UpgradeDepartmentEntry_<i>`** (literal 0-based index).
+`row_count` comes from `Gdb_Init_TableCursor` (0x1445a25c0): it builds the DB key
+`<container>._UpgradeDepartmentEntry_instancecount_`, looks it up, and stores the
+int at `cursor+0x200` (`mov [rsi+0x200],ecx` @0x1445a28df). Missing key → 0.
+
+Ground truth (base GVDB + the `rnd-probe` loader.log, db_count=4, idx 0..3, two
+`rsi` objects): the two containers the loader actually reads are
+**`{5e21a18f9f59dbf6}`** and **`{1f304d36c3c2b947}`**, each with
+`_UpgradeDepartmentEntry_instancecount_ = 4` and rows `_0.._3`
+(Aero/Chassis/Durability/Powertrain). The static families `{016caf2bb4d4f128}`/
+`{3121442cecc7bb08}` (rows `_4..7`, **no** instancecount key) are a different,
+unread copy — the earlier "add at `_8`" plan targeted the wrong container.
+
+Fix: data row at `UpgradeDepartmentEntry_4` in `{5e21…}`/`{1f30…}`; native Hook B
+forces the count 4→5 at the `+0x200` store (sig `gamedb.dept_count_store`,
+site `site_Gdb_DeptCountStore` @0x1445a28df), gated on `cursor+0x100 ==
+"UpgradeDepartmentEntry"` so no other table is touched.
+
+Caveat: `department = Tyres` → per-upgrade `upgrade_department` **ENUM A = 0**
+(Aero's slot) in this loader's inline switch; the economy entry may overwrite
+Aero's slot rather than add a 5th. The team-dept **ENUM B** (Tyres=4, Hook A) is
+separate and drives the dept identity. Whether a 5th tab renders needs the
+in-game test.
