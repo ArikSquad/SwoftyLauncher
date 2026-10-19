@@ -1,7 +1,14 @@
 {
   "schema_version": 1,
   "ops": [
-    { "op": "lang.set", "language": "*",   "key": "lng_rnd_dept_tyres",                       "value": "Tyres & Thermal Management" },
-    { "op": "lang.set", "language": "eng", "key": "lng_rnd_dept_tyres_overview_description",  "value": "Manage tyre degradation, brake cooling and thermal reliability." }
+    { "op": "lang.set", "language": "*",   "key": "lng_rnd_dept_tyres",                             "value": "Tyres" },
+    { "op": "lang.set", "language": "*",   "key": "lng_rnd_dept_error_department",                  "value": "Tyres" },
+    { "op": "lang.set", "language": "eng", "key": "lng_rnd_dept_tyres_overview_description",        "value": "Tyres & Thermal Management: tyre degradation, brake cooling and thermal reliability." },
+    { "op": "lang.set", "language": "*",   "key": "lng_rnd_tyres_wear_reduction",                   "value": "Pirelli Whisperer" },
+    { "op": "lang.set", "language": "*",   "key": "lng_rnd_tyres_wear_reduction_description",       "value": "A calm voice in the tyre's ear keeps it from overheating, so it wears more slowly." },
+    { "op": "lang.set", "language": "*",   "key": "lng_rnd_tyres_brake_cooling",                    "value": "Brake Disc Chill Pill" },
+    { "op": "lang.set", "language": "*",   "key": "lng_rnd_tyres_brake_cooling_description",        "value": "The discs stay cool under pressure, so the brakes hold their bite for longer." },
+    { "op": "lang.set", "language": "*",   "key": "lng_rnd_tyres_thermal_reliability",              "value": "Thermal Blanket of Destiny" },
+    { "op": "lang.set", "language": "*",   "key": "lng_rnd_tyres_thermal_reliability_description",  "value": "Every component gets tucked in at the right temperature, so the whole car lasts longer." }
   ]
 }
