@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "swofty.rnd-tyres-thermal",
   "name": "R&D: Tyres & Thermal Management",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "author": "Swofty",
   "description": "Adds a new career R&D department, Tyres & Thermal Management, alongside the stock four.",
   "license": "AGPL-3.0-or-later",
@@ -22,7 +22,7 @@
       "id": "attach_tyres_tree",
       "type": "toggle",
       "label": "Attach the Tyres upgrade tree",
-      "description": "Resolve and log the per-save R&D upgrade container the code-4 'fake' Tyres department reads. The upgrade rows ship in the database; this logs the exact container hash.",
+      "description": "Resolve and log the per-save R&D upgrade container the code-4 'fake' Tyres department reads (trees.<engine_supplier>.fake). The Tyres rows ship in the database for every team tree; this read-only hook confirms the container hash on the player's save.",
       "default": true,
       "binds": "native"
     },
