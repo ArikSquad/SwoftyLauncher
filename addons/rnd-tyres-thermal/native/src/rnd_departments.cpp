@@ -1683,6 +1683,147 @@ void install_instantiate_tyres(uintptr_t base)
                           &on_page_pre_query, "R&D page pre-query", base);
 }
 
+// ---------------------------------------------------------------------------
+// Diagnostic: the R&D department page's instance query, per department.
+//
+// Career_Build_RnDDeptPage (FUN_141c7b880) calls the per-team instance query
+// FUN_1435188d0(Upgrades=[card+0x688], out=rsp+0xdf0, &team=rsp+0x8c, 0xffff) at
+// 0x141c7d8cf and keeps entries whose +0x72 == the card's dept (card+0x6d8). At
+// 0x141c7d8d4 (right after the call; rsi = card, count at rsp+0x19f0) this logs
+// the query result by department, so the Tyres page shows 4:3 once fixed (it was
+// 4:0), plus every dept-4 instance in the team's trees with its last state.
+// Read-only. Own exactly-one scan + flag diag_tyres_instances.
+
+SWOFTY_SETTING(bool, diag_tyres_instances, true);
+std::atomic<bool> g_diag_inst_enabled{true};
+safetyhook::MidHook g_page_post_hook;
+std::atomic<int> g_page_log_tyres{0};
+std::atomic<uint32_t> g_page_log_mask{0};
+
+SWOFTY_ON_CHANGE(diag_tyres_instances, bool on)
+{
+    g_diag_inst_enabled.store(on);
+    swofty::log("[rnd-tyres] diag_tyres_instances toggled -> %s", on ? "on" : "off");
+}
+
+void log_dept4_instances(uintptr_t U)
+{
+    if (!U || !region_readable(reinterpret_cast<void *>(U), kUpSize))
+        return;
+    uint64_t nt = *reinterpret_cast<const uint64_t *>(U + kUpNumTrees);
+    if (nt == 0 || nt > 2)
+        return;
+    for (uint64_t k = 0; k < nt; ++k) {
+        uintptr_t T = U + kUpTrees + k * kUpTreeStride;
+        uintptr_t b = *reinterpret_cast<const uint64_t *>(T + 0x10);
+        uintptr_t e = *reinterpret_cast<const uint64_t *>(T + 0x18);
+        if (!b || e < b || (e - b) % kInstSize || (e - b) / kInstSize > 0x180
+            || !region_readable(reinterpret_cast<void *>(b), e - b))
+            continue;
+        for (uintptr_t u = b; u < e; u += kInstSize) {
+            if (*reinterpret_cast<const uint8_t *>(u + kInstDept) != kDeptFake)
+                continue;
+            uintptr_t sb = 0, se = 0;
+            bool ok = states_of(u, sb, se);
+            bool has = ok && se != sb;
+            int idx = our_index(u);
+            swofty::log("[rnd-tyres]   tree%llu dept-4 \"%s\" hash=0x%08x %s states=%llu last: state=%u enabled=%u "
+                        "facility-locked=%u day=0x%04x",
+                        (unsigned long long)k, inst_name(u), *reinterpret_cast<const uint32_t *>(u + kInstHash),
+                        idx >= 0 ? "OURS" : "hub/other", has ? (unsigned long long)((se - sb) / 0x10) : 0ull,
+                        has ? (unsigned)*reinterpret_cast<const uint8_t *>(se - 8) : 0xffu,
+                        has ? (unsigned)*reinterpret_cast<const uint8_t *>(se - 4) : 0xffu,
+                        has ? (unsigned)*reinterpret_cast<const uint8_t *>(se - 3) : 0xffu,
+                        has ? (unsigned)*reinterpret_cast<const uint16_t *>(se - 0xc) : 0xffffu);
+        }
+    }
+}
+
+void on_page_query_done(safetyhook::Context &c)
+{
+    if (!g_diag_inst_enabled.load())
+        return;
+    uintptr_t card = c.rsi;
+    if (!region_readable(reinterpret_cast<void *>(card + 0x688), 0x58))
+        return;
+    unsigned dept = *reinterpret_cast<const uint8_t *>(card + 0x6d8);
+    if (dept == kDeptFake) {
+        if (g_page_log_tyres.fetch_add(1) >= 24)
+            return;
+    } else {
+        uint32_t bit = 1u << (dept & 31);
+        if (g_page_log_mask.fetch_or(bit) & bit)
+            return;
+    }
+    uintptr_t out = c.rsp + 0xdf0;
+    if (!region_readable(reinterpret_cast<void *>(out), 0xc08))
+        return;
+    uint64_t n = *reinterpret_cast<const uint64_t *>(out + 0xc00);
+    if (n > 0x180)
+        n = 0x180;
+    unsigned by[6] = {0, 0, 0, 0, 0, 0};
+    for (uint64_t i = 0; i < n; ++i) {
+        uintptr_t u = *reinterpret_cast<const uint64_t *>(out + i * 8);
+        if (!u || !region_readable(reinterpret_cast<void *>(u + kInstDept), 1)) {
+            ++by[5];
+            continue;
+        }
+        uint8_t d = *reinterpret_cast<const uint8_t *>(u + kInstDept);
+        ++by[d < 5 ? d : 5];
+    }
+    uintptr_t U = *reinterpret_cast<const uint64_t *>(card + 0x688);
+    uint32_t team = region_readable(reinterpret_cast<void *>(c.rsp + 0x8c), 4)
+                        ? *reinterpret_cast<const uint32_t *>(c.rsp + 0x8c)
+                        : 0;
+    unsigned mode = 0xff, cache = 0;
+    if (U && region_readable(reinterpret_cast<void *>(U), kUpSize)) {
+        mode = *reinterpret_cast<const uint8_t *>(U + kUpMode);
+        cache = *reinterpret_cast<const uint32_t *>(U + kUpOwnerCache);
+    }
+    swofty::log("[rnd-tyres] instances: R&D page dept=%u team=0x%x query=%llu by dept 0:%u 1:%u 2:%u 3:%u 4:%u "
+                "other:%u (Upgrades=0x%llx mode=%u owner=0x%x)%s",
+                dept, team, (unsigned long long)n, by[0], by[1], by[2], by[3], by[4], by[5], (unsigned long long)U, mode,
+                cache, dept == kDeptFake ? (by[4] == 3 ? " <<< Tyres page FIXED (4:3)" : " <<< Tyres page: expect 4:3")
+                                         : "");
+    if (dept != kDeptFake)
+        return;
+    for (uint64_t i = 0; i < n; ++i) {
+        uintptr_t u = *reinterpret_cast<const uint64_t *>(out + i * 8);
+        if (u && region_readable(reinterpret_cast<void *>(u), kInstSize)
+            && *reinterpret_cast<const uint8_t *>(u + kInstDept) == kDeptFake)
+            swofty::log("[rnd-tyres]   Tyres page lists \"%s\"", inst_name(u));
+    }
+    log_dept4_instances(U);
+}
+
+void install_page_instance_diag(uintptr_t base)
+{
+    if (!g_diag_inst_enabled.load()) {
+        swofty::log("[rnd-tyres] diag_tyres_instances off; R&D page instance diagnostic NOT installed (SAFE)");
+        return;
+    }
+    uintptr_t hit = 0;
+    int matches = swofty::api->scan(".xtls",
+                                    "48 8D 94 24 F0 0D 00 00 4C 8D 84 24 8C 00 00 00 66 41 B9 FF FF E8 FC AF 89 01 "
+                                    "0F B6 8E D8 06 00 00",
+                                    &hit);
+    if (matches != 1 || !hit) {
+        swofty::log("[rnd-tyres] R&D page query signature matched %d time(s); instance diagnostic NOT installed (SAFE)",
+                    matches);
+        return;
+    }
+    uintptr_t site = hit + 0x1a;
+    auto r = safetyhook::MidHook::create(reinterpret_cast<void *>(site), &on_page_query_done);
+    if (!r) {
+        swofty::log("[rnd-tyres] R&D page query MidHook::create failed @0x%llx (err %d); NOT installed (SAFE)",
+                    (unsigned long long)site, (int)r.error().type);
+        return;
+    }
+    g_page_post_hook = std::move(*r);
+    swofty::log("[rnd-tyres] R&D page instance diagnostic installed @0x%llx (base+0x%llx); diag_tyres_instances=on",
+                (unsigned long long)site, (unsigned long long)(site - base));
+}
+
 } // namespace
 
 SWOFTY_ON_LOAD
@@ -1727,6 +1868,10 @@ SWOFTY_ON_LOAD
     // reason the Tyres page was empty) - its OWN one-scan gate + feature flag.
     g_inst_enabled.store(instantiate_tyres_upgrades.get());
     install_instantiate_tyres(base);
+
+    // R&D department page instance-query diagnostic - its OWN scan gate + flag.
+    g_diag_inst_enabled.store(diag_tyres_instances.get());
+    install_page_instance_diag(base);
 
     uintptr_t hit = 0;
     int matches = swofty::api->scan(".xtls", "75 06 B1 03 EB 02 31 C9 88 8F 40 03 00 00", &hit);
