@@ -177,7 +177,12 @@ the stock prologue (not blind). DEFERRED: the **5th pie-wedge authored in art**
 (four 90-degree sector nodes) and the jump-table `case 4` name/colour; code 4 falls
 to the default case (name `error_department`, white) and its sector node resolves
 to an empty handle, so the slice is populated but no wedge draws yet. See
-`native/HOOKS.md` for the exact sites.
+`native/HOOKS.md` for the exact sites. v0.7.1 correction: `FUN_141f45650` is the slot
+destructor and the v0.4.0 "construct" hook never ran on a live buffer, so slot 4 was
+uninitialised heap and the populate crashed at career load. The buffer is now `0xb40` (five
+slots + a footer), slot 4 is constructed right after the stock ctor `FUN_14180c490` and
+destroyed with the stock four, and populate only touches it after a registry + footer +
+vtable check (`native/HOOKS.md` v0.7.1).
 
 ## v0.4.0 status summary
 

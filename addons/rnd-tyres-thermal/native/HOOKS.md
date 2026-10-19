@@ -245,7 +245,10 @@ R&D view-model classes**:
 
 Mechanism: `0x141f46eb0` allocs a **0x900** sector buffer (`0x80 + 4*0x220`) at
 0x141f46f75, constructs 4 slots via `FUN_141f45650` at buf+0x80/+0x2a0/+0x4c0/
-+0x6e0 (unrolled, stride 0x220), then populates via helper **`0x141f48030`**:
++0x6e0 (unrolled, stride 0x220), then populates via helper **`0x141f48030`**
+(**corrected in v0.7.1:** `FUN_141f45650` is the slot DESTRUCTOR, and those four calls
+destroy the moved-from temporary; the slots are constructed inside `FUN_14180c490`,
+see the v0.7.1 section):
 loops `k_Career_UpgradeDeptCodeTable`, guard `if(code<4)` (`cmp r14d,3/ja`
 @0x141f48218), index cap `if(4<written)` (`cmp r13d,4/ja` @0x141f4821e, already
 permits 5), a 4-entry jump table (bound `cmp r14d,3` @0x141f4822b, table
@@ -378,7 +381,8 @@ Live builder `Career_Build_RnDPieOverview` (0x141f46eb0) + populate
 fixed RVA + region/value verified, patches ordered so the guard is relaxed LAST:
 1. buffer `0x900→0xb20` immediate @0x141f46f76 (= 0x80 + 5*0x220).
 2. MidHook @0x141f47012 (rbx=buffer, after the 4th `FUN_141f45650`): construct the
-   5th slot `FUN_141f45650(buf+0x900)` (slot i @ buf+0x80+i*0x220).
+   5th slot `FUN_141f45650(buf+0x900)` (slot i @ buf+0x80+i*0x220). **Wrong, replaced in
+   v0.7.1:** that block never runs with a live buffer and `FUN_141f45650` is a destructor.
 3. relax the populate `code<4` guard `cmp r14d,3 → 4` @0x141f4821b. (The index
    guard `cmp r13d,4` @0x141f4821e already permits 5 writes; left intact.)
 These are faithful extensions of the stock prologue, not blind writes. **DEFERRED
@@ -780,3 +784,154 @@ All sites were checked for in-function branch targets inside the patched bytes (
 Expected log lines: `pie5 slice/perf/focus ... INSTALLED`, then on R&D > Performance
 `pie5 slice: code 4 ...`, `pie5 perf: dept 4 published as department_performance.tyres`, and on the
 Tyres tile `pie5 focus: department_focused "tyres" -> ...`.
+
+## v0.7.1 — the pie crash at career load (slot 4 was never constructed)
+
+### Symptom
+With `render_fifth_pie` on, F1 crashed about 80 s into loading the career save, before R&D was opened.
+The fault was an access violation at `0x1442bc19d` (`mov [rdx+8],rcx`, a handle unlink) with
+`rcx`/`rdx` = ASCII `asset_gr`/`oups/f1_`. The stack was `0x1442bc19d` ← `0x141f45519` ← populate
+`0x141f484cd` ← builder `0x141f4782a` ← `Vm_Dispatch_BindingMessage+0x20b`, with `r14=4`,
+`r13=0x880`, `r12=obj+0x80`, and `rbx=obj+0x900` (slot 4). The last addon line before it was
+`pie5 slice: code 4 name ...`.
+
+### Who builds the pie, and when
+`0x141c3f130` is the career-hub laptop builder; it creates every laptop tab when the hub loads.
+In the R&D workstation block (`overrides.career.laptop.page_icons[3]`, `lng_workstation_r_and_d`),
+`0x141c41ca7` calls `0x141c43290`, which creates the class-B view model (vtable 0x14575e300) for
+`tab_content_rnd_upgrades_alt` (`lng_r_and_d_upgrades`, under `laptop_container`). When its layout
+binds, `Vm_Dispatch_BindingMessage` (0x1442c00e0) delivers a 0x4d binding event to `vt[11]` =
+0x1414bf420. That function's jump table (10 entries) maps ev 0→13, 1→14, 2→20+15 (when
+`+0x628&1`), 3→6, 4→7, 7→**19**, 8→20 and 9→21. Slot 19 is `Career_Build_RnDPieOverview`
+(0x141f46eb0, at vtable +0x98). The pie object is therefore built and populated at **career load**.
+It is rebuilt on later ev 7s and torn down by slot 20 (0x141f49f80 → 0x141f44fa0).
+
+### The pie object (class B, `this+0x668` = {allocator, object})
+| site | what |
+|---|---|
+| 0x141f46f75 | `alloc(0x900, 0x10)` via `[this+0x270]->vt[3]` |
+| 0x141f46f94 → `FUN_14180c490(obj, this+8)` | **object ctor**: 4 header handles +0x00..+0x80 bound to VM nodes, then an inlined loop 0x14180c7c0..0x14180c98e (`add rax,0x220 ; cmp rax,0xb08`) constructs **exactly four** 0x220 slots at +0x80/+0x2a0/+0x4c0/+0x6e0 |
+| slot layout | 17 handles × 0x20 `{vtable, node, next, prev}`; vtables in order e588 e588 0ca8 0ca8 f6e0 f6e0 f1f0 f6e0 f6e0 f6e0 e588 8310 f670 f1f0 f1f0 f1f0 f670 (0x1456xxxxx; loop registers rcx/rdx/r8/r9 from the leas @0x14180c7a0..b5, r14 @0x14180c54c, r13 @0x14180c627) |
+| 0x141f46fb8 → `FUN_142116c80(this+0x668, &pair)` | `unique_ptr` move-assign: `new = src.obj; src.obj = 0; old = dst.obj; dst.obj = new`; destroys and frees `old` (slot dtors + header + `alloc->vt[7]`) |
+| 0x141f46fbd..0x141f4718a | destroys the moved-from temporary: `src.obj` is always null after the move, so this block is dead |
+| `FUN_141f45650(slot)` | **slot destructor** (base vtable 0x145612e48, unlink + release each handle). Callers are all destroy paths: 0x142116c80, 0x141f44fa0 (slot-20 teardown), 0x142170f20 (class-B dtor), the dead block above, populate's temp at 0x141f484d0, and the class-A copies (0x141f41d60, 0x142170b10). Each destroy path calls it on +0x6e0, +0x4c0, +0x2a0, +0x80. No pointer to it exists in data |
+| `FUN_141f45500(dst, src)` | slot move-assign: `FUN_1442bc170(dst+8+k*0x20, src+8+k*0x20)` for 17 handles |
+| `FUN_1442bc170(dst, src)` | handle move-assign: if `dst.node` ≠ `src.node` and `dst.node` ≠ 0, unlink `dst` (`[next+8] = prev`) and release, then take `src` |
+| populate 0x141f48030 | `r12 = [this+0x670]` @0x141f482a5; `r13d` = running slot index (guard `cmp r13d,4` @0x141f4821e); slot = `obj + 0x80 + idx*0x220` (@0x141f48335..0x141f48347, then `r12 += 0x80`); temp built by 0x14180b660, moved in at 0x141f484c8, temp destroyed at 0x141f484d0. Also called from the 0x141f4a760 callback (registered by the builder @0x141f47cf0) |
+
+### Root cause
+v0.7.0 grew the alloc to 0xb20, but its "slot-construct" hook at 0x141f47012 sat in the dead
+moved-from block and called the slot **destructor**. Slot 4 (`obj+0x900..+0xb20`) was never
+constructed on any path. It held whatever the heap block contained before (an `asset_groups/f1_…`
+path here). The first populate at career load moved the temp into slot 4, and `FUN_1442bc170` read
+a non-zero garbage `node`, then unlinked through garbage links and faulted. The registers match
+exactly: `rsi = obj+0x908`, `[rsi] = rax` garbage, `[rsi+8]/[rsi+0x10]` ASCII. If the populate had
+survived, every rebuild or teardown would then have freed slot 4's live handles without unlinking
+them from their VM nodes, because only slots 0..3 are destroyed. That leaves dangling list links in
+freed memory. Hypotheses (a) "another alloc site" and (c) "raw `char*`" are ruled out. The only ctor
+callers are 0x141f46f94 (class B) and 0x141f41e56 (class A), and the name pointer is a static C
+string, exactly like the stock `error_department` literal.
+
+### The v0.7.1 fix (`install_fifth_pie`, flag `render_fifth_pie`, default on)
+Gate: unchanged exactly-one scan @0x141f46f6b. Then 11 byte windows are verified at fixed RVAs: alloc
+imm, ctor call/return 0x141f46f8e, ctor vtable leas 0x14180c54c/0x14180c627/0x14180c79b, loop bound
+0x14180c982, slot-dtor entry 0x141f45650, populate next-code 0x141f48200, loop head + guards
+0x141f48213, object load 0x141f482a5 and slot addressing 0x141f48327. The three hooks below are
+created all-or-nothing, then the alloc is grown, and the guard is relaxed LAST.
+
+| site | kind | does |
+|---|---|---|
+| 0x141f46f76 | imm | `mov edx,0x900` → **0xb40** = 0x80 + 5×0x220 + 0x20 footer |
+| 0x141f46f99 | MidHook (after the ctor, `r14` = new object or 0) | Proceeds only if the alloc imm reads 0xb40, the object is writable to +0xb40, and slot 0 h0 and slot 3 h16 carry the ctor's vtables. It then constructs slot 4 exactly like the ctor loop (17 × `{vt, 0, 0, 0}`), writes the footer at +0xb20 `{"RNDTYRE5", obj ^ 0x9e3779b97f4a7c15, 0xb40, gen}`, and registers the object (16-entry SRW-locked registry) |
+| 0x141f45650 | MidHook (slot-dtor entry) | For `rcx - (0x80 + k×0x220)`, k = 3..0: if that object is registered, take it out of the registry and check its footer and slot-4 vtables. If they are intact, clear the footer and call the slot dtor on `obj+0x900` before the stock slot destroys run. This covers rebuild, teardown and dtor. A corrupt footer or vtable logs and leaves slot 4 alone. A no-op when nothing is registered |
+| 0x141f48228 | MidHook (populate, after both guards, before any side effect of the iteration) | For slot index `r13d ≥ 4`, read `obj = [[rsp+0x40]+0x670]` and require: registered, readable to +0xb40, footer intact (gen matches), all 17 slot-4 vtables as constructed. On any miss, log `pie5 slice SKIPPED: <reason>` and set `rip = 0x141f48200`, the loop's next-code path (`inc rbp`, codes ≥ 5 fail the guard, then exit) |
+| 0x141f4821b | imm | `cmp r14d,3` → 4 (applied last) |
+
+All four hook windows passed the in-function branch-target check, and a whole-`.xtls` rel32/rel8
+scan found no branches into them. The Windows x64 safetyhook stub resumes at `Context64::rip` with
+the original rsp (`lea rsp,[rsp+8] ; pop rsp ; ret`), which the gate's skip relies on.
+`rnd_fifth_pie.cpp` now treats the patches as live when guard == 4 and the buffer imm == **0xb40**.
+
+### Expected log
+Install:
+```
+[rnd-tyres] pie: hooked slot-4 construct after the pie ctor @0x141f46f99 (base+0x1f46f99)
+[rnd-tyres] pie: hooked slot-4 destroy at slot-dtor entry @0x141f45650 (base+0x1f45650)
+[rnd-tyres] pie: hooked populate slot-4 gate @0x141f48228 (base+0x1f48228)
+[rnd-tyres] pie 5th slice INSTALLED: buffer 0x900->0xb40 (5 slots + footer), slot 4 constructed after the ctor and destroyed with the stock four, populate gate @0x141f48228, guard cmp r14d,3->4 @0x141f48218
+```
+Career load (and each rebuild):
+```
+[rnd-tyres] pie: constructed slot 4 @0x<obj+0x900> in pie object 0x<obj> (alloc 0xb40, 17 handles, footer gen 1, 1 live)
+[rnd-tyres] pie5 slice slot 4 verified: object 0x<obj> gen 1, capacity 0xb40 (footer), 17 constructed handles; populating code 4
+[rnd-tyres] pie5 slice: code 4 name error_department -> tyres (VM child tyres, lng_rnd_dept_tyres)
+```
+Rebuild or teardown: `[rnd-tyres] pie: destroyed slot 4 of pie object 0x<obj> (gen N) before the stock slot destructors (M live)`.
+Refusal (never a crash): `[rnd-tyres] pie5 slice SKIPPED: <reason>; slot 4 left untouched, the stock four populate normally`.
+The reason is one of: `pie object 0x… was not built with the 0xb40-byte buffer by this addon (no slot 4)`,
+`… footer at +0xb20 missing or stale (gen N); capacity not proven`,
+`… slot 4 handle K is not the constructed vtable`, `view model … has no pie object`, or
+`slot index … is past slot 4`.
+
+### Live check (optional, gdb under Wine)
+Use `trace_pie5.gdb`/`trace_pie5.sh` from the session scratchpad. Attach at the **main menu**,
+before loading the save. Software breakpoints go only on unhooked bytes: 0x141f46f83 (alloc call:
+`edx` must be 0xb40), 0x141f46fa1 (after the ctor hook: slot-4 h0 = `14565e588 0 0 0`, footer
+magic), 0x141f484c8 if `r13 == 0x880` (slot-4 move-assign: dst h0 sane), and 0x141f48200 if
+`r13 == 4 && r14 == 4` (gate skip). There is one hardware breakpoint, on 0x141f45650 if
+`rcx == obj+0x900` (slot-4 destroy).
+
+## v0.7.1 — Tyres research capacity (flag `tyres_research_capacity`, default on, install-time)
+
+Symptom: develop-upgrade options `research-limit=1` for every Tyres upgrade.
+Panel update 0x141c8d540: `list = TeamModifiers_Get 0x1434fb4b0(career+0xc90, team)` @0x141c8e299;
+slots = sum of `{kind 0, dept == [panel+0x6e8], active}` entry values (0x141c8e2c6); in-use = enabled
+upgrades of the dept with last state InProgress (0x141c8e5df..0x141c8e764); flag `[panel+0x6d2] =
+[rsp+0x57] && slots <= in-use` @0x141c8e766. Team modifier list = vector of 8-byte entries
+`{u8 kind, u8 dept (per-upgrade enum, Durability 2), u8 source, u8 active, f32 value}` at
+`{alloc, begin, end, cap}`.
+Cause: entries are only ever CREATED by the per-team inits, unrolled over depts 0..3:
+`0x1434f9770` (modes 1/2, 232 calls to TeamModifiers_Add 0x1434f8a00, base loop `{0,1,2,3}` @0x1434fadd1)
+and `0x1434f58b0` (mode 0, 80 calls). TeamModifiers_Add = add-if-absent + stable sort by kind. Listeners
+(0x141238520 → callback 0x1412bc4c0) only update existing `kind|dept<<8|0x1070000` entries; the save
+loader 0x1434fc330 (+0x1434f85e0) only restores saved keys. The Fake row gives the kind maps key 4, but no
+list holds a dept-4 entry → slots 0 → limit. The v0.6.1 "fixed: Fake row" modifier consumers
+(rush, scales, failure, start-research kind 0x10) had the same gap.
+Fix (`src/rnd_capacity.cpp`): mirror every dept-2 entry as dept 4 in the list just read (missing via
+TeamModifiers_Add, present ones get Durability's value); stock entries are never written. Both sync hooks
+sit after the null check and BEFORE the game loads `[list+8]/[list+0x10]`, so a reallocation inside
+TeamModifiers_Add is invisible to it.
+
+| site | hook | effect |
+|---|---|---|
+| 0x141c8e280 | scan anchor (exactly one hit) | — |
+| 0x141c8e2a7 | panel, rax = list, bl = dept | mirror for dept 4 |
+| 0x141c8e766 | panel check, ebp slots / eax in-use / r12b gate | diagnostic `capacity check:` (+ Durability slots/in-use from `[rsp+0x1ba0]`, count `[rsp+0x27a0]`) |
+| 0x141c7dcca | dept page 0x141c7b880, rax = list, bl = card dept | mirror for dept 4 (Tyres tab slot count) |
+| 0x1434f8a00 | called (68-byte verify) | TeamModifiers_Add(list, key, float value in xmm2) |
+
+No in-function branch targets inside the hook windows. The whole-`.xtls` scan flags only non-code bytes (a
+rel8 inside `mov [rsp+0x78],r14` at 0x141c7dcc3, and junk at 0x140f5cac9 outside any `.pdata` function).
+Limits: AI teams' lists get no dept-4 entries (stock); a list re-init (0x1434f9770 from 0x14123b3f0, or
+0x1434f95f0 rebuild) drops them until the next Tyres page/panel open. Saves persist the mirrored entries.
+
+Expected log:
+```
+[rnd-tyres] capacity: tyres_research_capacity=on
+[rnd-tyres] capacity panel: hooked panel modifier list (rax) @0x141c8e2a7 (base+0x1c8e2a7)
+[rnd-tyres] capacity panel: hooked panel research-limit check (ebp/eax) @0x141c8e766 (base+0x1c8e766)
+[rnd-tyres] capacity INSTALLED: dept 4 mirrors Durability's team modifiers (research slots, scales, rush) when the develop-upgrade panel reads them; TeamModifiers_Add @0x1434f8a00
+[rnd-tyres] capacity page: hooked R&D page modifier list (rax) @0x141c7dcca (base+0x1c7dcca)
+-- Tyres tab / upgrade --
+[rnd-tyres] capacity: Tyres page team 0x… list 0x…: dept 4 mirrored from Durability (src 58, inserted 58, updated 0) -> research slots dept4=N durability=N
+[rnd-tyres] capacity check: team 0x… dept 4 slots=N in-progress=0 gate=1 -> research-limit=0 | Durability slots=N in-progress=M
+[rnd-tyres] develop-upgrade options: tyres_thermal_1 "tyres_wear_reduction" … research-limit=0
+```
+(src is 58 in list modes 1/2, 20 in mode 0.)
+
+## v0.7.1 — overview layout
+`ui/rnd_overview.idf`: the bottom two tiles (`tile_4`, `tile_5`) are scaled 0.65 → 0.999096 and moved so the
+bottom row spans the top row exactly (x 0.0036..8.4961, 0.2 gaps, y −1.708..−4.026; the next-upgrade
+panel starts at about −5.04). Only those two transforms changed; ids, lookup and animations are byte-identical
+(generator `f1-modding/work/rnd-fifth-box/make_rnd_overview5.py --bottom fill`). `erp/rnd_fifth_pie.json` is
+unchanged.
