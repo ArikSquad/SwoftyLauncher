@@ -55,6 +55,8 @@
 #include <safetyhook.hpp>
 #include <swofty/mixin.hpp>
 
+#include "rnd_fifth_pie.hpp"
+
 namespace {
 
 safetyhook::MidHook g_hook;
@@ -625,19 +627,11 @@ void install_fifth_box(uintptr_t base)
 // populate's second index guard (cmp r13d,4 @0x141f4821e) already permits five
 // writes, so it is left untouched.
 //
-// DEFERRED (authored art, not shippable from a mixin): the pie-wheel WEDGE
-// GEOMETRY and the jump-table `case 4` name/colour. The four wedges are
-// pre-authored 90-degree sector nodes; code 4 takes the populate's DEFAULT
-// jump-table case (name token "error_department", colour white) and resolves its
-// sector node by name-hash under `rnd_wheel_icon`, getting an EMPTY handle on
-// miss (benign - every populate write is node-guarded). So the 5th slice is
-// POPULATED but NO wedge draws, and it is labelled via the error-department
-// default, until a 5th authored sector node + a jump-table `case 4` (name
-// lng_rnd_dept_tyres, colour 0xff0078ff) are added. Extending the 4-entry rel32
-// jump table @0x141f48231 needs a code cave within +-2GB and is exactly the kind
-// of blind patch that risks a crash, so it is NOT done here; see native/HOOKS.md.
-// Because the slice has no visible payoff yet and this is the riskiest piece,
-// render_fifth_pie DEFAULTS OFF.
+// v0.7.0: the wedge geometry ships as authored art (ui/pie, five 72-degree
+// sectors, erp/rnd_fifth_pie.json), and rnd_fifth_pie.cpp names code 4 `tyres`
+// (lng_rnd_dept_tyres, colour 0xff0078ff) at the populate's default jump-table
+// case instead of extending the 4-entry jump table, routes the Tyres tile focus
+// and publishes department_performance.tyres. render_fifth_pie now DEFAULTS ON.
 //
 // Independent gate: one unique scan of the buffer-alloc site; all sites then
 // addressed by fixed RVA (no ASLR) and region-guarded, with the live immediate
@@ -647,8 +641,8 @@ void install_fifth_box(uintptr_t base)
 // relaxed unless the buffer is grown and the 5th slot is constructed. Runtime
 // toggling logs that a relaunch is needed (code patches are install-time).
 
-SWOFTY_SETTING(bool, render_fifth_pie, false);
-std::atomic<bool> g_pie_enabled{false};
+SWOFTY_SETTING(bool, render_fifth_pie, true);
+std::atomic<bool> g_pie_enabled{true};
 
 SWOFTY_ON_CHANGE(render_fifth_pie, bool on)
 {
@@ -2391,9 +2385,14 @@ SWOFTY_ON_LOAD
     install_fifth_box(base);
 
     // The live development-potential pie 5th slice - its OWN independent gate +
-    // feature flag (default off; the wedge geometry is deferred, see above).
+    // feature flag (default on since v0.7.0; the wedge art ships in ui/pie).
     g_pie_enabled.store(render_fifth_pie.get());
     install_fifth_pie(base);
+
+    // The Tyres slice names/colour/icon, the "tyres" focus path and the
+    // department_performance.tyres data for the 5-sector pie (rnd_fifth_pie.cpp).
+    // Inert unless render_fifth_pie is on; slice + focus also need its patches live.
+    rnd_fifth_pie::install(base, g_pie_enabled.load());
 
     // The 5th-box layout diagnostic - its OWN independent gate + feature flag
     // (read-only; captures why the injected box has no visible 2x2 cell).

@@ -38,8 +38,32 @@
       "id": "render_fifth_pie",
       "type": "toggle",
       "label": "Render the 5th development-potential pie slice",
-      "description": "Grow the R&D Performance development-potential pie to a 5th Tyres slice. Highest-risk and experimental: the wedge is authored art, so the slice is built but no wedge draws yet. Default off.",
-      "default": false,
+      "description": "Five-sector R&D Performance development-potential pie with a Tyres slice (the addon ships the 5-sector pie UI files). Master switch for the three pie_tyres_* options. Install-time; relaunch after changing.",
+      "default": true,
+      "binds": "native"
+    },
+    {
+      "id": "pie_tyres_slice",
+      "type": "toggle",
+      "label": "Tyres pie slice data",
+      "description": "With render_fifth_pie on: the 5th pie/tile data populates as Tyres (name, description, orange colour, borrowed Durability wheel icon) instead of error_department. Install-time.",
+      "default": true,
+      "binds": "native"
+    },
+    {
+      "id": "pie_tyres_focus",
+      "type": "toggle",
+      "label": "Tyres pie focus",
+      "description": "With render_fifth_pie on: focusing the Tyres tile highlights the Tyres pie sector like the stock four. Leaves the box-grid selection index alone. Install-time.",
+      "default": true,
+      "binds": "native"
+    },
+    {
+      "id": "pie_tyres_performance",
+      "type": "toggle",
+      "label": "Tyres pie development potential",
+      "description": "With render_fifth_pie on: publish department_performance.tyres (orange) with current/potential derived from the car attributes the Tyres upgrades develop. Install-time.",
+      "default": true,
       "binds": "native"
     },
     {
