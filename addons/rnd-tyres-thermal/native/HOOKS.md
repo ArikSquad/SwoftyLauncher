@@ -1097,3 +1097,66 @@ Hardware breakpoints on the instruction after each hook window:
 - `hbreak *0x141c86d0d` when the departments screen opens from the Tyres tile → `x/gx $rsi+0x7b8` is the
   Tyres card (`x/bx $rax+0x6d8` = 4).
 - `hbreak *0x141f3da30` with a Tyres upgrade in development → `x/s *(char**)($rsp+0x20)` = `chassis_tyre_wear`.
+
+## v0.8.0 — the Tyres department icon (setting `tyres_icon`, db, default on)
+
+### How a department icon is stored
+An icon path `<pkg>.<atlas>.<frame>` (`<pkg>` = `#overrides.career.rnd_om_xm` on the 2026 career, logged by the
+5th box) names an entry of an `overrides.uidb` list (`databases.erp`, `eaid://ui_package/databases/overrides.uidb`).
+A list such as `overrides.career.rnd_om_xm.rnd_wheel_icon` has `TextureArray: true`, a `TextureArrayName`, and
+`Contents` = `[{Name, Value = source .tif path}]`. The frame is the slice at the entry's index in that texture
+array: a `GfxSRVResource` `….texarray` (slice count at 0x14) and a `GfxSurfaceRes` `….texarray.image` (fragment 0
+= 40-byte head: format at 8, width 12, height 16, mips 24, slices 28; fragment 1 = the slices back to back). There
+are no UV rects and the `.tif` paths in `Value` are not resources in any UI archive. The launcher's map activation
+(`packages/core/src/activation/ui.rs`) appends track flags the same way: entry index = slice index.
+
+| list (plain and `rnd_om_xm.`) | format | slice | stock frames | archives | Tyres frame |
+|---|---|---|---|---|---|
+| `rnd_dept_icons_small` | BC7 (70) | 48×48, white, alpha 255 + 128 | aero chassis maintenance engine | `flow_career_hub` | `tyres` (slice 4) |
+| `rnd_wheel_icon` | BC7 | 60×60, department colour, alpha 255 + 128 | aero chassis maintenance engine regulation shutdown | `flow_career_hub`, `flow_team_hq` | `tyres` (slice 6), RGB 255,120,0 |
+| `rnd_department_strips` | BC7 | 1112×4 solid colour | rnd_aero/chassis/engine/maintenance_strip | `flow_career_hub`, `flow_team_hq` | `rnd_tyres_strip` (slice 4) |
+| `rnd_category_icons` | BC7 | 32×32 | 21 (`rnd_om_xm`: 20) `<dept>_<type>` frames | both | none: the category rows keep the stock icon of the upgrade's type |
+
+The stock frames are two-tone: the main shape at alpha 255, the secondary shape at alpha 128, one RGB per frame,
+about 1 px padding. The UI archives hold no vector format (resource types: meshes, models, materials, BC7 surfaces,
+scenes, `.ui` and databases); the pie's round sectors are BC7 quarter-disc masks on mesh quads. Icons are textures.
+
+### The assets (`erp/rnd_tyres_icon.json`, built by `tools/build_icons.py`)
+`icons/tyres.svg` is rasterised with `resvg` at 48 and 60 px, given one RGB (white, or the Tyres orange
+0xff0078ff), and BC7-encoded with `tools/bc7enc.py` (mode 6, round trip max 9/255). The strip is solid orange. Each
+array gets `replace-resource` on the head (slices + 1), the pixels (stock slices byte for byte + the new slice)
+and the SRV view (slices + 1): 18 operations in `flow_career_hub.erp` and 12 in `flow_team_hq.erp`. One `patch-pkg`
+on `overrides.uidb` appends the six entries with `clone-entry` (`src` = the list's last entry, `as` = the frame,
+`Value` = `…/tyres.tif` or `…/rnd_tyres_strip.tif`). Every operation carries `"when": {"tyres_icon": true}`.
+
+Offline check (stock copies, every operation applied with `tools/erpw.py` and `tools/pkg.py`): 10332 untouched
+resources of `flow_career_hub.erp`, 19716 of `flow_team_hq.erp` and 7 of `databases.erp` decompress byte-identical;
+every stock slice of the ten grown arrays is byte-identical; the lists read `[…, tyres]` / `[…, rnd_tyres_strip]`.
+
+### The native side (`src/rnd_tyres_icon.cpp`)
+`rnd_tyres_icon::probe()` runs first in `SWOFTY_ON_LOAD`. It reads the ERP index of
+`<exe folder>\2025_asset_groups\ui_package\flow_career_hub.erp` and needs fragment 1 of all six career-hub
+`.texarray.image` resources at their grown size (11520, 25200, 22240 bytes). Then every Tyres frame switches:
+
+| site | file | 0.7.2 frame | 0.8.0 frame |
+|---|---|---|---|
+| 5th box card ctor icon (`install_fifth_box`) | `rnd_departments.cpp` | `rnd_dept_icons_small.aero` | `.tyres` |
+| Develop Upgrade card art, `error_department` (`on_part_art`) | `rnd_departments.cpp` | `maintenance` | `tyres` |
+| R&D list department icons (`TagKind::DeptIcon`, 4 sites) | `rnd_dept_tags.cpp` | `maintenance` | `tyres` |
+| In Progress colour strip (`TagKind::Strip`) | `rnd_dept_tags.cpp` | `rnd_maintenance_strip` | `rnd_tyres_strip` |
+| Tyres tile wheel icon (`on_slice_icon`, populate H4) | `rnd_fifth_pie.cpp` | `rnd_wheel_icon.maintenance` | `rnd_wheel_icon.tyres` |
+
+Any other probe result (setting off, archives not rewritten, a runtime delivery that left the files stock) keeps
+the 0.7.2 frames, so no hook ever names a frame the game lacks. No new hook sites.
+
+### Expected log (v0.8.0)
+```
+[rnd-tyres] tyres icon LIVE: 6/6 grown R&D icon arrays in flow_career_hub.erp; Tyres shows rnd_dept_icons_small.tyres, rnd_wheel_icon.tyres and rnd_department_strips.rnd_tyres_strip
+[rnd-tyres] pie5 slice INSTALLED: code 4 populates as tyres / 0xff0078ff / icon tyres
+[rnd-tyres] dept tags INSTALLED: 9/9 icon sites; department 4 shows the tyres department icon, the rnd_tyres_strip strip, …
+[rnd-tyres] pie5 slice: code 4 wheel icon -> rnd_wheel_icon.tyres
+[rnd-tyres] 5th box INJECTED: … icon="#overrides.career.rnd_om_xm.rnd_dept_icons_small.tyres" …
+[rnd-tyres] card art: site N department icon "error_department" -> "tyres"
+```
+Fallback: `tyres icon off: 0/6 grown R&D icon arrays … (SAFE)` and the 0.7.2 lines with `maintenance` /
+`aero` / `rnd_maintenance_strip`.

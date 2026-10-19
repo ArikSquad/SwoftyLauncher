@@ -58,6 +58,7 @@
 #include "rnd_capacity.hpp"
 #include "rnd_dept_tags.hpp"
 #include "rnd_fifth_pie.hpp"
+#include "rnd_tyres_icon.hpp"
 
 namespace {
 
@@ -551,7 +552,7 @@ void on_fifth_box(safetyhook::Context &c)
     if (region_readable(reinterpret_cast<void *>(base + kRvaNeMake), 1)
         && region_readable(reinterpret_cast<void *>(base + kRvaNeFormat), 1)) {
         ne_make(&s, "", 0, 0);
-        ne_format(&s, "%s.%s.%s", prefix, "rnd_dept_icons_small", "aero");
+        ne_format(&s, "%s.%s.%s", prefix, "rnd_dept_icons_small", rnd_tyres_icon::dept("aero"));
         if (s && region_readable(reinterpret_cast<uint8_t *>(s) + kNeStrChars, 1))
             icon = reinterpret_cast<const char *>(reinterpret_cast<uint8_t *>(s) + kNeStrChars);
     }
@@ -574,9 +575,10 @@ void on_fifth_box(safetyhook::Context &c)
         if (region_readable(ctbl, 6 * sizeof(uint32_t)))
             colour = ctbl[kTyresDeptEnum];
         swofty::log("[rnd-tyres] 5th box INJECTED: card=0x%llx slot[6]@0x%llx begin=0x%llx end=0x%llx cap=8 "
-                    "name=lng_rnd_dept_tyres icon-borrowed=\"%s.rnd_dept_icons_small.aero\" enum=%u colour[4]=0x%08x",
+                    "name=lng_rnd_dept_tyres icon=\"%s.rnd_dept_icons_small.%s\" enum=%u colour[4]=0x%08x",
                     (unsigned long long)reinterpret_cast<uintptr_t>(card), (unsigned long long)(newbegin + 0x30),
-                    (unsigned long long)newbegin, (unsigned long long)(newbegin + 0x38), prefix, (unsigned)kTyresDeptEnum,
+                    (unsigned long long)newbegin, (unsigned long long)(newbegin + 0x38), prefix,
+                    rnd_tyres_icon::dept("aero"), (unsigned)kTyresDeptEnum,
                     colour);
     }
 }
@@ -2673,10 +2675,10 @@ template <size_t I> void on_part_art(safetyhook::Context &c)
     if (!name || !region_readable(name, 1))
         return;
     if (cstr_eq(name, "error_department", 17)) {
-        *arg = kTyresIconFrame;
+        *arg = rnd_tyres_icon::dept(kTyresIconFrame);
         if (g_art_log.fetch_add(1) < 24)
-            swofty::log("[rnd-tyres] card art: site %u department icon \"error_department\" -> borrowed \"%s\"",
-                        static_cast<unsigned>(I), kTyresIconFrame);
+            swofty::log("[rnd-tyres] card art: site %u department icon \"error_department\" -> \"%s\"",
+                        static_cast<unsigned>(I), rnd_tyres_icon::dept(kTyresIconFrame));
         return;
     }
     const char *suffix = nullptr;
@@ -2926,6 +2928,9 @@ SWOFTY_ON_LOAD
     const unsigned long long base = swofty::api ? (unsigned long long)swofty::api->module_base() : 0;
     swofty::log("[rnd-tyres] loaded; API v%u; game base 0x%llx; Tyres token=0x%016llx value=%u",
                 swofty::api ? swofty::api->version : 0u, base, (unsigned long long)kTyres, (unsigned)kTyresValue);
+
+    // v0.8.0: the Tyres icon frames, before any hook names a frame (rnd_tyres_icon.cpp).
+    rnd_tyres_icon::probe();
 
     // UI groundwork + instrumentation first, so it runs even if the data hooks bail.
     ui_groundwork();

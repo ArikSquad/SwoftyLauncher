@@ -44,6 +44,7 @@
 #include <swofty/mixin.hpp>
 
 #include "rnd_dept_tags.hpp"
+#include "rnd_tyres_icon.hpp"
 
 namespace {
 
@@ -205,7 +206,7 @@ template <size_t I> void on_tag(safetyhook::Context &c)
     switch (kSites[I].kind) {
     case TagKind::DeptIcon:
         if (reinterpret_cast<uintptr_t>(f) == g_err || cstr_is(f, kErrDept))
-            to = kDeptIcon;
+            to = rnd_tyres_icon::dept(kDeptIcon);
         break;
     case TagKind::Category: {
         size_t n = 0;
@@ -215,7 +216,7 @@ template <size_t I> void on_tag(safetyhook::Context &c)
     }
     case TagKind::Strip:
         if (cstr_is(f, kErrStrip))
-            to = kStripFrame;
+            to = rnd_tyres_icon::strip(kStripFrame);
         break;
     }
     if (!to)
@@ -377,9 +378,9 @@ void install(uintptr_t base)
     }
     for (const auto &t : kTables)
         write_table(base, t);
-    swofty::log("[rnd-tyres] dept tags INSTALLED: %d/%u icon sites; department 4 shows the maintenance department icon, "
-                "the stock category icon of its upgrade type and the Tyres orange",
-                hooked, static_cast<unsigned>(kNumSites));
+    swofty::log("[rnd-tyres] dept tags INSTALLED: %d/%u icon sites; department 4 shows the %s department icon, the %s "
+                "strip, the stock category icon of its upgrade type and the Tyres orange",
+                hooked, static_cast<unsigned>(kNumSites), rnd_tyres_icon::dept(kDeptIcon), rnd_tyres_icon::strip(kStripFrame));
 }
 
 } // namespace rnd_dept_tags

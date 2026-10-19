@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "swofty.rnd-tyres-thermal",
   "name": "R&D: Tyres & Thermal Management",
-  "version": "0.7.2",
+  "version": "0.8.0",
   "author": "Swofty",
   "description": "Adds a new career R&D department, Tyres & Thermal Management, alongside the stock four.",
   "license": "AGPL-3.0-or-later",
@@ -139,6 +139,14 @@
       "binds": "native"
     },
     {
+      "id": "tyres_icon",
+      "type": "toggle",
+      "label": "Tyres department icon",
+      "description": "Adds a tyre icon to the R&D department icon atlases (the Tyres tile, box, lists, Develop Upgrade card) and an orange Tyres colour strip. Off, Tyres borrows the Durability icon and strip as in 0.7.2. Applies after a rebuild.",
+      "default": true,
+      "binds": "db"
+    },
+    {
       "id": "tyres_test_price",
       "type": "toggle",
       "label": "Tyres upgrades cost 5 points (test)",
@@ -149,7 +157,7 @@
   ],
   "operations": {
     "database": ["db/departments.json", "db/tyres_tree.json"],
-    "erp": ["erp/rnd_fifth_pie.json"],
+    "erp": ["erp/rnd_fifth_pie.json", "erp/rnd_tyres_icon.json"],
     "assets": ["assets/text.json"],
     "native": [{ "dll": "native/rnd_departments.dll" }]
   }

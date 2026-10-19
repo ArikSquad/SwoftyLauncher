@@ -63,6 +63,7 @@
 #include <swofty/mixin.hpp>
 
 #include "rnd_fifth_pie.hpp"
+#include "rnd_tyres_icon.hpp"
 
 namespace {
 
@@ -270,9 +271,11 @@ void on_slice_icon(safetyhook::Context &c)
     auto *arg5 = reinterpret_cast<uintptr_t *>(c.rsp + 0x20);
     if (*arg5 != reinterpret_cast<uintptr_t>(kTyresName))
         return;
-    *arg5 = reinterpret_cast<uintptr_t>(kIconBorrow);
+    const char *frame = rnd_tyres_icon::wheel(kIconBorrow);
+    *arg5 = reinterpret_cast<uintptr_t>(frame);
     if (g_slice_log[3].fetch_add(1) < 4)
-        swofty::log("[rnd-tyres] pie5 slice: code 4 wheel icon -> rnd_wheel_icon.maintenance (no tyres frame)");
+        swofty::log("[rnd-tyres] pie5 slice: code 4 wheel icon -> rnd_wheel_icon.%s%s", frame,
+                    rnd_tyres_icon::live() ? "" : " (borrowed, no tyres frame)");
 }
 
 void install_slice(uintptr_t base)
@@ -293,8 +296,8 @@ void install_slice(uintptr_t base)
         {kVaSliceIcon, &on_slice_icon, "populate wheel-icon arg ([rsp+0x20])"},
     };
     if (create_all(base, sites, g_slice_hooks, "slice"))
-        swofty::log("[rnd-tyres] pie5 slice INSTALLED: code 4 populates as tyres / 0x%08x / icon maintenance",
-                    kColTyres);
+        swofty::log("[rnd-tyres] pie5 slice INSTALLED: code 4 populates as tyres / 0x%08x / icon %s",
+                    kColTyres, rnd_tyres_icon::wheel(kIconBorrow));
 }
 
 // ---------------------------------------------------------------------------

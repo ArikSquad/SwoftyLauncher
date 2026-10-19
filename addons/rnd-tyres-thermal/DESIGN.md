@@ -267,6 +267,17 @@ with the size-changed archive rewrite (origin/main after PR #138).
 
 Details, sites and expected log lines: `native/HOOKS.md` v0.7.2.
 
+## v0.8.0 — the Tyres department icon
+
+| piece | flag | change |
+|---|---|---|
+| tyre icon frames | `tyres_icon` (db, default on) | `erp/rnd_tyres_icon.json` appends a `tyres` slice to `rnd_dept_icons_small` (48×48 white) and `rnd_wheel_icon` (60×60 Tyres orange), and a `rnd_tyres_strip` slice (1112×4 orange) to `rnd_department_strips`, in the plain and `rnd_om_xm` lists, with the matching `overrides.uidb` entries |
+| Tyres surfaces use them | none (follows the assets) | the Tyres tile, the 5th box card, the R&D list department icon, the Develop Upgrade card art and the In Progress strip name the new frames when `flow_career_hub.erp` carries all six grown arrays; otherwise the 0.7.2 borrowed frames |
+
+The icon is authored as `icons/tyres.svg` (a slick F1 tyre with a sidewall stripe, a five-spoke rim at half alpha and three heat waves) and rasterised by `tools/build_icons.py`. The game's UI takes no vector art: every icon is a BC7 slice of a texture array. Details: `native/HOOKS.md` v0.8.0.
+
+![Stock department icons and the Tyres icon](preview/tyres_icon_compare.png)
+
 ## Residual unknowns (the in-game test resolves these)
 
 - **Does the game read the 5th department row?** Resolved by RE + the live

@@ -10,7 +10,11 @@ Version 0.7.2 works in game:
 
 - The Tyres department page lists three upgrades that can be researched and developed, with Durability's research slots and R&D modifiers.
 - R&D > Performance shows five department tiles (3+2) and a five-sector development-potential pie with an orange Tyres sector. The Tyres tile shows its fitted and total upgrades, highlights its sector and opens the Tyres page.
-- The Develop Upgrade screen, the In Progress list, the department category rows, Team HQ popups and upgrade cards show Tyres upgrades with borrowed stock icons and the Tyres orange.
+- The Develop Upgrade screen, the In Progress list, the department category rows, Team HQ popups and upgrade cards show Tyres upgrades in the Tyres orange.
+
+Version 0.8.0 gives Tyres its own tyre icon on the R&D > Performance tile, the department box, the R&D lists and the Develop Upgrade screen, and an orange strip in the In Progress list. With `tyres_icon` off, or without the icon arrays installed, Tyres borrows the Durability icon and strip as 0.7.2 did. The category rows keep the stock icon of each upgrade's type.
+
+![Stock department icons and the Tyres icon](preview/tyres_icon_compare.png)
 
 ![Stock pie and the five-sector pie](preview/pie_compare.png)
 
@@ -27,6 +31,7 @@ Temporary test values, to restore before a release (`DESIGN.md`, "TEMPORARY test
 | Database | `db/departments.json`, `db/tyres_tree.json` | an `UpgradeDepartmentEntry_4` row (`department = Fake`, department code 4) cloned from Durability; three upgrades (Tyre Wear, Brakes, Upgrade All Durability) in all 46 `trees.<team>.fake` containers, linked from the tree hub |
 | Text | `assets/text.json` | the department name and description, and the upgrade names and descriptions |
 | UI | `erp/rnd_fifth_pie.json`, `ui/` | the five-tile R&D > Performance overview and the five-sector pie, in `flow_career_hub.erp` and `flow_team_hq.erp` |
+| Icons | `erp/rnd_tyres_icon.json`, `icons/` | a `tyres` frame in `rnd_dept_icons_small` and `rnd_wheel_icon` and a `rnd_tyres_strip` frame in `rnd_department_strips`: one more slice in each texture array (`flow_career_hub.erp`, `flow_team_hq.erp`) and one more `overrides.uidb` entry (`databases.erp`) |
 | Engine | `native/rnd_departments.dll` | reads the fifth department row, gives the Tyres upgrades R&D states, and names, colours, counts and routes the fifth tile and pie sector |
 
 The engine hooks are written for the Steam build 25251167 (`F1_25.exe` d873a1c8…). Each one checks its bytes and installs nothing when they don't match.
@@ -51,6 +56,7 @@ The engine hooks are written for the Steam build 25251167 (`F1_25.exe` d873a1c8�
 | `diag_tyres_instances` | on | logs each R&D page's upgrade instances per department |
 | `tyres_upgrade_screen` | on | fixes Back, the card art and the performance comparison on the Develop Upgrade screen |
 | `tyres_dept_tags` | on | Tyres icon and colour in R&D lists |
+| `tyres_icon` | on | the Tyres icon frames; a rebuild applies a change |
 | `tyres_test_price` | on | the temporary 5-point price |
 
 Most settings apply at install. Relaunch after changing one.
@@ -73,6 +79,16 @@ python3 addons/rnd-tyres-thermal/tools/validate.py --game "<F1 25>"
 ```
 
 `build_assets.py` rebuilds every file into `build/` and compares it with the shipped one. `--write` replaces the shipped files. See `tools/README.md` for each script, the pie design and the 72° wedge mesh format.
+
+## Regenerate the icon frames
+
+`icons/frames/` and `erp/rnd_tyres_icon.json` are built from `icons/tyres.svg` and the stock `databases.erp`, `flow_career_hub.erp` and `flow_team_hq.erp`. It needs `resvg` on `PATH`, or Nix to fetch it:
+
+```sh
+re/tools/py addons/rnd-tyres-thermal/tools/build_icons.py --game "<F1 25>"
+```
+
+It compares the build with the shipped files and exits 1 on a difference. `--write` replaces them.
 
 ## Install into a profile
 
