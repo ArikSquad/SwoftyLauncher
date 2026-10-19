@@ -25,6 +25,14 @@
 // untouched. Hooking the count source makes every consumer that inits an
 // UpgradeDepartmentEntry cursor agree on 5.
 //
+// v0.6.0 - Tyres upgrade instances. The Tyres page was empty because the game's
+// upgrade-instance state machine special-cases department 4 ("Fake", the tree
+// hub): the instance init gives it an Invalid, disabled sentinel and every state
+// mutator bails on dept > 3, so the R&D page query (which keeps only enabled
+// instances) drops it. Our three rows share dept 4, so they were dropped too.
+// The fix lets ONLY our three instances take the normal path; the stock hub is
+// untouched. See the v0.6.0 section below and native/HOOKS.md.
+//
 // Each hook is gated on an exactly-one scan match. On 0 or >1 matches, or a
 // failed install, it logs and installs nothing, so the DLL stays benign.
 
@@ -32,8 +40,10 @@
 #define NOMINMAX
 #include <windows.h>
 
+#include <array>
 #include <atomic>
 #include <cstdint>
+#include <utility>
 
 #include <safetyhook.hpp>
 #include <swofty/mixin.hpp>
@@ -1117,10 +1127,10 @@ void install_tree_rowcount_probe(uintptr_t base)
 //   - the second clamp (TeamHQ VM command 0x55702d31 @0x1423380e9) indexes a
 //     table whose slot 4 is "open_driver_ratings_rtt_panel"; it is unrelated to
 //     R&D. That relax is REMOVED in v0.6.0.
-// The real blocker is the upgrade-instance state machine, handled separately.
-// What stays: the box-grid name guard (always installed, a no-op for idx 0..3,
-// keeps nameTable[4] = colour[0] from ever being dereferenced) and the box-grid
-// clamp relax behind select_fifth_dept, now default off.
+// The real blocker is the upgrade-instance state machine (see the v0.6.0 section
+// below). What stays: the box-grid name guard (always installed, a no-op for
+// idx 0..3, keeps nameTable[4] = colour[0] from ever being dereferenced) and the
+// box-grid clamp relax behind select_fifth_dept, now default off.
 
 SWOFTY_SETTING(bool, select_fifth_dept, false);
 std::atomic<bool> g_select_enabled{false};
@@ -1218,6 +1228,461 @@ void install_box_name_guard(uintptr_t base)
         swofty::log("[rnd-tyres] box-grid 5th-dept selection ENABLED (name-guarded; overview only, not the tile page)");
 }
 
+// ---------------------------------------------------------------------------
+// v0.6.0: instantiate the Tyres upgrades (why the Tyres department page is empty).
+//
+// Per team, the career R&D model (one Upgrades object of 0x1b10 bytes per team,
+// built by FUN_14123ca40) holds up to two "trees" at +0xe0 + k*0xc40 (count at
+// +0x1960). Career_Instantiate_UpgradeTrees (FUN_14352cac0) copies EVERY loaded
+// UpgradeRecord (no department filter) into a 0xe0-byte upgrade INSTANCE (vector
+// at tree+0x10/+0x18) and pushes its pointer into the tree's inline array
+// (tree+0x30, count tree+0xc30 = Upgrades+0x110/+0xd10). So our three rows ARE
+// instantiated; live memory confirms all three in every team's array. Each
+// instance has a state history at +0xc0/+0xc8 (0x10-byte entries: +0 owner,
+// +4 day, +8 state, +0xc enabled, +0xd facility-locked). The R&D page query
+// (FUN_1435188d0) keeps an instance only if its last entry has enabled != 0.
+//
+// Exact skip mechanism, three layers, all keyed on the department byte +0x72:
+//  1. Instance init/reset FUN_143517d80 (KB: Car_Reset_LastFittedUpgrade): at
+//     0x143517e0c `cmp byte [rcx+0x72],4 ; jne normal`. A Fake (4) instance gets
+//     ONE sentinel entry {owner 0x3fff0000, day 0xffff, state Invalid(5),
+//     enabled 0} and returns, skipping the normal init (state Unavailable,
+//     enabled 1). The query then drops it. This is what keeps the stock hub
+//     (label "default", upgrade_name "central_fake_upgrade") off every page, and
+//     it catches our three rows because they are upgrade_department = Fake too.
+//  2. Every state mutator bails on dept > 3 with `cmp byte [rcx+0x72],3 ; ja ret`:
+//     push state 0x1435230e0, enabled flag 0x143523510, facility lock 0x143523730,
+//     fit flag 0x1435157d0, plus the auto-fit pass 0x1412484e0 (0x1412486b8).
+//  3. The availability BFS FUN_1435288f0 treats any dept-4 node as the tree HUB
+//     (`cmp byte [rax+0x72],4 ; je` @0x143528a05).
+// A data-only fix is impossible: the Tyres card filters instances by +0x72 == 4,
+// and the same byte must be <= 3 for layers 1-3.
+//
+// Fix: flip the flags at those conditional jumps for OUR three instances only,
+// identified by content (dept 4, team row +0x7c == 0xff, and the node hash +0x58 =
+// djb2("tyres_thermal_<n>_255") or upgrade_name), never by address (the init runs
+// on a stack temp before the instance is moved into the tree). The hub keeps the
+// stock path everywhere. Saves written by v0.4/v0.5 persist the sentinel, and the
+// deserializer (FUN_143524c20) restores it over our init, so a sanitizer re-runs
+// the game's own init on any of OUR instances whose last entry is still not
+// enabled (deserialize end, refresh entry, and right before the page query), then
+// mirrors FUN_14352e1c0: mode 0 invalidates the owner cache (+0x1aa8) so the next
+// query recomputes availability; modes 1/2 call the refresh at deserialize end.
+//
+// Gate: one exactly-one `.xtls` scan of the init site (must equal the expected
+// RVA), then every other site byte-verified at its fixed RVA. The core sites
+// (init, 4 mutators, auto-fit, BFS) are all-or-nothing. Install-time only.
+
+SWOFTY_SETTING(bool, instantiate_tyres_upgrades, true);
+std::atomic<bool> g_inst_enabled{true};
+std::atomic<bool> g_inst_live{false};
+
+SWOFTY_ON_CHANGE(instantiate_tyres_upgrades, bool on)
+{
+    swofty::log("[rnd-tyres] instantiate_tyres_upgrades toggled -> %s; the instance hooks are install-time, relaunch "
+                "to apply",
+                on ? "on" : "off");
+}
+
+constexpr uint32_t djb2(const char *s)
+{
+    uint32_t h = 0x1505;
+    for (; *s; ++s)
+        h = h * 33u + static_cast<uint8_t>(*s);
+    return h;
+}
+
+constexpr uint32_t kOurHash[3] = {djb2("tyres_thermal_1_255"), djb2("tyres_thermal_2_255"),
+                                  djb2("tyres_thermal_3_255")};
+constexpr const char *kOurNames[3] = {"tyres_wear_reduction", "tyres_brake_cooling", "tyres_thermal_reliability"};
+static_assert(kOurHash[0] == 0x27e41c13u && kOurHash[1] == 0x27f63494u && kOurHash[2] == 0x28084d15u,
+              "node hash drifted from the live instances");
+static_assert(djb2("default_255") == 0xbd057d45u, "hub hash drifted from the live instance");
+
+constexpr size_t   kInstSize       = 0xe0;
+constexpr size_t   kInstName       = 0x10;
+constexpr size_t   kInstHash       = 0x58;
+constexpr size_t   kInstDept       = 0x72;
+constexpr size_t   kInstRowFlag    = 0x7c;
+constexpr size_t   kInstStatesBeg  = 0xc0;
+constexpr size_t   kInstStatesEnd  = 0xc8;
+constexpr uint8_t  kDeptFake       = 4;
+constexpr uint8_t  kTeamRow        = 0xff;
+constexpr size_t   kUpSize         = 0x1b10;
+constexpr size_t   kUpMode         = 0x8;
+constexpr size_t   kUpTeam         = 0xc;
+constexpr size_t   kUpTrees        = 0xe0;
+constexpr size_t   kUpTreeStride   = 0xc40;
+constexpr size_t   kUpNumTrees     = 0x1960;
+constexpr size_t   kUpOwnerCache   = 0x1aa8;
+constexpr uint32_t kOwnerNone      = 0x3fff0000;
+constexpr uintptr_t kFlagZF        = 0x40;
+
+constexpr uintptr_t kRvaInstInitSig = 0x143517df4ull - kImageBase; // scan hit
+constexpr uintptr_t kRvaInstInitFn  = 0x143517d80ull - kImageBase; // Upgrade instance init/reset
+constexpr uintptr_t kRvaRefreshFn   = 0x14352f300ull - kImageBase; // availability refresh (Upgrades*, u16 day)
+constexpr uintptr_t kRvaDeserEnd    = 0x14353610full - kImageBase; // Upgrades deserialize, after the trees
+constexpr uintptr_t kRvaPagePre     = 0x141c7d8baull - kImageBase; // dept page, just before the query call
+
+struct GuardSite {
+    const char *what;
+    uintptr_t verify_rva;  // first byte of the verified window (the cmp)
+    uintptr_t hook_rva;    // the conditional jump that gets its flags adjusted
+    uint8_t bytes[14];
+    size_t len;
+};
+
+const GuardSite kInitSite = {"init dept==4 sentinel branch", 0x143517e0cull - kImageBase,
+                             0x143517e10ull - kImageBase,
+                             {0x80, 0x79, 0x72, 0x04, 0x75, 0x3a, 0x48, 0x83, 0xbe, 0xd0, 0x00, 0x00, 0x00, 0x00}, 14};
+const GuardSite kGuardSites[] = {
+    {"state push guard", 0x1435230f3ull - kImageBase, 0x1435230f7ull - kImageBase,
+     {0x80, 0x79, 0x72, 0x03, 0x0f, 0x87, 0xf3, 0x03, 0x00, 0x00}, 10},
+    {"enabled flag guard", 0x143523520ull - kImageBase, 0x143523524ull - kImageBase,
+     {0x80, 0x79, 0x72, 0x03, 0x0f, 0x87, 0xe6, 0x01, 0x00, 0x00}, 10},
+    {"facility lock guard", 0x143523740ull - kImageBase, 0x143523744ull - kImageBase,
+     {0x80, 0x79, 0x72, 0x03, 0x0f, 0x87, 0xe6, 0x01, 0x00, 0x00}, 10},
+    {"fit flag guard", 0x1435157e0ull - kImageBase, 0x1435157e4ull - kImageBase,
+     {0x80, 0x79, 0x72, 0x03, 0x0f, 0x87, 0x36, 0x02, 0x00, 0x00}, 10},
+    {"auto-fit pass guard", 0x1412486b8ull - kImageBase, 0x1412486bcull - kImageBase,
+     {0x80, 0x79, 0x72, 0x03, 0x77, 0x92, 0x66, 0x44, 0x89, 0x74, 0x24, 0x20}, 12},
+};
+const GuardSite kBfsSite = {"availability BFS hub test", 0x143528a05ull - kImageBase, 0x143528a09ull - kImageBase,
+                            {0x80, 0x78, 0x72, 0x04, 0x74, 0x7d, 0x48, 0x8b, 0x88, 0xc8, 0x00, 0x00, 0x00}, 13};
+constexpr size_t kNumGuards = sizeof(kGuardSites) / sizeof(kGuardSites[0]);
+
+const uint8_t kInitFnBytes[]  = {0x41, 0x56, 0x56, 0x57, 0x53, 0x48, 0x83, 0xec, 0x48, 0x48, 0x89, 0xce,
+                                 0xc7, 0x41, 0x7e, 0xff, 0xff, 0xff, 0xff};
+const uint8_t kRefreshBytes[] = {0x41, 0x57, 0x41, 0x56, 0x41, 0x55, 0x41, 0x54, 0x56, 0x57,
+                                 0x55, 0x53, 0x48, 0x81, 0xec, 0xa8, 0x0c, 0x00, 0x00};
+const uint8_t kDeserBytes[]   = {0x48, 0x8d, 0x15, 0x4b, 0x14, 0x31, 0x02, 0x48, 0x89, 0xd9};
+const uint8_t kPagePreBytes[] = {0x48, 0x8d, 0x94, 0x24, 0xf0, 0x0d, 0x00, 0x00, 0x4c, 0x8d, 0x84, 0x24,
+                                 0x8c, 0x00, 0x00, 0x00, 0x66, 0x41, 0xb9, 0xff, 0xff, 0xe8};
+
+using InstInitFn = void (*)(void *inst);
+using RefreshFn  = void (*)(void *upgrades, uint16_t day);
+
+InstInitFn g_inst_init = nullptr;
+RefreshFn g_refresh = nullptr;
+
+safetyhook::MidHook g_init_hook;
+safetyhook::MidHook g_guard_hooks[kNumGuards];
+safetyhook::MidHook g_bfs_hook;
+safetyhook::MidHook g_deser_hook;
+safetyhook::MidHook g_refresh_hook;
+safetyhook::MidHook g_page_pre_hook;
+
+std::atomic<int> g_init_log{0};
+std::atomic<int> g_hub_log{0};
+std::atomic<int> g_guard_log[kNumGuards];
+std::atomic<int> g_bfs_log{0};
+std::atomic<int> g_sanitize_log{0};
+std::atomic<int> g_sanitize_depth{0};
+std::atomic<int> g_sanitize_fail{0};
+std::atomic<bool> g_sanitize_off{false};
+
+bool bytes_are(uintptr_t addr, const uint8_t *want, size_t n)
+{
+    if (!region_readable(reinterpret_cast<void *>(addr), n))
+        return false;
+    const volatile uint8_t *p = reinterpret_cast<const volatile uint8_t *>(addr);
+    for (size_t i = 0; i < n; ++i)
+        if (p[i] != want[i])
+            return false;
+    return true;
+}
+
+bool cstr_eq(const char *a, const char *b, size_t cap)
+{
+    for (size_t i = 0; i < cap; ++i) {
+        if (a[i] != b[i])
+            return false;
+        if (b[i] == '\0')
+            return true;
+    }
+    return false;
+}
+
+const char *inst_name(uintptr_t u)
+{
+    const char *s = *reinterpret_cast<const char *const *>(u + kInstName);
+    return (s && region_readable(s, 32)) ? s : "?";
+}
+
+int our_index(uintptr_t u)
+{
+    const uint8_t *p = reinterpret_cast<const uint8_t *>(u);
+    if (p[kInstDept] != kDeptFake || p[kInstRowFlag] != kTeamRow)
+        return -1;
+    uint32_t h = *reinterpret_cast<const uint32_t *>(u + kInstHash);
+    for (int i = 0; i < 3; ++i)
+        if (h == kOurHash[i])
+            return i;
+    const char *s = *reinterpret_cast<const char *const *>(u + kInstName);
+    if (!s || !region_readable(s, 32))
+        return -1;
+    for (int i = 0; i < 3; ++i)
+        if (cstr_eq(s, kOurNames[i], 32))
+            return i;
+    return -1;
+}
+
+void on_inst_init(safetyhook::Context &c)
+{
+    uintptr_t u = c.rcx;
+    if (*reinterpret_cast<const uint8_t *>(u + kInstDept) != kDeptFake)
+        return;
+    int idx = our_index(u);
+    if (idx < 0) {
+        if (g_hub_log.fetch_add(1) < 3)
+            swofty::log("[rnd-tyres] instance init: dept-4 \"%s\" hash=0x%08x is not ours -> stock Invalid sentinel "
+                        "(hub stays hidden)",
+                        inst_name(u), *reinterpret_cast<const uint32_t *>(u + kInstHash));
+        return;
+    }
+    c.rflags &= ~kFlagZF;
+    if (g_init_log.fetch_add(1) < 12)
+        swofty::log("[rnd-tyres] instance init: tyres_thermal_%d \"%s\" -> normal init (Unavailable, enabled) instead "
+                    "of the dept-4 sentinel",
+                    idx + 1, inst_name(u));
+}
+
+template <size_t I> void on_guard(safetyhook::Context &c)
+{
+    uintptr_t u = c.rcx;
+    if (*reinterpret_cast<const uint8_t *>(u + kInstDept) != kDeptFake)
+        return;
+    int idx = our_index(u);
+    if (idx < 0)
+        return;
+    c.rflags |= kFlagZF;
+    if (g_guard_log[I].fetch_add(1) < 3)
+        swofty::log("[rnd-tyres] %s admitted tyres_thermal_%d \"%s\" (dept 4 treated as a real department)",
+                    kGuardSites[I].what, idx + 1, inst_name(u));
+}
+
+using GuardFn = void (*)(safetyhook::Context &);
+template <size_t... I> constexpr auto make_guard_fns(std::index_sequence<I...>)
+{
+    return std::array<GuardFn, sizeof...(I)>{&on_guard<I>...};
+}
+constexpr auto kGuardFns = make_guard_fns(std::make_index_sequence<kNumGuards>{});
+
+void on_bfs_hub_test(safetyhook::Context &c)
+{
+    uintptr_t u = c.rax;
+    int idx = our_index(u);
+    if (idx < 0)
+        return;
+    c.rflags &= ~kFlagZF;
+    if (g_bfs_log.fetch_add(1) < 3)
+        swofty::log("[rnd-tyres] availability BFS: tyres_thermal_%d is a regular node, not the hub", idx + 1);
+}
+
+bool states_of(uintptr_t u, uintptr_t &sb, uintptr_t &se)
+{
+    sb = *reinterpret_cast<const uint64_t *>(u + kInstStatesBeg);
+    se = *reinterpret_cast<const uint64_t *>(u + kInstStatesEnd);
+    if (sb == se)
+        return true;
+    if (se < sb || (se - sb) % 0x10 || (se - sb) > 0x10000)
+        return false;
+    return region_readable(reinterpret_cast<void *>(se - 0x10), 0x10);
+}
+
+bool needs_init(uintptr_t u)
+{
+    uintptr_t sb = 0, se = 0;
+    if (!states_of(u, sb, se))
+        return false;
+    if (sb == se)
+        return true;
+    return *reinterpret_cast<const uint8_t *>(se - 4) == 0;
+}
+
+int sanitize_upgrades(uintptr_t U, const char *site, bool may_refresh)
+{
+    if (!g_inst_live.load() || !g_inst_init || g_sanitize_off.load() || g_sanitize_depth.load() != 0)
+        return 0;
+    if (!U || !region_readable(reinterpret_cast<void *>(U), kUpSize))
+        return 0;
+    uint64_t nt = *reinterpret_cast<const uint64_t *>(U + kUpNumTrees);
+    if (nt == 0 || nt > 2)
+        return 0;
+    g_sanitize_depth.fetch_add(1);
+    int reinit = 0;
+    for (uint64_t k = 0; k < nt; ++k) {
+        uintptr_t T = U + kUpTrees + k * kUpTreeStride;
+        uintptr_t b = *reinterpret_cast<const uint64_t *>(T + 0x10);
+        uintptr_t e = *reinterpret_cast<const uint64_t *>(T + 0x18);
+        if (!b || e < b || (e - b) % kInstSize || (e - b) / kInstSize > 0x180)
+            continue;
+        if (!region_readable(reinterpret_cast<void *>(b), e - b))
+            continue;
+        for (uintptr_t u = b; u < e; u += kInstSize) {
+            if (*reinterpret_cast<const uint8_t *>(u + kInstDept) != kDeptFake)
+                continue;
+            int idx = our_index(u);
+            if (idx < 0 || !needs_init(u))
+                continue;
+            g_inst_init(reinterpret_cast<void *>(u));
+            ++reinit;
+            uintptr_t sb = 0, se = 0;
+            bool ok = states_of(u, sb, se) && se != sb;
+            if (needs_init(u) && g_sanitize_fail.fetch_add(1) + 1 >= 8) {
+                g_sanitize_off.store(true);
+                swofty::log("[rnd-tyres] sanitize(%s): the game's init left \"%s\" disabled 8 times; sanitizer switched "
+                            "OFF (SAFE)",
+                            site, inst_name(u));
+            }
+            if (g_sanitize_log.fetch_add(1) < 48)
+                swofty::log("[rnd-tyres] sanitize(%s): team 0x%x tree%llu tyres_thermal_%d \"%s\" had no enabled state "
+                            "(persisted dept-4 sentinel) -> re-initialised: states=%llu last state=%u enabled=%u",
+                            site, *reinterpret_cast<const uint32_t *>(U + kUpTeam), (unsigned long long)k, idx + 1,
+                            inst_name(u), ok ? (unsigned long long)((se - sb) / 0x10) : 0ull,
+                            ok ? (unsigned)*reinterpret_cast<const uint8_t *>(se - 8) : 0xffu,
+                            ok ? (unsigned)*reinterpret_cast<const uint8_t *>(se - 4) : 0xffu);
+        }
+    }
+    if (reinit) {
+        uint8_t mode = *reinterpret_cast<const uint8_t *>(U + kUpMode);
+        if (mode == 0) {
+            *reinterpret_cast<volatile uint32_t *>(U + kUpOwnerCache) = kOwnerNone;
+            swofty::log("[rnd-tyres] sanitize(%s): mode 0 -> owner cache invalidated so the next R&D query recomputes "
+                        "availability",
+                        site);
+        } else if ((mode == 1 || mode == 2) && may_refresh && g_refresh) {
+            g_refresh(reinterpret_cast<void *>(U), 0);
+            swofty::log("[rnd-tyres] sanitize(%s): mode %u -> availability refreshed (day 0, as the game's reset does)",
+                        site, (unsigned)mode);
+        }
+    }
+    g_sanitize_depth.fetch_sub(1);
+    return reinit;
+}
+
+void on_deser_end(safetyhook::Context &c)
+{
+    sanitize_upgrades(c.rdi, "load", true);
+}
+
+void on_refresh_entry(safetyhook::Context &c)
+{
+    sanitize_upgrades(c.rcx, "refresh", false);
+}
+
+void on_page_pre_query(safetyhook::Context &c)
+{
+    sanitize_upgrades(c.rcx, "page", false);
+}
+
+bool hook_flag_site(safetyhook::MidHook &slot, uintptr_t base, const GuardSite &s, GuardFn fn)
+{
+    auto r = safetyhook::MidHook::create(reinterpret_cast<void *>(base + s.hook_rva), fn);
+    if (!r) {
+        swofty::log("[rnd-tyres] %s MidHook::create failed @0x%llx (err %d)", s.what,
+                    (unsigned long long)(base + s.hook_rva), (int)r.error().type);
+        return false;
+    }
+    slot = std::move(*r);
+    swofty::log("[rnd-tyres] %s hooked @0x%llx (base+0x%llx)", s.what, (unsigned long long)(base + s.hook_rva),
+                (unsigned long long)s.hook_rva);
+    return true;
+}
+
+void unhook_core()
+{
+    g_init_hook = {};
+    for (auto &h : g_guard_hooks)
+        h = {};
+    g_bfs_hook = {};
+}
+
+void install_optional_site(safetyhook::MidHook &slot, uintptr_t addr, const uint8_t *bytes, size_t n,
+                           void (*fn)(safetyhook::Context &), const char *what, uintptr_t base)
+{
+    if (!bytes_are(addr, bytes, n)) {
+        swofty::log("[rnd-tyres] %s site @0x%llx bytes differ; that sanitizer is NOT installed (SAFE)", what,
+                    (unsigned long long)addr);
+        return;
+    }
+    auto r = safetyhook::MidHook::create(reinterpret_cast<void *>(addr), fn);
+    if (!r) {
+        swofty::log("[rnd-tyres] %s MidHook::create failed @0x%llx (err %d); NOT installed (SAFE)", what,
+                    (unsigned long long)addr, (int)r.error().type);
+        return;
+    }
+    slot = std::move(*r);
+    swofty::log("[rnd-tyres] %s sanitizer installed @0x%llx (base+0x%llx)", what, (unsigned long long)addr,
+                (unsigned long long)(addr - base));
+}
+
+void install_instantiate_tyres(uintptr_t base)
+{
+    if (!g_inst_enabled.load()) {
+        swofty::log("[rnd-tyres] instantiate_tyres_upgrades off; Tyres upgrades keep the stock dept-4 sentinel "
+                    "(page stays empty)");
+        return;
+    }
+    uintptr_t hit = 0;
+    int matches = swofty::api->scan(
+        ".xtls", "C7 81 D8 00 00 00 00 00 00 00 48 8B 81 C0 00 00 00 48 89 81 C8 00 00 00 80 79 72 04 75 3A", &hit);
+    if (matches != 1 || !hit) {
+        swofty::log("[rnd-tyres] instance-init signature matched %d time(s); Tyres instances NOT enabled (SAFE)",
+                    matches);
+        return;
+    }
+    if (hit != base + kRvaInstInitSig) {
+        swofty::log("[rnd-tyres] instance-init scan hit 0x%llx != expected 0x%llx; Tyres instances NOT enabled (SAFE)",
+                    (unsigned long long)hit, (unsigned long long)(base + kRvaInstInitSig));
+        return;
+    }
+
+    bool ok = bytes_are(base + kInitSite.verify_rva, kInitSite.bytes, kInitSite.len)
+              && bytes_are(base + kBfsSite.verify_rva, kBfsSite.bytes, kBfsSite.len)
+              && bytes_are(base + kRvaInstInitFn, kInitFnBytes, sizeof kInitFnBytes);
+    for (size_t i = 0; ok && i < kNumGuards; ++i) {
+        if (!bytes_are(base + kGuardSites[i].verify_rva, kGuardSites[i].bytes, kGuardSites[i].len)) {
+            swofty::log("[rnd-tyres] %s @0x%llx bytes differ from the decompile", kGuardSites[i].what,
+                        (unsigned long long)(base + kGuardSites[i].verify_rva));
+            ok = false;
+        }
+    }
+    if (!ok) {
+        swofty::log("[rnd-tyres] instance core sites do not match this build; Tyres instances NOT enabled (SAFE)");
+        return;
+    }
+
+    for (size_t i = 0; i < kNumGuards; ++i) {
+        if (!hook_flag_site(g_guard_hooks[i], base, kGuardSites[i], kGuardFns[i])) {
+            unhook_core();
+            swofty::log("[rnd-tyres] instance core install aborted and rolled back (SAFE)");
+            return;
+        }
+    }
+    if (!hook_flag_site(g_bfs_hook, base, kBfsSite, &on_bfs_hub_test)
+        || !hook_flag_site(g_init_hook, base, kInitSite, &on_inst_init)) {
+        unhook_core();
+        swofty::log("[rnd-tyres] instance core install aborted and rolled back (SAFE)");
+        return;
+    }
+    g_inst_init = reinterpret_cast<InstInitFn>(base + kRvaInstInitFn);
+    if (bytes_are(base + kRvaRefreshFn, kRefreshBytes, sizeof kRefreshBytes))
+        g_refresh = reinterpret_cast<RefreshFn>(base + kRvaRefreshFn);
+    g_inst_live.store(true);
+    swofty::log("[rnd-tyres] Tyres upgrade instances ENABLED: tyres_thermal_1/2/3 (hash 0x%08x/0x%08x/0x%08x) take the "
+                "normal init + state machine; the dept-4 hub \"default\"/central_fake_upgrade keeps the stock sentinel",
+                kOurHash[0], kOurHash[1], kOurHash[2]);
+
+    install_optional_site(g_deser_hook, base + kRvaDeserEnd, kDeserBytes, sizeof kDeserBytes, &on_deser_end,
+                          "load (deserialize end)", base);
+    if (g_refresh)
+        install_optional_site(g_refresh_hook, base + kRvaRefreshFn, kRefreshBytes, sizeof kRefreshBytes,
+                              &on_refresh_entry, "refresh entry", base);
+    install_optional_site(g_page_pre_hook, base + kRvaPagePre, kPagePreBytes, sizeof kPagePreBytes,
+                          &on_page_pre_query, "R&D page pre-query", base);
+}
+
 } // namespace
 
 SWOFTY_ON_LOAD
@@ -1257,6 +1722,11 @@ SWOFTY_ON_LOAD
     // default off). The v0.5.0 TeamHQ clamp relax is gone.
     g_select_enabled.store(select_fifth_dept.get());
     install_box_name_guard(base);
+
+    // v0.6.0: give the three Tyres upgrade instances real R&D states (the actual
+    // reason the Tyres page was empty) - its OWN one-scan gate + feature flag.
+    g_inst_enabled.store(instantiate_tyres_upgrades.get());
+    install_instantiate_tyres(base);
 
     uintptr_t hit = 0;
     int matches = swofty::api->scan(".xtls", "75 06 B1 03 EB 02 31 C9 88 8F 40 03 00 00", &hit);

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "swofty.rnd-tyres-thermal",
   "name": "R&D: Tyres & Thermal Management",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "author": "Swofty",
   "description": "Adds a new career R&D department, Tyres & Thermal Management, alongside the stock four.",
   "license": "AGPL-3.0-or-later",
@@ -54,8 +54,16 @@
       "id": "select_fifth_dept",
       "type": "toggle",
       "label": "Relax the R&D overview selection clamp",
-      "description": "Off by default. Leftover v0.5.0 experiment: lets the R&D overview box grid store selection index 4 (the name read stays guarded). It does not open the Tyres department page.",
+      "description": "Off by default. Leftover v0.5.0 experiment: lets the R&D overview box grid store selection index 4 (the name read stays guarded). It does not open the Tyres page; instantiate_tyres_upgrades does that.",
       "default": false,
+      "binds": "native"
+    },
+    {
+      "id": "instantiate_tyres_upgrades",
+      "type": "toggle",
+      "label": "Instantiate the Tyres upgrades",
+      "description": "Give the three Tyres & Thermal upgrades real R&D states so the Tyres department page lists them and they can be researched. The stock tree hub stays hidden. Install-time; relaunch after changing.",
+      "default": true,
       "binds": "native"
     }
   ],
