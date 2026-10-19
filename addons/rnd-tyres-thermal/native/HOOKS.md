@@ -400,6 +400,14 @@ a relaunch.
 
 ## v0.5.0 — the 5th department SELECTION (flag `select_fifth_dept`, default on)
 
+> **Superseded in v0.6.0 (dead end).** `DAT_145f93c08` is the R&D > Performance overview
+> box-grid selection; a hardware watchpoint proved it never changes while the department
+> tab pages are built, so it does not choose the tile page. The second clamp (TeamHQ VM
+> command 0x55702d31, table slot 4 = `open_driver_ratings_rtt_panel`) is unrelated to R&D.
+> v0.6.0 removes the TeamHQ relax, defaults `select_fifth_dept` off, and keeps only the
+> box-grid name guard (always installed, a no-op for idx 0..3). The real blocker is in the
+> v0.6.0 section below.
+
 Makes the code-4 (`Fake`/Tyres) department SELECTABLE so it can be the active R&D
 page. The tile data for code 4 is already loaded (both `Career_Load_UpgradeRows`
 @0x143539bc0 and `Career_Load_UpgradeTreeNodes` @0x14353b030 loop codes 0..4, and
@@ -495,3 +503,144 @@ mismatch / >1 match the feature installs nothing and the rest keep working. The
 - tile-page (TeamHQ VM cmd 0x55702d31) active-dept clamp: func @0x142337ff0, clamp
   imm @0x1423380f3
 - crash trap: `k_Career_RnDDeptNameTable[4]` @0x145755e78 = `colour[0]` as char*
+
+## v0.6.0 — why the Tyres page is empty: the dept-4 upgrade INSTANCES never get a real state
+
+### The page path (live gdb trace, this build)
+`Career_Build_RnDDeptPage` @0x141c7b880 (16 KB, from 0x141c7b3d0) builds one R&D department tab.
+`rsi` = the 0x950 department card (`Career_Construct_RnDDeptCard`), dept = `byte [card+0x6d8]`
+(Tyres card = 4), team = `dword [card+0x6bc]`, per-team model = `[card+0x688]`. At 0x141c7d8cf it
+calls `Upgrades_QueryEnabled` @0x1435188d0`(U=[card+0x688], out=rsp+0xdf0, &team=rsp+0x8c, 0xffff)`
+and keeps results whose `byte [u+0x72] == card dept`. Durability page: 95 results, by dept
+`0:25 1:23 2:24 3:23 4:0`. Tyres page: the same 95, `4:0` → nothing to show. The page logic is
+fine; our upgrades are not in the query result.
+
+### The per-team model (`Upgrades`, 0x1b10 bytes, one per team)
+Created by `Career_Add_TeamUpgrades` @0x14123ca40 (alloc 0x1b10): loads the record model
+(@0x143539260 → `Career_Load_UpgradeRows`, tree nodes), then `Career_Instantiate_UpgradeTrees`
+@0x14352cac0, then `Career_ResetAll_Upgrades` @0x14352e1c0.
+
+| off | field |
+|---|---|
+| +0x08 | u8 mode (0 = single shared tree with owner cache, 1 = per team, 2 = per driver; this career: 0) |
+| +0x0c | u32 team id |
+| +0xe0 + k*0xc40 | tree k (k < 2): +0x08 allocator, +0x10/+0x18 instance vector (0xe0 stride), +0x30 inline pointer array (0x180 slots), +0xc30 count. So the array is `U+0x110+k*0xc40`, count `U+0xd10+k*0xc40` |
+| +0x1960 | u64 number of trees |
+| +0x1970 + k*0x58 | tree graph (nodes 0x40 stride: [0]=instance, +0x10/+0x18 neighbours, +0x30 grid x/y) |
+| +0x1a60.. | robin-hood map owner → tree slot (mode 2) |
+| +0x1a9c | u16[6] per-department counters (dept 0..5, so index 4 is in bounds) |
+| +0x1aa8 | u32 owner cache (mode 0); 0x3fff0000 = none |
+
+`Career_Instantiate_UpgradeTrees` copies EVERY 0x80-byte UpgradeRecord (no department filter)
+into a 0xe0 instance, calls the instance init on the stack temp, moves it into the vector and
+pushes the pointer (`param_1[(k+1)*0x188 + cnt - 0x166]`, count `param_1[(k+1)*0x188 + 0x1a]`).
+That is the "no direct `[..+0xd10]` write" the static scan missed: the stores are indexed off
+`param_1` with the slot folded into the index.
+
+### The upgrade instance (0xe0) and its state history
+| off | field |
+|---|---|
+| +0x08..+0x57 | SSO `upgrade_name` (+0x10 = chars) |
+| +0x58 | u32 node hash = djb2(seed 0x1505) of `"%s_%d" % (_metadata_ label, row flag)` |
+| +0x70/+0x71/+0x72 | type / size / **department (ENUM A)** |
+| +0x74 | `unlock_at_facility_level` |
+| +0x7c | row flag: 0xff = team tree row, else engine-supplier stat id |
+| +0xb8 | allocator; +0xc0/+0xc8/+0xd0 = state entries begin/end/cap (0x10 each) |
+
+State entry: +0 u32 owner (0x3fff0000 = none), +4 u16 day, +6 u16, +8 u8 state, +9 fitted,
++0xa/+0xb, **+0xc enabled**, +0xd facility-locked, +0xe. State names @0x14565cee0:
+0 Unavailable, 1 Available, 2 InProgress, 3 Completed, 4 Failed, 5 Invalid, 6 PendingDevelopment,
+7 InDevelopment, 8 PendingFitting. `Upgrades_QueryEnabled` keeps an instance only if the last
+entry with `day <= mask` has **enabled != 0**.
+
+### The exact skip mechanism (three layers, all on `byte [u+0x72]`)
+1. **Instance init** `Career_Reset_UpgradeInstance` @0x143517d80 (KB name
+   `Car_Reset_LastFittedUpgrade`; it is the per-instance reset called by instantiation, reset-all
+   and the supplier refit): at **0x143517e0c `cmp byte [rcx+0x72],4 ; jne 0x143517e4c`**. A Fake (4)
+   instance gets ONE sentinel entry `{owner 0x3fff0000, day 0xffff, state Invalid, enabled 0}` and
+   returns, skipping the normal path (`PushState(owner, Unavailable, day 0)`, `SetFitted`,
+   `SetEnabled(1)`, tail-call `SetFacilityLocked(unlock_level != 0)`). Enabled stays 0 → the query
+   drops it. This is how the stock hub stays off every page; our three rows are
+   `upgrade_department = Fake` too, so they get the same sentinel.
+2. **Every state mutator bails on dept > 3** (`cmp byte [rcx+0x72],3 ; ja ret`):
+   `Upgrade_PushState` @0x1435230e0 (guard 0x1435230f3, "Changing state from %s to %s"),
+   `Upgrade_SetEnabled` @0x143523510 (0x143523520), `Upgrade_SetFacilityLocked` @0x143523730
+   (0x143523740), `Upgrade_SetFitted` @0x1435157d0 (0x1435157e0), and the auto-fit pass
+   @0x1412484e0 (0x1412486b8). So a dept-4 instance can never leave the sentinel.
+3. **The availability graph search** `Upgrade_GraphSearch` @0x1435288f0 treats every dept-4 node
+   as the tree hub (`cmp byte [rax+0x72],4 ; je` @0x143528a05): used by
+   `Career_Refresh_UpgradeAvailability` @0x14352f300 (modes 1/2) and `Upgrade_EvalAvailability`
+   @0x14352e720 (mode 0 owner switch `Upgrades_SetOwner` @0x14352e620, which writes the state byte
+   of the last entry directly). Left alone, our nodes would act as hubs and unlock out of order.
+
+No `>= 4` loop, 4-entry tree list or `.fake` container skip exists on the instantiation path; the
+instances are all there (live check below). A data-only fix is impossible: the Tyres card filters
+on `+0x72 == 4`, and the same byte must be <= 3 for layers 1-3.
+
+Save games: `Upgrades_Deserialise` @0x143536000 → per-tree `@0x143524c20` finds each instance by
+`+0x58` and REPLACES its state history (no dept guard). `@0x143523fd0` serialises every instance,
+so saves written with v0.4/v0.5 carry our sentinel and would overwrite a fixed init on load.
+
+### Live confirmation (read-only `/proc/<pid>/mem` scan, game not stopped, 2026-10-19)
+21 `Upgrades` objects, all mode 0. Every team's tree contains the hub and our three:
+`central_fake_upgrade` hash 0xbd057d45 (= djb2("default_255"), label `default`),
+`tyres_wear_reduction` 0x27e41c13, `tyres_brake_cooling` 0x27f63494, `tyres_thermal_reliability`
+0x28084d15 (= djb2("tyres_thermal_N_255")), row flag 0xff, ONE state entry each, enabled 0
+(fresh trees: state 5 Invalid; trees restored from the save: state 0 from the mode-0 direct write).
+155-instance trees: by dept `[25,23,52,51,4]`, enabled `[25,23,24,23,0]` = the 95 the page query
+returned.
+
+### The fix (flag `instantiate_tyres_upgrades`, default on, install-time)
+Gate: one exactly-one `.xtls` scan of the init site
+`C7 81 D8 00 00 00 00 00 00 00 48 8B 81 C0 00 00 00 48 89 81 C8 00 00 00 80 79 72 04 75 3A`
+(hit must be 0x143517df4), then every other site byte-verified at its fixed RVA. Core sites are
+all-or-nothing (rolled back on any create failure). Each hook is a safetyhook MidHook ON the
+conditional jump, adjusting ZF in the saved rflags, and acts only on OUR instances: dept 4, row
+flag 0xff, and `+0x58` in {0x27e41c13, 0x27f63494, 0x28084d15} or `upgrade_name` in our three.
+Identification is by content, never address (the init runs on a stack temp).
+
+| site | hook @ | effect for ours |
+|---|---|---|
+| init dept==4 branch | 0x143517e10 (`jne`) | clear ZF → normal init: Unavailable, enabled 1, locked 0 (`unlock_at_facility_level` = 0) |
+| PushState guard | 0x1435230f7 (`ja`) | set ZF → state changes apply |
+| SetEnabled guard | 0x143523524 | set ZF |
+| SetFacilityLocked guard | 0x143523744 | set ZF |
+| SetFitted guard | 0x1435157e4 | set ZF |
+| auto-fit pass guard | 0x1412486bc | set ZF |
+| graph-search hub test | 0x143528a09 (`je`) | clear ZF → regular node, not the hub |
+
+The hub (`default`/`central_fake_upgrade`) never matches, so it keeps the stock sentinel, stays
+disabled, stays out of every query, and still terminates the graph search as the root.
+
+Sanitizer (heals saves that persisted the sentinel): for OUR instances whose states are empty or
+whose last entry is still disabled, call the game's own init (now on the normal path), then mirror
+`Career_ResetAll_Upgrades`: mode 0 → owner cache `+0x1aa8 = 0x3fff0000` so the next query runs
+`Upgrades_SetOwner` and recomputes availability; modes 1/2 → `Career_Refresh_UpgradeAvailability
+(U, 0)` (only at load). Runs at: load (`Upgrades_Deserialise` after the trees, 0x14353610f,
+`rdi` = U), refresh entry (0x14352f300, `rcx` = U), and the R&D page just before the query
+(0x141c7d8ba, `rcx` = U). Each optional site is byte-verified on its own.
+
+Checked consumers of `+0x72` for index-by-department overruns once dept-4 upgrades become live:
+department name/colour lookups in the upgrade panels are bounded (`cmp 3/5 ; ja default`), the
+`+0x1a9c` counters are 6 wide, and cost/facility code compares the department against lists
+(no match for 4 → no facility lock, stock row costs). Known cosmetic gap: the upgrade detail panel
+shows the bounded fallback department label (`error_department`) for Tyres upgrades.
+
+### Diagnostic (flag `diag_tyres_instances`, default on, read-only)
+Own scan `48 8D 94 24 F0 0D 00 00 4C 8D 84 24 8C 00 00 00 66 41 B9 FF FF E8 FC AF 89 01 0F B6 8E D8 06 00 00`
+(hit 0x141c7d8ba); MidHook at hit+0x1a = 0x141c7d8d4 (after the query; `rsi` = card, count at
+`rsp+0x19f0`). Logs per page build (Tyres page up to 24 times, other pages once):
+`instances: R&D page dept=N team=… query=… by dept 0:… 1:… 2:… 3:… 4:…`, the Tyres-listed names,
+and every dept-4 instance's last state.
+
+### New sites (record into the KB later; NOT written to re/db here)
+- `Career_Reset_UpgradeInstance` 0x143517d80 (dept==4 branch 0x143517e0c)
+- `Career_Instantiate_UpgradeTrees` 0x14352cac0, `Career_Add_TeamUpgrades` 0x14123ca40,
+  `Career_ResetAll_Upgrades` 0x14352e1c0
+- `Upgrade_PushState` 0x1435230e0, `Upgrade_SetEnabled` 0x143523510,
+  `Upgrade_SetFacilityLocked` 0x143523730, `Upgrade_SetFitted` 0x1435157d0, auto-fit 0x1412484e0
+- `Upgrade_GraphSearch` 0x1435288f0, `Career_Refresh_UpgradeAvailability` 0x14352f300,
+  `Upgrades_SetOwner` 0x14352e620, `Upgrade_EvalAvailability` 0x14352e720,
+  `Upgrade_EvalFacilityLock` 0x14352ea40
+- `Upgrades_QueryEnabled` 0x1435188d0, `Career_Build_RnDDeptPage` 0x141c7b880 (query 0x141c7d8cf)
+- `Upgrades_Deserialise` 0x143536000 (+ per-tree 0x143524c20), tree serialise 0x143523fd0
