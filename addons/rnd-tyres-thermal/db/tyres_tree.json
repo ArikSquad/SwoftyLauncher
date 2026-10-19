@@ -1,0 +1,373 @@
+{
+ "schema_version": 1,
+ "ops": [
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_0",
+   "field": "_metadata_",
+   "value": "tyres_thermal_0",
+   "create": true,
+   "type": 2
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_0",
+   "field": "cost",
+   "value": "100000",
+   "create": true,
+   "type": 0
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_0",
+   "field": "cost_to_develop",
+   "value": "1000",
+   "create": true,
+   "type": 0
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_0",
+   "field": "fitting_times.num_days_to_develop",
+   "value": "25",
+   "create": true,
+   "type": 0
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_0",
+   "field": "fitting_times.num_days_to_research",
+   "value": "0",
+   "create": true,
+   "type": 0
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_0",
+   "field": "grid_coordinates.x",
+   "value": "-1.5",
+   "create": true,
+   "type": 1
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_0",
+   "field": "grid_coordinates.y",
+   "value": "3",
+   "create": true,
+   "type": 1
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_0",
+   "field": "links",
+   "value": "",
+   "create": true,
+   "type": 13
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_0",
+   "field": "supplier_delivery_date_index",
+   "value": "0",
+   "create": true,
+   "type": 0
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_0",
+   "field": "unlock_at_facility_level",
+   "value": "0",
+   "create": true,
+   "type": 0
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_0",
+   "field": "upgrade_department",
+   "value": "Tyres",
+   "create": true,
+   "type": 3
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_0",
+   "field": "upgrade_name",
+   "value": "om_xm_general_wear",
+   "create": true,
+   "type": 2
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_0",
+   "field": "upgrade_size",
+   "value": "Minor",
+   "create": true,
+   "type": 3
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_0",
+   "field": "upgrade_type",
+   "value": "Tyre Wear",
+   "create": true,
+   "type": 3
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_0",
+   "field": "weighting",
+   "value": "1",
+   "create": true,
+   "type": 1
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_1",
+   "field": "_metadata_",
+   "value": "tyres_thermal_1",
+   "create": true,
+   "type": 2
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_1",
+   "field": "cost",
+   "value": "100000",
+   "create": true,
+   "type": 0
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_1",
+   "field": "cost_to_develop",
+   "value": "1000",
+   "create": true,
+   "type": 0
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_1",
+   "field": "fitting_times.num_days_to_develop",
+   "value": "25",
+   "create": true,
+   "type": 0
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_1",
+   "field": "fitting_times.num_days_to_research",
+   "value": "0",
+   "create": true,
+   "type": 0
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_1",
+   "field": "grid_coordinates.x",
+   "value": "-0.5",
+   "create": true,
+   "type": 1
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_1",
+   "field": "grid_coordinates.y",
+   "value": "3",
+   "create": true,
+   "type": 1
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_1",
+   "field": "links",
+   "value": "",
+   "create": true,
+   "type": 13
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_1",
+   "field": "supplier_delivery_date_index",
+   "value": "0",
+   "create": true,
+   "type": 0
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_1",
+   "field": "unlock_at_facility_level",
+   "value": "0",
+   "create": true,
+   "type": 0
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_1",
+   "field": "upgrade_department",
+   "value": "Tyres",
+   "create": true,
+   "type": 3
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_1",
+   "field": "upgrade_name",
+   "value": "om_xm_general_wear",
+   "create": true,
+   "type": 2
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_1",
+   "field": "upgrade_size",
+   "value": "Minor",
+   "create": true,
+   "type": 3
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_1",
+   "field": "upgrade_type",
+   "value": "Brakes",
+   "create": true,
+   "type": 3
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_1",
+   "field": "weighting",
+   "value": "1",
+   "create": true,
+   "type": 1
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_2",
+   "field": "_metadata_",
+   "value": "tyres_thermal_2",
+   "create": true,
+   "type": 2
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_2",
+   "field": "cost",
+   "value": "100000",
+   "create": true,
+   "type": 0
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_2",
+   "field": "cost_to_develop",
+   "value": "1000",
+   "create": true,
+   "type": 0
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_2",
+   "field": "fitting_times.num_days_to_develop",
+   "value": "25",
+   "create": true,
+   "type": 0
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_2",
+   "field": "fitting_times.num_days_to_research",
+   "value": "0",
+   "create": true,
+   "type": 0
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_2",
+   "field": "grid_coordinates.x",
+   "value": "0.5",
+   "create": true,
+   "type": 1
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_2",
+   "field": "grid_coordinates.y",
+   "value": "3",
+   "create": true,
+   "type": 1
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_2",
+   "field": "links",
+   "value": "",
+   "create": true,
+   "type": 13
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_2",
+   "field": "supplier_delivery_date_index",
+   "value": "0",
+   "create": true,
+   "type": 0
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_2",
+   "field": "unlock_at_facility_level",
+   "value": "0",
+   "create": true,
+   "type": 0
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_2",
+   "field": "upgrade_department",
+   "value": "Tyres",
+   "create": true,
+   "type": 3
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_2",
+   "field": "upgrade_name",
+   "value": "om_xm_general_wear",
+   "create": true,
+   "type": 2
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_2",
+   "field": "upgrade_size",
+   "value": "Minor",
+   "create": true,
+   "type": 3
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_2",
+   "field": "upgrade_type",
+   "value": "Upgrade All Durability",
+   "create": true,
+   "type": 3
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}.upgrade_2",
+   "field": "weighting",
+   "value": "1",
+   "create": true,
+   "type": 1
+  },
+  {
+   "op": "set",
+   "select": "{74005c88991b6868}",
+   "field": "_upgrade_instancecount_",
+   "value": "3",
+   "create": true,
+   "type": 0
+  }
+ ]
+}

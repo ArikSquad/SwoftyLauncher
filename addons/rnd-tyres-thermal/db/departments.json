@@ -1,0 +1,357 @@
+{
+ "schema_version": 1,
+ "ops": [
+  {
+   "op": "set",
+   "select": "{016caf2bb4d4f128}8",
+   "field": "_metadata_",
+   "value": "ModifierTyresThermal",
+   "create": true,
+   "type": 2
+  },
+  {
+   "op": "set",
+   "select": "{016caf2bb4d4f128}8",
+   "field": "adapting_cost_scale",
+   "value": "MyTeam_RND_AdaptingCostScaleDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{016caf2bb4d4f128}8",
+   "field": "attribute",
+   "value": "MyTeam_MoraleMult_Durability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{016caf2bb4d4f128}8",
+   "field": "department",
+   "value": "Tyres",
+   "create": true,
+   "type": 3
+  },
+  {
+   "op": "set",
+   "select": "{016caf2bb4d4f128}8",
+   "field": "development_cost_scale",
+   "value": "MyTeam_RND_DevelopmentCostScaleDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{016caf2bb4d4f128}8",
+   "field": "development_fail_rate",
+   "value": "MyTeam_RND_DevelopmentFailRateDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{016caf2bb4d4f128}8",
+   "field": "development_failure_time_percentage_name",
+   "value": "MyTeam_RND_DevelopmentFailureTimePercentageDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{016caf2bb4d4f128}8",
+   "field": "development_speed_penalty_for_repair",
+   "value": "MyTeam_RND_DevelopmentSpeedPenaltyForRepairDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{016caf2bb4d4f128}8",
+   "field": "development_time_scale",
+   "value": "MyTeam_RND_DevelopmentTimeScaleDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{016caf2bb4d4f128}8",
+   "field": "dual_development_available",
+   "value": "MyTeam_RND_DualDevelopmentUnlockedDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{016caf2bb4d4f128}8",
+   "field": "dual_development_cost_scale",
+   "value": "MyTeam_RND_DualDevelopmentCostScaleDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{016caf2bb4d4f128}8",
+   "field": "max_simultaneous_development",
+   "value": "MyTeam_RND_MaxSimultaneousDevelopmentDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{016caf2bb4d4f128}8",
+   "field": "max_simultaneous_research",
+   "value": "MyTeam_RND_MaxSimultaneousResearchDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{016caf2bb4d4f128}8",
+   "field": "morale_effect_message",
+   "value": "MyTeam_RewardsEffectMessage_MoraleDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{016caf2bb4d4f128}8",
+   "field": "research_cost_scale",
+   "value": "MyTeam_RND_ResearchCostScaleDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{016caf2bb4d4f128}8",
+   "field": "research_delay_chance",
+   "value": "MyTeam_RND_ResearchDelayChanceChangeDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{016caf2bb4d4f128}8",
+   "field": "research_delay_scale",
+   "value": "MyTeam_RND_ResearchDelayScaleDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{016caf2bb4d4f128}8",
+   "field": "research_time_scale",
+   "value": "MyTeam_RND_ResearchTimeScaleDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{016caf2bb4d4f128}8",
+   "field": "rush_available",
+   "value": "MyTeam_RND_RushAvailableDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{016caf2bb4d4f128}8",
+   "field": "rush_fail_rate",
+   "value": "MyTeam_RND_RushFailRateDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{016caf2bb4d4f128}8",
+   "field": "upgradeTierAttribute",
+   "value": "MyTeam_UpgradeTier_Durability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{bc491b58372667e9}",
+   "field": "_UpgradeDepartmentEntry_instancecount_",
+   "value": "5",
+   "create": true,
+   "type": 0
+  },
+  {
+   "op": "set",
+   "select": "{3121442cecc7bb08}8",
+   "field": "_metadata_",
+   "value": "ModifierTyresThermal",
+   "create": true,
+   "type": 2
+  },
+  {
+   "op": "set",
+   "select": "{3121442cecc7bb08}8",
+   "field": "adapting_cost_scale",
+   "value": "MyTeam_RND_AdaptingCostScaleDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{3121442cecc7bb08}8",
+   "field": "attribute",
+   "value": "MyTeam_MoraleMult_Durability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{3121442cecc7bb08}8",
+   "field": "department",
+   "value": "Tyres",
+   "create": true,
+   "type": 3
+  },
+  {
+   "op": "set",
+   "select": "{3121442cecc7bb08}8",
+   "field": "development_cost_scale",
+   "value": "MyTeam_RND_DevelopmentCostScaleDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{3121442cecc7bb08}8",
+   "field": "development_fail_rate",
+   "value": "MyTeam_RND_DevelopmentFailRateDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{3121442cecc7bb08}8",
+   "field": "development_failure_time_percentage_name",
+   "value": "MyTeam_RND_DevelopmentFailureTimePercentageDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{3121442cecc7bb08}8",
+   "field": "development_speed_penalty_for_repair",
+   "value": "MyTeam_RND_DevelopmentSpeedPenaltyForRepairDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{3121442cecc7bb08}8",
+   "field": "development_time_scale",
+   "value": "MyTeam_RND_DevelopmentTimeScaleDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{3121442cecc7bb08}8",
+   "field": "dual_development_available",
+   "value": "MyTeam_RND_DualDevelopmentUnlockedDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{3121442cecc7bb08}8",
+   "field": "dual_development_cost_scale",
+   "value": "MyTeam_RND_DualDevelopmentCostScaleDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{3121442cecc7bb08}8",
+   "field": "max_simultaneous_development",
+   "value": "MyTeam_RND_MaxSimultaneousDevelopmentDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{3121442cecc7bb08}8",
+   "field": "max_simultaneous_research",
+   "value": "MyTeam_RND_MaxSimultaneousResearchDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{3121442cecc7bb08}8",
+   "field": "morale_effect_message",
+   "value": "MyTeam_RewardsEffectMessage_MoraleDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{3121442cecc7bb08}8",
+   "field": "research_cost_scale",
+   "value": "MyTeam_RND_ResearchCostScaleDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{3121442cecc7bb08}8",
+   "field": "research_delay_chance",
+   "value": "MyTeam_RND_ResearchDelayChanceChangeDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{3121442cecc7bb08}8",
+   "field": "research_delay_scale",
+   "value": "MyTeam_RND_ResearchDelayScaleDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{3121442cecc7bb08}8",
+   "field": "research_time_scale",
+   "value": "MyTeam_RND_ResearchTimeScaleDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{3121442cecc7bb08}8",
+   "field": "rush_available",
+   "value": "MyTeam_RND_RushAvailableDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{3121442cecc7bb08}8",
+   "field": "rush_fail_rate",
+   "value": "MyTeam_RND_RushFailRateDurability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{3121442cecc7bb08}8",
+   "field": "upgradeTierAttribute",
+   "value": "MyTeam_UpgradeTier_Durability",
+   "create": true,
+   "type": 4
+  },
+  {
+   "op": "set",
+   "select": "{c371cf50b3d45049}",
+   "field": "_UpgradeDepartmentEntry_instancecount_",
+   "value": "5",
+   "create": true,
+   "type": 0
+  }
+ ]
+}
