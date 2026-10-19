@@ -84,8 +84,36 @@ conventions.
   every consumer that inits that table cursor agrees. The loader then reads
   `UpgradeDepartmentEntry_0..4`, i.e. our row `_4`.
 
-Each hook is gated on an exactly-one scan match - on 0 or >1 matches (or a failed
-install) it logs and installs nothing, so the DLL stays benign.
+Hooks A and B are gated on an exactly-one scan match - on 0 or >1 matches (or a
+failed install) they log and install nothing, so the DLL stays benign.
+
+The same DLL also carries the first instalment of the R&D > Performance UI
+rework (v0.2.0):
+
+- **Colour groundwork** - `k_Career_RnDDeptColourTable[4]` (`0x145755e88`, the
+  stock white spare a fifth card would read via the `< 6` bound in the card
+  constructor) is written to a distinct Tyres colour (`0xff0078ff`, orange). The
+  write only happens after a layout probe confirms all six colour entries match
+  the decompile on this build (`[0]=ffeead00 [1]=ff3ec58d [2]=ff16deff
+  [3]=ff7a2aed [4]=[5]=ffffffff`); on any mismatch nothing is written. The slot
+  is unused until a fifth card exists, so the write is inert-but-correct.
+- **Builder instrumentation** - once the colour probe confirms the RVAs,
+  `Career_Build_RnDDeptBoxGrid` (`0x141c85f70`) and `Career_Build_RnDPotentialPie`
+  (`0x141f41d60`) get one-shot entry probes that log that the page opened, the
+  card-vector shape, the sector-buffer facts and the live selection index -
+  ground truth for the next (crash-prone) pass.
+
+**Why the live 5th box / 5th slice is NOT shipped yet.** The decompiles confirm
+both builders are hardcoded to four with exactly-sized, per-slot-initialised
+buffers: the box card vector is six pointers (four dept cards + two non-dept
+panels) all used, and the pie sector array is allocated at exactly `0x900`
+(`0x80 + 4*0x220`) with its prologue initialising exactly four slots via the
+game's own (non-decompiled) slot constructor. Relaxing either `< 4` guard blind
+overruns that buffer / writes an uninitialised slot -> crash. On top of that, a
+fifth box binds to a per-dept UIDF node that the launcher's declarative
+UIDF/ERP-patch pipeline (`operations.ui`, `patch-pkg`) does not build yet, so the
+fifth authored node cannot be produced through this addon. That rework is the
+next iteration; see `native/HOOKS.md` for the exact multi-site patch spec.
 
 ## Residual unknowns (the in-game test resolves these)
 

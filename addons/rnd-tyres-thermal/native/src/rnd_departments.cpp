@@ -144,6 +144,186 @@ void on_dept_count_store(safetyhook::Context &c)
     }
 }
 
+// ---------------------------------------------------------------------------
+// R&D > Performance UI: groundwork + instrumentation (no live 5th box/slice).
+//
+// The department box grid (Career_Build_RnDDeptBoxGrid @0x141c85f70) and the
+// DEVELOPMENT POTENTIAL pie (Career_Build_RnDPotentialPie @0x141f41d60) are
+// hardcoded to four departments and cannot be grown blind without a crash:
+//   - the box card vector is sized to EXACTLY six pointers (four dept cards +
+//     two non-dept panels) then truncated; all six slots are used. A fifth dept
+//     card needs the vector grown to seven, a fully constructed 0x950 card, and
+//     a fifth authored UIDF box node (each dept card binds to a per-dept UIDF
+//     node by a compile-time path suffix).
+//   - the pie allocates its per-sector array at EXACTLY 0x900 bytes
+//     (0x80 header + 4 * 0x220) and its prologue initialises EXACTLY four slots
+//     via the game's own (non-decompiled) slot constructor. A fifth sector needs
+//     a larger allocation and a fifth constructed slot.
+// Relaxing either builder's `< 4` guard without that work overruns a fixed-size,
+// per-slot-initialised buffer. So the live 5th box / 5th slice is a follow-up
+// (see DESIGN.md / native/HOOKS.md). Additionally, the launcher's declarative
+// UIDF/ERP patch pipeline (operations.ui / patch-pkg) is not built yet, so the
+// fifth UIDF node cannot be authored through this addon at all right now.
+//
+// What ships here is the part that is correct AND safe: colour table slot [4]
+// (the stock white spare the fifth card would read) is set to a distinct Tyres
+// colour, and both builders are instrumented so the next (crash-prone) pass runs
+// against ground truth from the player's own build.
+//
+// All sites are addressed by RVA from the reversed image base (0x140000000). A
+// colour-table layout probe confirms the build matches the decompile before any
+// RVA write/hook; on any mismatch nothing is touched.
+
+constexpr uintptr_t kImageBase = 0x140000000ull;
+
+constexpr uintptr_t kRvaColourTable = 0x145755e78ull - kImageBase; // k_Career_RnDDeptColourTable, 6 ABGR entries
+constexpr uintptr_t kRvaBoxGrid     = 0x141c85f70ull - kImageBase; // Career_Build_RnDDeptBoxGrid
+constexpr uintptr_t kRvaPie         = 0x141f41d60ull - kImageBase; // Career_Build_RnDPotentialPie
+constexpr uintptr_t kRvaSelIndex    = 0x145f93c08ull - kImageBase; // DAT_145f93c08 (selected dept index, u8)
+
+// Stock colours as read from the decompile, in card-enum order.
+constexpr uint32_t kColAero    = 0xffeead00; // [0] aero, blue
+constexpr uint32_t kColChassis = 0xff3ec58d; // [1] chassis, green
+constexpr uint32_t kColDura    = 0xff16deff; // [2] durability, yellow
+constexpr uint32_t kColPower   = 0xff7a2aed; // [3] powertrain, pink
+constexpr uint32_t kColSpare   = 0xffffffff; // [4],[5] white spare
+// Distinct Tyres & Thermal colour, ABGR (0xAABBGGRR) = RGB(255,120,0) orange.
+constexpr uint32_t kColTyres   = 0xff0078ff;
+
+std::atomic<bool> g_rva_valid{false};
+
+bool region_readable(const void *p, size_t n)
+{
+    MEMORY_BASIC_INFORMATION mbi{};
+    if (VirtualQuery(p, &mbi, sizeof mbi) != sizeof mbi)
+        return false;
+    if (mbi.State != MEM_COMMIT)
+        return false;
+    if ((mbi.Protect & PAGE_GUARD) || (mbi.Protect & PAGE_NOACCESS))
+        return false;
+    uintptr_t end = reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
+    return reinterpret_cast<uintptr_t>(p) + n <= end;
+}
+
+uint32_t sel_index(uintptr_t base)
+{
+    const uint8_t *p = reinterpret_cast<const uint8_t *>(base + kRvaSelIndex);
+    return region_readable(p, 1) ? *p : 0xffu;
+}
+
+// Confirm the colour table matches the decompile, mark RVAs trustworthy, then
+// colour the [4] white spare so a future fifth card is drawn in the Tyres hue.
+void ui_colour_init(uintptr_t base)
+{
+    const uint32_t *tbl = reinterpret_cast<const uint32_t *>(base + kRvaColourTable);
+    if (!region_readable(tbl, 6 * sizeof(uint32_t))) {
+        swofty::log("[rnd-tyres] colour table @0x%llx not readable; UI RVA patches SKIPPED (SAFE)",
+                    (unsigned long long)(uintptr_t)tbl);
+        return;
+    }
+    uint32_t c[6];
+    for (int i = 0; i < 6; ++i)
+        c[i] = tbl[i];
+    swofty::log("[rnd-tyres] colour table: [0]=%08x [1]=%08x [2]=%08x [3]=%08x [4]=%08x [5]=%08x", c[0], c[1], c[2],
+                c[3], c[4], c[5]);
+    bool layout_ok = c[0] == kColAero && c[1] == kColChassis && c[2] == kColDura && c[3] == kColPower
+                     && c[4] == kColSpare && c[5] == kColSpare;
+    if (!layout_ok) {
+        swofty::log("[rnd-tyres] colour table layout differs from the decompile; this build does not match - "
+                    "UI RVA patches SKIPPED (SAFE)");
+        return;
+    }
+    g_rva_valid.store(true);
+    swofty::log("[rnd-tyres] colour table layout matches the decompile; UI RVAs trusted for this build");
+
+    if (c[4] == kColTyres) {
+        swofty::log("[rnd-tyres] colour[4] already = Tyres 0x%08x", kColTyres);
+        return;
+    }
+    void *slot = reinterpret_cast<void *>(base + kRvaColourTable + 4 * sizeof(uint32_t));
+    DWORD old = 0;
+    if (!VirtualProtect(slot, sizeof(uint32_t), PAGE_READWRITE, &old)) {
+        swofty::log("[rnd-tyres] VirtualProtect failed for colour[4] @0x%llx; NOT writing (SAFE)",
+                    (unsigned long long)(uintptr_t)slot);
+        return;
+    }
+    *reinterpret_cast<volatile uint32_t *>(slot) = kColTyres;
+    DWORD tmp = 0;
+    VirtualProtect(slot, sizeof(uint32_t), old, &tmp);
+    swofty::log("[rnd-tyres] colour[4] white spare -> Tyres 0x%08x (@0x%llx); a future 5th card uses this colour",
+                kColTyres, (unsigned long long)(uintptr_t)slot);
+}
+
+safetyhook::MidHook g_box_probe;
+safetyhook::MidHook g_pie_probe;
+std::atomic<int> g_box_seen{0};
+std::atomic<int> g_pie_seen{0};
+
+// Entry of Career_Build_RnDDeptBoxGrid. rcx = the view builder (param_1). Logged
+// once: confirms the R&D Performance page opened and dumps the card-vector shape.
+void on_box_grid(safetyhook::Context &c)
+{
+    if (g_box_seen.fetch_add(1) != 0)
+        return;
+    uintptr_t self = c.rcx;
+    uintptr_t base = swofty::api ? swofty::api->module_base() : 0;
+    unsigned long long begin = 0, end = 0, cap = 0;
+    if (region_readable(reinterpret_cast<void *>(self + 0x280), 0x18)) {
+        begin = *reinterpret_cast<uint64_t *>(self + 0x280);
+        end = *reinterpret_cast<uint64_t *>(self + 0x288);
+        cap = *reinterpret_cast<uint64_t *>(self + 0x290);
+    }
+    swofty::log("[rnd-tyres] box-grid builder reached: this=0x%llx pre-build card vec{begin=0x%llx end=0x%llx cap=%llu}"
+                " selection=%u (4 cards hardcoded; 5th box deferred)",
+                (unsigned long long)self, begin, end, cap, sel_index(base));
+}
+
+// Entry of Career_Build_RnDPotentialPie. Logged once.
+void on_pie(safetyhook::Context &c)
+{
+    if (g_pie_seen.fetch_add(1) != 0)
+        return;
+    uintptr_t base = swofty::api ? swofty::api->module_base() : 0;
+    swofty::log("[rnd-tyres] pie builder reached: this=0x%llx selection=%u "
+                "(sector buffer 0x900 = 4*0x220 hardcoded; 5th slice deferred)",
+                (unsigned long long)c.rcx, sel_index(base));
+}
+
+void install_ui_probe(safetyhook::MidHook &slot, uintptr_t addr, void (*fn)(safetyhook::Context &), const char *what,
+                      uintptr_t base)
+{
+    if (!region_readable(reinterpret_cast<void *>(addr), 16)) {
+        swofty::log("[rnd-tyres] %s builder @0x%llx not committed; probe SKIPPED (SAFE)", what,
+                    (unsigned long long)addr);
+        return;
+    }
+    auto r = safetyhook::MidHook::create(reinterpret_cast<void *>(addr), fn);
+    if (!r) {
+        swofty::log("[rnd-tyres] %s builder MidHook::create failed @0x%llx (err %d); probe SKIPPED (SAFE)", what,
+                    (unsigned long long)addr, (int)r.error().type);
+        return;
+    }
+    slot = std::move(*r);
+    swofty::log("[rnd-tyres] instrumented %s builder @0x%llx (base+0x%llx)", what, (unsigned long long)addr,
+                (unsigned long long)(addr - base));
+}
+
+void ui_groundwork()
+{
+    const uintptr_t base = swofty::api ? swofty::api->module_base() : 0;
+    if (!base) {
+        swofty::log("[rnd-tyres] no module base; UI groundwork SKIPPED (SAFE)");
+        return;
+    }
+    ui_colour_init(base);
+    if (!g_rva_valid.load()) {
+        swofty::log("[rnd-tyres] UI builder instrumentation SKIPPED (build/RVAs unconfirmed)");
+        return;
+    }
+    install_ui_probe(g_box_probe, base + kRvaBoxGrid, &on_box_grid, "box-grid", base);
+    install_ui_probe(g_pie_probe, base + kRvaPie, &on_pie, "pie", base);
+}
+
 } // namespace
 
 SWOFTY_ON_LOAD
@@ -151,6 +331,9 @@ SWOFTY_ON_LOAD
     const unsigned long long base = swofty::api ? (unsigned long long)swofty::api->module_base() : 0;
     swofty::log("[rnd-tyres] loaded; API v%u; game base 0x%llx; Tyres token=0x%016llx value=%u",
                 swofty::api ? swofty::api->version : 0u, base, (unsigned long long)kTyres, (unsigned)kTyresValue);
+
+    // UI groundwork + instrumentation first, so it runs even if the data hooks bail.
+    ui_groundwork();
 
     uintptr_t hit = 0;
     int matches = swofty::api->scan(".xtls", "75 06 B1 03 EB 02 31 C9 88 8F 40 03 00 00", &hit);
