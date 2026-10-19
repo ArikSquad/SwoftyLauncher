@@ -1,3 +1,8 @@
+---
+title: Installation
+description: Install Swofty Launcher for F1 25 with the installer or by hand, and find the install folder and the data folder.
+---
+
 # Installation
 
 Install the launcher with the installer or by hand, then follow the setup steps for [Windows](/guide/windows) or [Linux and Steam Deck](/guide/linux). You'll play modded games in single-player, offline.
@@ -18,18 +23,20 @@ Install the launcher with the installer or by hand, then follow the setup steps 
    | Linux and Steam Deck | [SwoftyLauncherInstaller-linux.zip](https://github.com/Swofty-Developments/SwoftyLauncher/raw/main/installer/SwoftyLauncherInstaller-linux.zip), then extract it |
 
 2. Run `SwoftyLauncherInstaller.exe` on Windows, or `SwoftyLauncherInstaller` on Linux and Steam Deck. Windows may show **Windows protected your PC**; select **More info**, then **Run anyway**.
-3. Choose a folder and select **Install**.
+3. Under **Install to**, keep the default folder, or select **Browse…** to choose another.
+4. Leave **Add a desktop shortcut** ticked if you want one.
+5. Select **Install**.
 
-The installer downloads the latest release, checks it against the release's `SHA256SUMS` and extracts it into that folder. It adds **Swofty Launcher** to the Start menu on Windows or the app menu on Linux, adds a desktop shortcut if **Add a desktop shortcut** is ticked, then opens the launcher.
+The installer downloads the latest release, checks it against the release's `SHA256SUMS` and extracts it into that folder. It adds **Swofty Launcher** to the Start menu on Windows, or **Swofty Launcher for F1 25** to the app menu on Linux, adds the desktop shortcut if you ticked it, then opens the launcher.
 
 | Platform | Default folder |
 |---|---|
 | Windows | `%LOCALAPPDATA%\Programs\SwoftyLauncher` |
 | Linux and Steam Deck | `~/SwoftyLauncher` |
 
-With **Flatpak Steam**, choose a folder inside `~/.var/app/com.valvesoftware.Steam/`, such as `~/.var/app/com.valvesoftware.Steam/SwoftyLauncher`.
+When you browse to a folder that isn't empty, isn't named `SwoftyLauncher` and holds no install, the installer uses a `SwoftyLauncher` folder inside it. With **Flatpak Steam**, choose a folder inside `~/.var/app/com.valvesoftware.Steam/`, such as `~/.var/app/com.valvesoftware.Steam/SwoftyLauncher`.
 
-You only need the installer once. After that, open the launcher from the Start menu or app menu, and it [updates itself](#updating).
+You only need the installer once. After that, open the launcher from the Start menu or app menu, and it [updates itself](/using/updating).
 
 ## Install by hand
 
@@ -58,20 +65,6 @@ Either way, the install folder holds:
 
 On Windows, the files in `bin/` end in `.exe`. The setup guides call this folder the install folder.
 
-## Updating
-
-When you open the launcher, it checks for a new release, at most once every 6 hours. If there's one available, you'll see its version in a bar above **Play**, with **Update**, **Release notes** and **Skip this version**.
-
-1. Close F1 25 first: the launcher won't update while the game runs.
-2. Select **Update**. It downloads the archive, checks it against the release's `SHA256SUMS`, and replaces `bin/`, `loader/` and, on Linux, `share/`.
-3. Select **Restart**.
-
-If a step fails, you'll see the error and the old files stay in place. An update interrupted partway is rolled back the next time you start the launcher.
-
-Running the installer again on the same folder also installs the latest release.
-
-If you built from source or installed through Nix, you'll see **Download** instead; it opens the release page. From a terminal, `swofty update` does the same.
-
 ## Where your files are stored
 
 When these docs refer to `$DATA`, they mean the folder below for your platform:
@@ -82,4 +75,12 @@ When these docs refer to `$DATA`, they mean the folder below for your platform:
 | Flatpak Steam | `~/.var/app/com.valvesoftware.Steam/data/swofty` |
 | Windows | `%LOCALAPPDATA%\Swofty` |
 
-Your addons, mods, profiles, backups and session logs live here, apart from the install folder. Because it holds your backups, keep this folder until you've [restored the game to stock](/using/profiles-and-restoring).
+Your addons, mods, profiles, backups and session logs live here, apart from the install folder. It holds your backups, so keep this folder until you've [restored the game to stock](/using/profiles-and-restoring).
+
+## Updating
+
+The launcher updates itself. See [Updating](/using/updating).
+
+## Next
+
+- Set up on [Windows](/guide/windows) or [Linux and Steam Deck](/guide/linux).

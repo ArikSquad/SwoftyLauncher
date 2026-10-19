@@ -1,3 +1,8 @@
+---
+title: Uninstalling
+description: Remove Swofty Launcher for F1 25, its changes to the game folder, its shortcuts and its data.
+---
+
 # Uninstalling
 
 Steam's **Verify integrity of game files** repairs game files, but leaves the launcher's additions in place. You'll need `swofty restore` to remove those:

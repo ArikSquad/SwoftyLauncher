@@ -9,12 +9,17 @@ Run your build commands from the repository root. For current progress and what'
 | `apps/launcher` | Desktop app |
 | `apps/cli` | `swofty` command |
 | `packages/core` | Addon management, profiles, launch setup and restore |
+| `packages/addon-api` | Addon manifests, asset operations and launcher plugin types (`swofty-addon`) |
 | `packages/formats` | Game file readers and writers |
 | `packages/sdk` | Plugin SDK (MIT) |
 | `native/` | In-game loader |
+| `addons/builtins` | The built-in addons compiled into the launcher |
 | `addons/swoftymod` | Built-in addon |
 | `addons/custom-grid-size` | Custom Grid Size addon |
-| `templates/addon` | Sample addon (MIT) |
+| `addons/rnd-tyres-thermal` | R&D: Tyres & Thermal Management addon (source only) |
+| `templates/addon` | Sample data addon with an engine plugin (MIT) |
+| `templates/launcher-addon` | Sample launcher plugin (MIT) |
+| `installer/` | The installer that downloads the latest release |
 | `tools/` | Python tools for game files |
 | `re/` | Game research and signatures |
 | `docs/` | This site |

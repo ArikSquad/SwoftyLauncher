@@ -4,7 +4,7 @@ If you're contributing to Swofty Launcher for F1 25, start here for the intended
 
 ## Goals
 
-- Manage addons and community tracks in one desktop app.
+- Manage addons, mods and community tracks in one desktop app.
 - Keep modded play offline only, with multiplayer off.
 - Switch profiles and restore the original game in one click.
 - Change addon options through ADDON SETTINGS under Career.
@@ -32,7 +32,7 @@ Tracks already have a community package format. Import the package unchanged, th
 
 Apply changes in load order, and report any missing requirements or conflicts before launch.
 
-You'll find the plans for content mods, the Launcher API, the Asset API and the built-in Team Simplified addon in [Addons and mods](/design/addons-and-mods).
+You'll find the plans for mods, the Launcher API, the Asset API and the built-in Team Simplified addon in [Addons and mods](/design/addons-and-mods).
 
 ## Profiles and saves
 

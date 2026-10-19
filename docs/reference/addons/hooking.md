@@ -139,3 +139,10 @@ If there's a conflict, every addon involved is dropped and none of their mixins 
 - Keep hook setup out of `DllMain`.
 
 When you use the [C++ Mixin API](/reference/std/mixin), you also get `SWOFTY_WRAP`, `SWOFTY_SITE`, `SWOFTY_VTABLE`, `SWOFTY_REDIRECT`, `SWOFTY_PATCH`, `SWOFTY_ON_LOAD`, typed bindings from the [Game API](/reference/game/), per-object [fields](/reference/std/mixin#fields) and [`subclass`](/reference/std/mixin#subclass).
+
+## Reference
+
+- [Mixin API](/reference/std/mixin): the C++ macros, bindings, fields and `subclass`.
+- [Engine API](/reference/game/): the functions, structs and sites you can hook.
+- [In-game UI](./in-game-ui): a site mixin that adds a home tile.
+- [Debugging live](/reference/ui/debugging): tracing a hook in the running game.

@@ -1,12 +1,12 @@
 # Addons and mods
 
-If you're contributing, this is the design for splitting today's mods into addons and mods, along with the Launcher API, the Asset API and the built-in Team Simplified addon. Treat each part as unbuilt unless it explicitly says otherwise.
+If you're contributing, this is the design for splitting what earlier versions called mods into addons and mods, along with the Launcher API, the Asset API and the built-in Team Simplified addon. Treat each part as unbuilt unless it explicitly says otherwise.
 
 ## 1. Terms and the rename
 
 | Term | Meaning |
 |---|---|
-| Addon | A package with a `swofty.json` manifest: native plugins, declared content, settings and in-game screens. Everything the product calls a mod today is an addon. The built-in addons are SwoftyMod (`swofty.core`) and Team Simplified (`teamsimplified.mods`). |
+| Addon | A package with a `swofty.json` manifest: native plugins, declared content, settings and in-game screens. Everything earlier versions called a mod is an addon. The built-in addons are SwoftyMod (`swofty.core`) and Team Simplified (`teamsimplified.mods`). |
 | Mod | A content package with no code: liveries, cars, text, shaders, database rows. An addon imports, stores and loads mods. Team Simplified handles `.serps` mods. |
 | Track | A community track package. Tracks are mods in Team Simplified's library ([section 5](#_5-tracks-are-mods)). |
 | Asset op | One change to game content: an asset group, an archive resource, a database record, a language string or a loose file. |
@@ -691,7 +691,7 @@ You'll find `Mods` after `Addons` in the sidebar, with the library size as its c
 
 ## 5. Tracks are mods
 
-You manage tracks as `.serps` mods in the Team Simplified library. That's already built, with no tracks addon or separate tracks page.
+You manage tracks as mods in the Team Simplified library. That's already built, with no tracks addon or separate tracks page.
 
 - **Raw track zips.** Team Simplified claims zips containing a track package (`manifest.json` with `track_code`), or downloads containing one such zip. Import stores it in `library/<id>/`: `package.json` has `track` set to the code, `mod.serps` is written from the manifest, and the package goes under `track/`. The id is the track code, or `<code>-track` if a library mod already uses that id. Import the track again and it replaces the existing copy, keeping its id.
 - **Track SERPs.** A package built by the Simplified Track Installer (the track archive in an invitational slot, mipmaps under `environment_package/tracks/<code>/mipmaps/`, the `track_info` shader archives and optionally a whole game database) imports, diffs and merges like any other `.serps` mod ([sections 4.3 to 4.6](#_4-3-import)), with the slot as shipped.

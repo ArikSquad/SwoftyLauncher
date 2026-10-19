@@ -1,11 +1,11 @@
 ---
 title: Adding a livery
-description: Add a special livery as a new choice in the picker — the car's model, the livery row, the unlock row and its ownership key — with the RM Designs Scuderia AlphaTauri ORLEN livery as the worked example.
+description: A complete data addon that adds a special livery as a new choice in the picker — the car's model, the livery row, the unlock row and its ownership key — with the RM Designs Scuderia AlphaTauri ORLEN livery.
 ---
 
 # Adding a livery
 
-To add a special livery as an extra choice in one car's picker, you need three changes: copy the car's model into a `wep` archive, add a row to the special-livery table, and add an unlock row that the launcher reports as owned.
+This worked example builds a whole [data addon](./). To add a special livery as an extra choice in one car's picker, you need three changes: copy the car's model into a `wep` archive, add a row to the special-livery table, and add an unlock row that the launcher reports as owned.
 
 Here you'll build RM Designs' Scuderia AlphaTauri ORLEN livery for the 2026 Racing Bulls car. You can still select the stock Racing Bulls liveries.
 
@@ -115,13 +115,13 @@ Now fill the empty `toro_rosso_barcelona_26.erp` `wep` archive. Use `copy-resour
 }
 ```
 
-You'll need one `copy-resource` per resource in the full file: the model's index and vertex buffers, its materials and textures, the two `cf_pattern_6` textures, and RM Designs' world and layers. To find what to copy, list the archive's resources with `tools/erp.py` ([Look inside an archive](./erp-assets#look-inside-an-archive)).
+You'll need one `copy-resource` per resource in the full file: the model's index and vertex buffers, its materials and textures, the two `cf_pattern_6` textures, and RM Designs' world and layers. To find what to copy, list the archive's resources with `tools/erp.py` ([Look inside an archive](./textures#look-inside-an-archive)).
 
 ## 4. Ownership
 
 Your livery only appears in the picker when the player's inventory marks its unlock as owned. The ownership key comes from the djb2 hash of `eSELivery` followed by the unlock row's `_metadata_` label. For `toro_rosso_rm_alphatauri_2026`, that gives you `0xf01d03c7`.
 
-The launcher handles ownership when you build the profile. It compares the built database with the stock one and writes every `unlockable_se_livery` row a mod adds to a folder under `unlockable_content.unlockable_items.unlockable_item_list_<n>` to `owned_items` in `swofty/settings.json`:
+The launcher handles ownership when you build the profile. It compares the built database with the stock one and writes every `unlockable_se_livery` row an addon adds to a folder under `unlockable_content.unlockable_items.unlockable_item_list_<n>` to `owned_items` in `swofty/settings.json`:
 
 ```json
 "owned_items": [
@@ -149,4 +149,10 @@ items: rmdesigns.alphatauri-orlen-livery unlock row toro_rosso_rm_alphatauri_202
 
 In game, you'll find the livery in the Racing Bulls car's picker. If it's missing while the stock Miami and Suzuka 2026 liveries show, the rows loaded but the ownership check hid your livery. Check `owned_items` in the session's `swofty/settings.json`.
 
-To share your livery, follow [Packaging a mod](./packaging).
+To share your livery, package the addon as a `.swoftyaddon` ([Package it](/reference/addons/publishing#package-it)).
+
+## Reference
+
+- [Game database](./database) and [Textures and models](./textures): the two kinds of operation this addon uses.
+- [Database operations](/reference/ops/database#operations) and [ERP operations](/reference/ops/erp#operations): every field of `add-row` and `copy-resource`.
+- [Addon settings](/reference/addons/settings): the `picker_name` choice.

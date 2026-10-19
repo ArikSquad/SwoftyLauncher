@@ -43,7 +43,7 @@ The build hash covers the pristine database, the registry and every rendered ope
 | `tools/gdb_hashsim.py <db>…` | Replays the game's hash-map load and prints the missing-key sentinel |
 | `tools/track_keys.py names <exe>` | Prints the 8,286 names the exe's database readers use, stack-built ones included |
 | `tools/track_keys.py keys <exe> <db> <track>` | Prints the keys a track's rows hold, found with those names |
-| `tools/map_check.py <overlay> --game <dir>` | Checks a build with maps against the game it was built from |
+| `tools/map_check.py <overlay> --game <dir> [--maps <dir>]` | Checks a profile built with tracks against the game it was built from, using the build's `plan.json`. `--maps` is the Team Simplified library (the default) or a folder of track packages |
 | `tools/gamedb/catalog.py --game <dir>` | Writes the [table and key catalogue](/reference/gamedb#table-catalogue) |
 
 `track_keys.py`, `catalog.py` and the reader-key part of `map_check.py` need `numpy`, `pefile` and `capstone`. On NixOS:

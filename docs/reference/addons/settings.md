@@ -187,4 +187,9 @@ swofty run --apply
 
 Open **Career → ADDON SETTINGS**. Your addon's tile shows a **Stop-go penalty** slider at 10, a **Greetings** slider, a **Greeting** choice and a **Verbose log** toggle. Try changing a `native` setting: it takes effect the same lap. The `db` **Stop-go penalty** reads *Applies after a restart.*
 
-You'll find the C ABI and every helper in [Settings](/reference/std/settings).
+## Reference
+
+- [Addon manifest](./manifest#options): every `options` field.
+- [Settings library](/reference/std/settings): the C ABI and every C++ helper for `native` settings.
+- [Database operations](/reference/ops/database): placeholders and `when` in op files.
+- [Command line](/reference/cli#swofty-settings): `swofty settings`.

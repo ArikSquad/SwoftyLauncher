@@ -5,7 +5,7 @@ description: Attach gdb to F1 25 under Proton or Wine on Linux, log breakpoint h
 
 # Debugging live
 
-Reading the executable shows what code can do. A live trace shows what it does: which function builds a screen, how often, with which values, and who writes a field. On Linux, gdb attaches to F1 25 running under Proton or Wine. For the methods these traces support, see [Techniques for UI mods](./techniques).
+Reading the executable shows what code can do. A live trace shows what it does: which function builds a screen, how often, with which values, and who writes a field. On Linux, gdb attaches to F1 25 running under Proton or Wine. For the methods these traces support, see [Techniques for menu edits](./techniques).
 
 ## Before you attach
 

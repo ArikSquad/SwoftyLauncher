@@ -7,7 +7,7 @@ description: What activating a community track changes in the archives, the game
 
 If you're contributing track support, here's what happens when a track is activated. For playing with tracks, see [Mods and tracks](/using/mods#tracks).
 
-Your tracks live as mods in the Team Simplified library. Its build hook works through enabled track packages in profile order, emitting a `track.add` op for each. The source is `library/<id>/track` in Team Simplified's `addon-data` folder. Both `swofty build` and `swofty apply` activate every `track.add` before the other database ops. You'll find the code in `packages/core/src/activation/`.
+Tracks live as [mods](/reference/mods/tracks) in the Team Simplified library. Its build hook works through enabled track packages in profile order, emitting a `track.add` [operation](/reference/data/operations) for each, with the source `library/<id>/track` in Team Simplified's `addon-data` folder. A data addon can list `track.add` in an `assets` file too ([A track with its own name](/reference/data/track-names)). Both `swofty build` and `swofty apply` activate every `track.add` before the other database ops. You'll find the code in `packages/core/src/activation/`.
 
 ## The track archive
 
@@ -38,7 +38,7 @@ The build also fills gaps in the archive:
 | `tracks.Track_<n>` | For a new code, `copy_slot` clones the slot track's row with a new `statId`. If the code already has a row (`bahrain24`), it keeps it. Your `track_overrides` apply here. |
 | `tracks.track_resource.TrackResource_<n>` | The track's resource row is cloned as `swofty_<code>`. On the natural route, its group fields use the 2019 template values with `[FILENAME]` = `<code>`: `iblAssetGroupsRoot` is `asset_groups/environment_package/tracks/<code>/probes/` and `iblKey` is `key_2019.assetgroup`. `trackMapAssetGroup` names the main group. On the slot route, every asset group points to the track's slot. The track row's `track_resource` names the cloned row. |
 | Per-track tables: per-race DNFs, pit lane splines and slide settings, practice programmes (2025 and 2026), tyre wear and tyre wear scales, specialist objectives, track trivia, replay hero shots | If your code has no row, it gets a clone of the slot track's row, or the base track's when the slot has none. A new code always needs the per-race DNF row: the game reads it without checking that it exists. |
-| `<datasets>.TrackDataSet_<i>.TrackData_<j>` | `copy_from_track` clones the base track's row and its sub-tables in every dataset that has it. Your `overrides` apply here, limited to their `datasets`. |
+| `<datasets>.TrackDataSet_<i>.TrackData_<j>` | `copy_from_track` clones the base track's row and its sub-tables in every dataset that has it; for a new code, the copy is the dataset's last row. The copy's `_metadata_`, `track` and `TrackNameData_0.file_name` become the code, so `[_metadata_=<code>]` selects it. Your `overrides` apply here, limited to their `datasets`. |
 | Content sets' `available_tracks` | The code is added wherever the base track is listed, putting your track in the Grand Prix track list. |
 | `track_data.sorted_track_order` | Gets a `TrackRef` row for the code. |
 

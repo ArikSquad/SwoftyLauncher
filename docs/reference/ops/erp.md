@@ -1,6 +1,11 @@
-# Archive (ERP) edits
+---
+title: ERP operations
+description: Every ERP operation and field — replace, add, copy, put and remove resources, mip files, scenes and !pkg edits — and how archive changes reach the game.
+---
 
-ERP operations describe changes to artwork and other resources in `.erp` archives. List these files in `operations.erp` in your [manifest](/reference/addons/manifest).
+# ERP operations
+
+ERP operations describe changes to artwork and other resources in `.erp` archives. They are one kind of [operation](/reference/data/operations); for a walkthrough, see [Textures and models](/reference/data/textures). List these files in `operations.erp` in your [manifest](/reference/addons/manifest#operations), or put the same ops in an `operations.assets` file with an `erp.` prefix (`erp.put-resource`).
 
 `swofty build` applies every operation below. A `patch-pkg` edit other than `clone-entry` and `set-value` is not built, and an addon whose ERP files use one has its ERP files skipped with a warning.
 

@@ -104,7 +104,7 @@
    "id": "example.sample-mod",
    "name": "Sample Mod",
    "version": "0.1.0",
-   "description": "A starting point for a mod.",
+   "description": "A starting point for an addon.",
    "enabled": true,
    "locked": false,
    "dlls": [

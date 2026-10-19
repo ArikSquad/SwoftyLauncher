@@ -10,7 +10,7 @@ Pick the repository template that fits what you want to build. Copy it, change `
 | Template | Start here for |
 |---|---|
 | [`templates/launcher-addon`](https://github.com/Swofty-Developments/SwoftyLauncher/tree/main/templates/launcher-addon) | A [launcher plugin](./launcher-api): a sidebar page, an importer, a build hook and a command. |
-| [`templates/addon`](https://github.com/Swofty-Developments/SwoftyLauncher/tree/main/templates/addon) | [Data](/reference/mods/) and an [engine plugin](./native-plugins): database and UI edits driven by settings, plus a C++ plugin. |
+| [`templates/addon`](https://github.com/Swofty-Developments/SwoftyLauncher/tree/main/templates/addon) | [Data](/reference/data/) and an [engine plugin](./native-plugins): database and UI edits driven by settings, plus a C++ plugin. |
 
 ## templates/launcher-addon
 
@@ -63,4 +63,10 @@ If you only need data edits, remove the `native` entry from `swofty.json` and th
 
 ## Share
 
-You can share the folder directly, or zip its contents with `swofty.json` at the root and give the archive the `.swoftyaddon` extension. Include your changes and compiled binaries, never copies of the game's archives, database or executable. If you have a `.swoftymod` file from an earlier version, it still installs.
+You can share the folder directly, or zip its contents with `swofty.json` at the root and give the archive the `.swoftyaddon` extension. Include your changes and compiled binaries, never copies of the game's archives, database or executable. See [Packaging and publishing](./publishing).
+
+## Next
+
+- [Your first addon](./first-addon): a launcher plugin written from scratch, step by step.
+- [Data addons](/reference/data/), [Engine plugins](./native-plugins) and [Launcher plugins](./launcher-api): each path in full.
+- [Settings](./settings): the template's four settings, explained.

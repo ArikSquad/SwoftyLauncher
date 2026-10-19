@@ -1,13 +1,13 @@
 ---
 title: Asset API
-description: How your asset ops in swofty.json and build hooks reach the game, resolve conflicts and apply in order, at build or through swofty_core while the game boots.
+description: The asset op files in operations.assets, their sources, how each kind reaches the game, order and conflicts, what swofty_core does in game, and the native assets API.
 ---
 
 # Asset API
 
-To change game content, you declare asset ops in your addon's manifest or return them from a [build hook](./launcher-api#build-hooks). Each op makes one change: to an asset group, an archive resource, a database record, a language string or a loose file. The launcher's asset planner brings together every op in your profile, then delivers each kind by rewriting game files at build or through swofty_core while the game boots.
+This is the reference for asset ops: the [operations](/reference/data/operations) an addon lists in `operations.assets` or returns from a [build hook](/reference/addons/launcher-api#the-build-reply). Each op makes one change: to an asset group, an archive resource, a database record, a language string, a loose file or a track. The launcher's asset planner brings together every op in your profile, then delivers each kind by rewriting game files at build or through swofty_core while the game boots.
 
-You'll find the types in the `swofty-addon` crate (`packages/addon-api`), module `swofty_addon::asset`. For a walkthrough of each kind, see [Loading mods at runtime](./runtime-assets).
+You'll find the types in the `swofty-addon` crate (`packages/addon-api`), module `swofty_addon::asset`. For a walkthrough of each kind, see [Changes at runtime](/reference/addons/runtime-assets).
 
 ## Op files
 
@@ -42,16 +42,19 @@ Inside each file, the prefix on an op names its kind:
 | `erp.replace-resource`, `erp.add-resource`, `erp.remove-resource` | As in [ERP operations](/reference/ops/erp) | Replace one fragment of a resource with a raw file, add a resource from raw fragment files, or remove a resource |
 | `erp.copy-resource`, `erp.patch-pkg` | As in [ERP operations](/reference/ops/erp) | Copy a resource, or edit a `!pkg` resource in place |
 | `erp.add-mipmaps` | `source`, `target` | Copy a mip file, or a folder of them, into the game folder |
-| `db.set`, `db.add-row`, `db.remove-row`, `db.list-append`, `db.list-remove` | As in [database operations](/reference/ops/database) | Change rows and fields |
+| `db.set`, `db.add-row` | As in [database operations](/reference/ops/database) | Change a field, or copy a row |
+| `db.remove-row`, `db.list-append`, `db.list-remove` | As in [database operations](/reference/ops/database) | Not built yet: a build with one fails |
 | `db.put-record` | `key` (a path, or `0x` and 16 hex digits), `type` (the tag), `value` (hex bytes) | Write one raw record |
 | `db.remove-record` | `key` | Remove one record |
 | `lang.set` | `language` (a code, or `*` for every language), `key`, `value` | Set one string |
 | `lang.table` | `language`, `source` (an `.lng` file) | Set every string in a table |
 | `file.put` | `source`, `target` (a path in the game folder) | Replace or add a loose game file |
+| `track.add` | `source` (a folder holding an unpacked track package) | Activate a track before every database op ([A track with its own name](/reference/data/track-names)) |
+| `item.show` | `id`, `name`, optional `author`, `version`, `description` | Show a read-only tile in the in-game **ADDON SETTINGS** screen, such as one per mod a build hook merges |
 | `warn` | `message` | Print a message at build |
 
 - Files you list in `operations.database` and `operations.erp` load into the same model, with `db.` and `erp.` added to each op. Each `operations.files` entry becomes a `file.put`.
-- You can use `when` and <span v-pre>`{{id}}`</span> from your addon's [`db` settings](/reference/addons/settings#use-a-db-setting) in every op, just as you would in database operations.
+- You can use `when` and <span v-pre>`{{id}}`</span> from your addon's [`db` settings](/reference/addons/settings#_3-read-a-db-setting) in every op, just as you would in database operations.
 - Keep `patch-pkg` edits to `clone-entry` and `set-value`. Other edits aren't built: if your addon uses one, the build skips all its `erp` ops and prints a warning.
 
 ### Sources
@@ -109,7 +112,7 @@ To see which runtime features your installed loader offers, look in `swofty/addo
 
 Your profile's ops apply in this order:
 
-1. Tracks your profile enables (`track.add`), whose database rows and archives come first.
+1. Tracks: every `track.add` op, from the Team Simplified library or any addon. Their database rows and archives come first.
 2. Addons in your profile's load order.
 3. Within an addon, its op files in `operations` order (`database`, then `erp`, then `assets`), then `operations.files`, then the ops its build hook returns.
 

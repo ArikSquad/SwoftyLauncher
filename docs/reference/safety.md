@@ -1,6 +1,11 @@
+---
+title: Offline play
+description: Why modded sessions run single-player and offline without EA AntiCheat, the one-time consent, and how to play vanilla again.
+---
+
 # Offline play
 
-When you play a modded session, F1 25 runs in single-player, offline. Multiplayer is off, and you can't turn it on. Launch through Steam normally and you'll play vanilla.
+When you play a modded session, F1 25 runs in single-player, offline. Multiplayer is off, and you can't turn it on. Launch through Steam without the launcher and you'll play vanilla.
 
 The loader and addons need the game to run without EA AntiCheat, so the launcher disables it for each modded session. It undoes that change every time the game exits.
 
@@ -12,8 +17,15 @@ Select **Accept and launch** to start the game. If you decline, nothing changes 
 
 ## Return to vanilla
 
+The session undoes its changes when the game exits, so the game folder is vanilla again after you play. To play online:
+
 1. Close the game.
-2. Run `swofty restore`.
-3. On Linux, clear the launcher's Steam launch option.
+2. On Linux, clear the launcher's Steam launch option.
+3. Launch F1 25 through Steam.
 
 If any files need repair, follow [Restoring the game](/using/profiles-and-restoring).
+
+## Next
+
+- [Launching the game](/reference/launch): how a session starts and where its logs go.
+- [Restoring the game](/using/profiles-and-restoring): when to run `swofty restore`.

@@ -21,8 +21,8 @@ const moved: Record<string, string> = {
   "/tutorials/addon-settings": "/reference/addons/settings",
   "/tutorials/hooking": "/reference/addons/hooking",
   "/tutorials/in-game-ui": "/reference/addons/in-game-ui",
-  "/tutorials/database": "/reference/mods/database",
-  "/tutorials/erp-assets": "/reference/mods/erp-assets",
+  "/tutorials/database": "/reference/data/database",
+  "/tutorials/erp-assets": "/reference/data/textures",
   "/modding/template": "/reference/addons/template",
   "/modding/manifest": "/reference/addons/manifest",
   "/modding/native-plugins": "/reference/addons/native-plugins",
@@ -34,6 +34,14 @@ const moved: Record<string, string> = {
   "/using/importing-maps": "/using/mods",
   "/guide/addons-mods-maps": "/guide/addons-mods-tracks",
   "/reference/maps": "/reference/installing-tracks",
+  "/guide/making-a-mod": "/reference/mods/",
+  "/guide/making-an-addon": "/reference/addons/",
+  "/reference/mods/database": "/reference/data/database",
+  "/reference/mods/text": "/reference/data/text",
+  "/reference/mods/erp-assets": "/reference/data/textures",
+  "/reference/mods/livery": "/reference/data/livery",
+  "/reference/mods/packaging": "/reference/addons/publishing",
+  "/reference/mods/publishing": "/reference/addons/publishing",
 };
 
 const gameApiItems = gameApi.subsystems.map((s) => ({
@@ -54,7 +62,7 @@ export default defineConfigWithTheme<DocsThemeConfig>({
   sitemap: { hostname: site },
   buildEnd({ outDir }) {
     for (const [from, to] of Object.entries(moved)) {
-      const url = `${base}${to.slice(1)}.html`;
+      const url = to.endsWith("/") ? `${base}${to.slice(1)}` : `${base}${to.slice(1)}.html`;
       const file = join(outDir, `${from}.html`);
       mkdirSync(dirname(file), { recursive: true });
       writeFileSync(
@@ -118,23 +126,30 @@ export default defineConfigWithTheme<DocsThemeConfig>({
         icon: "book",
         groups: [
           {
-            text: "Getting Started",
+            text: "Getting started",
             items: [
               { text: "Introduction", link: "/guide/" },
               { text: "Addons, mods and tracks", link: "/guide/addons-mods-tracks" },
-              { text: "1. Installation", link: "/guide/installation" },
-              { text: "1.1. Windows", link: "/guide/windows" },
-              { text: "1.2. Linux and Steam Deck", link: "/guide/linux" },
-              { text: "2. Addons", link: "/using/addons" },
-              { text: "3. Mods and tracks", link: "/using/mods" },
-              { text: "4. Profiles", link: "/using/profiles" },
-              { text: "5. In-game addon settings", link: "/using/swofty-mod" },
-              { text: "6. Restoring the game", link: "/using/profiles-and-restoring" },
-              { text: "7. Uninstalling", link: "/guide/uninstall" },
+              { text: "Installation", link: "/guide/installation" },
+              { text: "Windows", link: "/guide/windows" },
+              { text: "Linux and Steam Deck", link: "/guide/linux" },
             ],
           },
           {
-            text: "Handbook",
+            text: "Using the launcher",
+            items: [
+              { text: "Overview", link: "/using/" },
+              { text: "Addons", link: "/using/addons" },
+              { text: "Mods and tracks", link: "/using/mods" },
+              { text: "Profiles", link: "/using/profiles" },
+              { text: "In-game addon settings", link: "/using/swofty-mod" },
+              { text: "Restoring the game", link: "/using/profiles-and-restoring" },
+              { text: "Updating", link: "/using/updating" },
+              { text: "Uninstalling", link: "/guide/uninstall" },
+            ],
+          },
+          {
+            text: "How it works",
             items: [
               { text: "Launching the game", link: "/reference/launch" },
               { text: "Offline play", link: "/reference/safety" },
@@ -174,74 +189,102 @@ export default defineConfigWithTheme<DocsThemeConfig>({
         mono: true,
         groups: [
           {
-            text: "Make a mod",
+            text: "Start here",
+            items: [{ text: "Developer overview", link: "/reference/", icon: "file" }],
+          },
+          {
+            text: "Mods",
             items: [
               { text: "Overview", link: "/reference/mods/", icon: "file" },
-              { text: "Liveries", link: "/reference/mods/livery", icon: "file" },
-              { text: "Textures & models", link: "/reference/mods/erp-assets", icon: "file" },
-              { text: "Game database", link: "/reference/mods/database", icon: "file" },
-              { text: "In-game text", link: "/reference/mods/text", icon: "file" },
-              { text: "Tracks", link: "/reference/mods/tracks", icon: "file" },
-              { text: "Packaging", link: "/reference/mods/packaging", icon: "file" },
-              { text: "Publishing", link: "/reference/mods/publishing", icon: "file" },
+              { text: "Track packages", link: "/reference/mods/tracks", icon: "file" },
+              { text: ".serps packages", link: "/reference/mods/serps", icon: "file" },
             ],
           },
           {
-            text: "Make an addon",
+            text: "Addons",
             items: [
-              { text: "What an addon is", link: "/reference/addons/", icon: "file" },
+              { text: "Overview", link: "/reference/addons/", icon: "file" },
               { text: "Your first addon", link: "/reference/addons/first-addon", icon: "file" },
-              { text: "The manifest", link: "/reference/addons/manifest", icon: "file" },
-              { text: "Settings", link: "/reference/addons/settings", icon: "file" },
               { text: "Templates", link: "/reference/addons/template", icon: "file" },
+              { text: "Settings", link: "/reference/addons/settings", icon: "file" },
+              { text: "Packaging and publishing", link: "/reference/addons/publishing", icon: "file" },
             ],
           },
           {
-            text: "Menus",
+            text: "Data addons",
             items: [
+              { text: "Overview", link: "/reference/data/", icon: "file" },
+              { text: "Operations", link: "/reference/data/operations", icon: "file" },
+              { text: "Game database", link: "/reference/data/database", icon: "file" },
+              { text: "In-game text", link: "/reference/data/text", icon: "file" },
+              { text: "Textures and models", link: "/reference/data/textures", icon: "file" },
+              { text: "Liveries", link: "/reference/data/livery", icon: "file" },
+              { text: "A track with its own name", link: "/reference/data/track-names", icon: "file" },
+            ],
+          },
+          {
+            text: "Menus and UI",
+            items: [
+              { text: "Overview", link: "/reference/ui/", icon: "file" },
               { text: "UI scenes (.idf)", link: "/reference/ui/idf", icon: "file" },
-              { text: "Editing menus", link: "/reference/ui/editing-menus", icon: "file" },
               { text: "Swofty UI", link: "/reference/ui/swofty-ui", icon: "file" },
-              { text: "Techniques for UI mods", link: "/reference/ui/techniques", icon: "file" },
+              { text: "Editing menus", link: "/reference/ui/editing-menus", icon: "file" },
+              { text: "Techniques", link: "/reference/ui/techniques", icon: "file" },
               { text: "Debugging live", link: "/reference/ui/debugging", icon: "file" },
             ],
           },
           {
-            text: "Engine plugin",
+            text: "Engine plugins",
             items: [
               { text: "Overview", link: "/reference/addons/native-plugins", icon: "file" },
               { text: "The mixin system", link: "/reference/addons/hooking", icon: "file" },
               { text: "In-game UI", link: "/reference/addons/in-game-ui", icon: "file" },
+              {
+                text: "Standard library",
+                link: "/reference/std/",
+                icon: "file",
+                items: [
+                  { text: "Events & frame", link: "/reference/std/events", icon: "file" },
+                  { text: "Overlay", link: "/reference/std/overlay", icon: "file" },
+                  { text: "Telemetry", link: "/reference/std/telemetry", icon: "file" },
+                  { text: "Database", link: "/reference/std/db", icon: "file" },
+                  { text: "Storage", link: "/reference/std/storage", icon: "file" },
+                  { text: "Logging", link: "/reference/std/logging", icon: "file" },
+                  { text: "Mixin API", link: "/reference/std/mixin", icon: "file" },
+                  { text: "Settings", link: "/reference/std/settings", icon: "file" },
+                  { text: "UI", link: "/reference/std/ui", icon: "file" },
+                ],
+              },
             ],
           },
           {
-            text: "Standard library",
+            text: "Launcher plugins",
             items: [
-              { text: "Overview", link: "/reference/std/", icon: "file" },
-              { text: "Events & frame", link: "/reference/std/events", icon: "file" },
-              { text: "Overlay", link: "/reference/std/overlay", icon: "file" },
-              { text: "Telemetry", link: "/reference/std/telemetry", icon: "file" },
-              { text: "Database", link: "/reference/std/db", icon: "file" },
-              { text: "Storage", link: "/reference/std/storage", icon: "file" },
-              { text: "Logging", link: "/reference/std/logging", icon: "file" },
-              { text: "Mixin API", link: "/reference/std/mixin", icon: "file" },
-              { text: "Settings", link: "/reference/std/settings", icon: "file" },
-              { text: "UI", link: "/reference/std/ui", icon: "file" },
+              { text: "Overview and protocol", link: "/reference/addons/launcher-api", icon: "file" },
+              { text: "Changes at runtime", link: "/reference/addons/runtime-assets", icon: "file" },
             ],
           },
           {
-            text: "Launcher plugin",
-            items: [
-              { text: "Overview & protocol", link: "/reference/addons/launcher-api", icon: "file" },
-              { text: "Loading mods at runtime", link: "/reference/addons/runtime-assets", icon: "file" },
-            ],
+            text: "Engine API (headers)",
+            items: [{ text: "Overview", link: "/reference/game/", icon: "file" }, ...gameApiItems],
           },
           {
             text: "Reference",
             items: [
-              { text: "Asset API", link: "/reference/addons/asset-api", icon: "file" },
+              { text: "Addon manifest", link: "/reference/addons/manifest", icon: "file" },
+              {
+                text: "Operations",
+                link: "/reference/data/operations",
+                icon: "file",
+                items: [
+                  { text: "Database operations", link: "/reference/ops/database", icon: "file" },
+                  { text: "ERP operations", link: "/reference/ops/erp", icon: "file" },
+                  { text: "Asset op files", link: "/reference/addons/asset-api", icon: "file" },
+                  { text: "File operations", link: "/reference/ops/files", icon: "file" },
+                  { text: "UI patches", link: "/reference/ops/ui-patches", icon: "file" },
+                ],
+              },
               { text: "Command line (swofty)", link: "/reference/cli", icon: "file" },
-              { text: "ERP archives", link: "/reference/erp", icon: "file" },
               {
                 text: "Game database (GVDB)",
                 link: "/reference/gamedb",
@@ -255,24 +298,17 @@ export default defineConfigWithTheme<DocsThemeConfig>({
                   { text: "Key schema", link: "/reference/gamedb/schema", icon: "file" },
                 ],
               },
+              { text: "ERP archives", link: "/reference/erp", icon: "file" },
               { text: "!pkg resources", link: "/reference/pkg", icon: "file" },
-              { text: "Database operations", link: "/reference/ops/database", icon: "file" },
-              { text: "ERP operations", link: "/reference/ops/erp", icon: "file" },
-              { text: "UI patches", link: "/reference/ops/ui-patches", icon: "file" },
-              { text: "File operations", link: "/reference/ops/files", icon: "file" },
               { text: "How tracks are installed", link: "/reference/installing-tracks", icon: "file" },
             ],
           },
           {
-            text: "Engine API (headers)",
-            items: [{ text: "Overview", link: "/reference/game/", icon: "file" }, ...gameApiItems],
-          },
-          {
-            text: "Design notes",
+            text: "Contributing",
             items: [
               { text: "Development", link: "/reference/development", icon: "file" },
-              { text: "Overview", link: "/design/", icon: "file" },
-              { text: "Addons and mods", link: "/design/addons-and-mods", icon: "file" },
+              { text: "Design overview", link: "/design/", icon: "file" },
+              { text: "Addons and mods design", link: "/design/addons-and-mods", icon: "file" },
               { text: "Native libraries", link: "/design/native-libraries", icon: "file" },
             ],
           },

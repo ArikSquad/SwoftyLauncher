@@ -216,7 +216,7 @@ If you see `not found` for a value, no game was located. To see your setting in 
 
 If your helper crashes or stalls, the launcher stays running. The page shows the error and a **Restart** button. To investigate, check `$DATA/cache/addons/yourname.my-first-addon/helper.log`, where the plugin's stderr goes.
 
-## Package it
+## 8. Package it
 
 When you're ready to share your addon, zip the folder's contents as a `.swoftyaddon` file. Keep `swofty.json` at the zip root:
 
@@ -224,8 +224,11 @@ When you're ready to share your addon, zip the folder's contents as a `.swoftyad
 zip -r ../yourname.my-first-addon.swoftyaddon .
 ```
 
-Ship the binaries from `bin/`, leaving out `target/`. Include your files, never copies of the game's archives, database or executable.
+Ship the binaries from `bin/`, leaving out `target/`. Include your files, never copies of the game's archives, database or executable. [Packaging and publishing](./publishing) has the full checklist.
 
-::: tip Next
-To add an importer and a build hook, follow the full [launcher plugin](./launcher-api) reference, or copy [the template](./template).
-:::
+## Next
+
+- [Launcher plugins](./launcher-api): add an importer, a build hook, commands and a profile summary, with the full protocol.
+- [Settings](./settings): read the `units` setting in an engine plugin or a launcher plugin.
+- [Templates](./template): start your next addon from a template.
+- [Addon manifest](./manifest): every `swofty.json` field.

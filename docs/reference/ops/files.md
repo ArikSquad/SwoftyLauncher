@@ -5,7 +5,7 @@ description: Replace or add loose game files from an addon with operations.files
 
 # File operations
 
-`operations.files` in `swofty.json` copies files from the addon into the game folder:
+`operations.files` in `swofty.json` copies files from the addon into the game folder. It is one kind of [operation](/reference/data/operations):
 
 ```json
 "operations": {

@@ -93,7 +93,7 @@ To give players settings they can change, declare them in `options`. They'll app
 
 ## operations
 
-Put your data edits in `operations`: the build applies them to the game's files, just as it does for a [mod](/reference/mods/). Write source paths relative to your addon folder, using `/`, and target paths relative to the game folder.
+Put your data edits in `operations`: the build applies them to the game's files, or the game applies them in memory while it boots. [Operations](/reference/data/operations) explains what each field changes. Write source paths relative to your addon folder, using `/`, and target paths relative to the game folder.
 
 ```json
 "operations": {
@@ -112,9 +112,9 @@ Put your data edits in `operations`: the build applies them to the game's files,
 | `database` | string[] | [Database operation files](/reference/ops/database). |
 | `erp` | string[] | [ERP operation files](/reference/ops/erp). |
 | `ui` | string[] | [UI patches](/reference/ops/ui-patches). |
-| `files` | `[{ source, target }]` | Verbatim file copies into the game folder. |
+| `files` | `[{ source, target }]` | Verbatim file copies into the game folder. See [File operations](/reference/ops/files). |
 | `native` | `[NativePlugin]` | [Engine plugins](./native-plugins). |
-| `screens` | `[ScreenOp]` | Screens to register in game. |
+| `screens` | `[ScreenOp]` | [Screens](./in-game-ui#add-a-screen) to register in game. |
 | `assets` | string[] | [Asset op files](./asset-api#op-files) — `{ "schema_version": 1, "ops": [...] }` with prefixed ops such as `db.set`, `erp.patch-pkg` and `warn`. |
 
 A **NativePlugin** is `{ dll, early, files }`. Give it the DLL path, use `early` to load it before the menu, and list the `files` it reads in game.

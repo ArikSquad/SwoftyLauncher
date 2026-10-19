@@ -1,12 +1,15 @@
-# Database edits
+---
+title: Database operations
+description: Every database operation and field, selectors, the row-count rule and db settings.
+---
 
-Database operations change game values in `game_package/gamedatabases/gamedatabases.2025.bin`. A
-native plugin reads the loaded database back with [`swofty/db.hpp`](/reference/std/db), using the
-same keys.
+# Database operations
+
+Database operations change game values in `game_package/gamedatabases/gamedatabases.2025.bin`. They are one kind of [operation](/reference/data/operations); for a walkthrough, see [Game database](/reference/data/database). A native plugin reads the loaded database back with [`swofty/db.hpp`](/reference/std/db), using the same keys.
 
 ## File format
 
-List the operation file in `operations.database` in your [manifest](/reference/addons/manifest):
+List the operation file in `operations.database` in your [manifest](/reference/addons/manifest#operations), or put the same ops in an `operations.assets` file with a `db.` prefix (`db.set`):
 
 ```json
 {
@@ -25,13 +28,13 @@ Values are strings. Write arrays as comma-separated values, such as `"0,-0.6,0"`
 |---|---|---|
 | `set` | `select`, `field`, `value` or `value_from` | Change a field |
 | `add-row` | `table`, `from`, `set` | Copy a row, then change its fields |
-| `remove-row` | `select` | Remove a row |
-| `list-append` | `select`, `field`, `value` | Add a value to a list if missing |
-| `list-remove` | `select`, `field`, `value` | Remove a value from a list |
+| `remove-row` | `select` | Remove a row. Not built yet: a build with it fails |
+| `list-append` | `select`, `field`, `value` | Add a value to a list if missing. Not built yet |
+| `list-remove` | `select`, `field`, `value` | Remove a value from a list. Not built yet |
 | `put-record` | `key`, `type`, `value` | Write one raw record. `key` is a path or `0x` and 16 hex digits, `type` the record tag and `value` hex bytes |
 | `remove-record` | `key` | Remove one record |
 
-For `set`, use `create: true` and a `type` tag to add a missing field. `value_from` copies a value from another database path.
+For `set`, use `create: true` and a `type` tag to add a missing field. `value_from` copies a value from another database path. A `set` whose `select` matches no row, or whose field doesn't exist, fails the build.
 
 `add-row` copies the fields listed for the table in the file's `fields` map, keyed by table and row name. Every listed field must exist on the source row:
 
@@ -64,9 +67,9 @@ Use labels where possible. Row numbers can change between game builds.
 
 ## The row-count rule
 
-Adding or removing rows also updates the table's `_instancecount_`. The game ignores rows beyond this count. A new row needs every key a stock row of the table has; see [Adding a row](/reference/gamedb/recipes#adding-a-row).
+Adding a row also updates the table's `_instancecount_`. The game ignores rows beyond this count. A new row needs every key a stock row of the table has; see [Adding a row](/reference/gamedb/recipes#adding-a-row).
 
-Row additions and removals need the table's real path. A `{hash}` placeholder can be used for `set`, but not row changes.
+`add-row` needs the table's real path. A `{hash}` placeholder can be used for `set`, but not for `add-row`.
 
 ## Settings
 
@@ -85,6 +88,6 @@ Changing a `db` option marks the profile for a rebuild. The next launch, or `swo
 
 ## Applying changes
 
-Operations run in addon load order. Later changes to a field replace earlier values.
+Track activation runs first, then operations run in addon load order. A later change to a field replaces the earlier value, and the build prints the conflict ([Order and conflicts](/reference/data/operations#order-and-conflicts)). With the in-game loader, the changed records reach the game through `swofty/assets.json` ([Build route and runtime route](/reference/data/operations#build-route-and-runtime-route)).
 
 See [Game database (GVDB)](/reference/gamedb) for the file format, how the game reads it and the table catalogue. [Modding recipes](/reference/gamedb/recipes) covers adding rows, grid size and tracks.

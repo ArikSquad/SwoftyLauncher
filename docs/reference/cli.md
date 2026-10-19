@@ -1,6 +1,6 @@
 # Command line
 
-From your terminal, `swofty` lets you manage addons, check files and read logs.
+From your terminal, `swofty` lets you manage addons and mods, build and run profiles, check the game files and read logs.
 
 ## `swofty run`
 
@@ -8,7 +8,7 @@ From your terminal, `swofty` lets you manage addons, check files and read logs.
 swofty run
 ```
 
-Start Steam first, then run this to launch F1 25 and follow its logs. You can only play offline with mods.
+Start Steam first, then run this to launch F1 25 and follow its logs. Modded play is [offline](/reference/safety) only.
 
 When you leave the game, you'll get a summary with the exit code and any crash details. `swofty run` exits once the session's game files are rolled back.
 
@@ -50,7 +50,7 @@ When the game exits, `swofty run` merges any settings you changed in game into y
 
 ## `swofty apply`
 
-Close the game, then use `swofty apply [--profile <name>] [--game <dir>]` to build your profile and install it into the game folder. This includes the database, the archives addons patch, the enabled tracks, their menu entries, the cars' ERS settings, and the [in-game loader](/reference/addons/#in-game-loader) with the session's `swofty/settings.json`. Every change goes through the journal. To remove the installation, run `swofty restore` or `swofty --profile vanilla apply`.
+Close the game, then use `swofty apply [--profile <name>] [--game <dir>]` to build your profile and install it into the game folder. This includes the database, the archives addons patch, the enabled tracks, their menu entries, the cars' ERS settings, and the [in-game loader](/reference/addons/#what-the-launcher-does-with-an-addon) with the session's `swofty/settings.json`. Every change goes through the journal. To remove the installation, run `swofty restore` or `swofty --profile vanilla apply`.
 
 ## `swofty verify`
 
@@ -108,6 +108,18 @@ These commands come from the built-in Team Simplified addon. Use them to manage 
 | `swofty profile delete <name> [--yes]` | Delete a profile with its settings, build cache (`$DATA/cache/overlay/<name>/`), in-game changes and saves. It asks first; `--yes` skips the question |
 
 `swofty profile delete` follows the same rules as the launcher's [Delete a profile](/using/profiles#delete-a-profile). It refuses `vanilla`, your only profile, any profile while F1 25 runs, and a profile with an open journal in the game folder; run `swofty restore` to close the journal. When you delete the active profile, `default` (or the first remaining profile) becomes active first.
+
+## `swofty offline`
+
+| Command | Purpose |
+|---|---|
+| `swofty offline status` | Show whether you've accepted the offline play terms, and the launch extension's digests and where it came from |
+| `swofty offline accept` | Read the offline play terms and accept them |
+| `swofty offline withdraw` | Withdraw consent; modded launches are refused |
+| `swofty offline fetch` | Download the pinned release of the launch extension and verify its digests |
+| `swofty offline install <dir>` | Verify and install the launch extension from a downloaded release folder |
+
+See [Offline play](/reference/safety).
 
 ## Tracks
 

@@ -14,7 +14,7 @@ and the same edit. They are not shipped, except Swofty UI.
 | `build_home_tile_mod.py`, `swofty_settings.py` | The reference implementation of SwoftyMod's UI edits and settings page |
 | `modswap.py` | The pristine-verify, install and restore pattern behind the journal |
 | `vtf.py` | Car handling files (`.vtf`, bxml plus TSMD): read, write, add a track's ERS settings |
-| `map_check.py` | Checks a profile built with maps against the game it was built from, using the build's `plan.json` |
+| `map_check.py` | Checks a profile built with tracks against the game it was built from, using the build's `plan.json` |
 | `track_keys.py` | The game-DB names `F1_25.exe` reads, stack-built ones included, and the keys they resolve to on a track's rows |
 | `gdb_hashsim.py` | Replays the game's hash-map load of `gamedatabases.2025.bin` and prints the missing-key sentinel |
 | `rtassets.py` | ERP and LNGT writers for the runtime assets Wine test (`native/test/run_runtime_assets_test.sh`) |
@@ -26,10 +26,10 @@ and the same edit. They are not shipped, except Swofty UI.
 F1_25_DIR=<game folder or a pristine copy> cargo test --release -p swofty-formats --test real_files
 ```
 
-Check a build with maps (needs `zstandard` or the `zstd` command):
+Check a build with tracks (needs `zstandard` or the `zstd` command):
 
 ```sh
-python3 tools/map_check.py <overlay folder> --game <game folder or pristine copy> --maps <maps folder>
+python3 tools/map_check.py <overlay folder> --game <game folder or pristine copy> --maps <track packages folder>
 ```
 
 The reader-key part of the check and `track_keys.py` need `numpy`, `pefile` and `capstone`, and an `F1_25.exe` whose build is listed in `track_keys.BUILDS`.

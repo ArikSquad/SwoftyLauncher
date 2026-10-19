@@ -1,8 +1,13 @@
+---
+title: Profiles
+description: Create, switch, rename, duplicate and delete profiles, each with its own addons, mods, tracks, settings and saves.
+---
+
 # Profiles
 
 Use a profile to keep a whole setup together: your addons and their load order, your mods and tracks and their order, and every addon setting. When you want to swap setups, switch profiles. Each one keeps its own saves.
 
-To play F1 25 exactly as shipped, choose `vanilla`, the built-in profile with nothing installed. You can't edit it. Every modded profile includes SwoftyMod.
+To play F1 25 exactly as shipped, choose `vanilla`, the built-in profile with nothing installed. You can't edit it. Every modded profile includes the [built-in addons](/using/addons#built-in-addons), SwoftyMod and Simplified for Swofty.
 
 ## Create a profile
 
@@ -11,7 +16,7 @@ To play F1 25 exactly as shipped, choose `vanilla`, the built-in profile with no
 3. Type a name using letters, digits, `-` and `_`.
 4. Select **Create**.
 
-Your new profile starts with SwoftyMod and nothing else. To fill out your setup, add content on the [Addons](/using/addons) and [Mods](/using/mods) pages.
+Your new profile starts with the built-in addons and nothing else. To fill out your setup, add content on the [Addons](/using/addons) and [Mods](/using/mods) pages.
 
 ## Switch profile
 
@@ -46,6 +51,8 @@ Deleting a profile removes its choice of addons and mods, their settings, its bu
 
 From the command line, use `swofty profile delete <name>`. It asks before deleting; add `--yes` to skip the question. `swofty profile list` shows every profile and marks the active one.
 
-## Restoring the game
+## Next
 
-Switch to `vanilla` when you want to play without any content. The game folder still keeps its backups until you restore it; to return every game file to stock, see [Restoring the game](/using/profiles-and-restoring).
+- [Addons](/using/addons) and [Mods and tracks](/using/mods): fill out a profile.
+- [In-game addon settings](/using/swofty-mod): change a profile's settings while you play.
+- [Restoring the game](/using/profiles-and-restoring): put every game file back to stock.

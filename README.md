@@ -1,17 +1,14 @@
 # Swofty Launcher for F1 25
 
-A launcher and mod loader for F1 25 on Windows and Linux. Addons hook the game engine, mods add ERP and SERP content, and profiles keep separate setups.
+A launcher and mod loader for F1 25 on Windows and Linux. Addons change the game's data and engine, mods and community tracks drop onto the Mods page, and profiles keep separate setups.
 
 ![The launcher's Addons page with SwoftyMod, Team Simplified, Custom Grid Size and an AlphaTauri livery addon](docs/public/screenshots/hero-launcher.png)
 
 ## Features
 
-- **Addons:** Addons use the Advanced Mod Mixin System to edit the F1 25 engine directly, from new menus and settings to bigger grids.
-- **Mods:** ERPs and SERPs with no code, including community tracks such as Sepang and Okayama. A mod reaches the game in one of three ways:
-  - an addon bundles it;
-  - an addon loads it at runtime through the Asset API, adding, replacing or removing resources and ERPs;
-  - you drop it on the launcher's Mods page, which comes from the built-in Team Simplified addon.
-- **Profiles:** Keep separate setups like *Vanilla*, *26 car grid* or *Classic tracks*. The original game is restorable in one click.
+- **Addons:** Anything with a `swofty.json`, installed on the Addons page. Data addons change the game database, text, `.erp` archives, menus and files through operations, applied at build time or while the game boots through the Asset API. Code addons use the Advanced Mod Mixin System to edit the F1 25 engine directly, from new menus and settings to bigger grids, or add pages to the launcher.
+- **Mods:** Content with no code, as the Simplified Suite loads it: `.serps` packages, `.erp` archives and other game files in a zip, 7z, RAR or folder, and community tracks such as Sepang and Okayama. Drop them on the launcher's Mods page, which comes from Team Simplified's Simplified for Swofty addon.
+- **Profiles:** Keep separate setups like *Vanilla*, *26 car grid* or *Classic tracks*. The game folder goes back to vanilla when a session ends.
 - **In-game addon settings:** Change addon settings from the game's main menu, in **ADDON SETTINGS** under Career.
 - **Swofty UI:** View and edit the game's menu layouts (`.idf` scenes) with real textures, then ship the edits in an addon. It comes with every release as `bin/swofty-ui`. See [Swofty UI](https://f1.swofty.net/reference/ui/swofty-ui).
 

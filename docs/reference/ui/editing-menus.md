@@ -116,8 +116,13 @@ The launcher restores the rewritten archives when the game exits. `swofty restor
 
 - **Live data needs `.ui` wiring or native code.** A scene holds rectangles, not content. Text, numbers, lists and colours come from the `.ui` node attached to an element and the view model behind it. A new element stays empty until a node attaches to its name, either in the screen's `.ui` or built by an [engine plugin](/reference/addons/in-game-ui). Data the screen's view model doesn't publish needs native code.
 - **Animations and stackers override stored positions.** An animated element takes its transform from its clip while the clip plays. An `eStacker` lays out its children at runtime, so a child's stored position is replaced; a child added to a stacker is placed with the rest.
-- **New art needs new textures or meshes.** A scene can reuse art: a clone keeps its geoms, and an `eXRef` can point at another scene. A new image is a new texture resource ([Textures and models](/reference/mods/erp-assets)), and a new shape, such as a narrower pie wedge, is a new mesh.
+- **New art needs new textures or meshes.** A scene can reuse art: a clone keeps its geoms, and an `eXRef` can point at another scene. A new image is a new texture resource ([Textures and models](/reference/data/textures)), and a new shape, such as a narrower pie wedge, is a new mesh.
 - **A reference loads the scene its `xref` id names.** The game finds an `eXRef`'s scene by its `xref` id, the md5-64 of the scene's path, not by its `fileRef` path. A scene written by another tool with a new `fileRef` and the old `xref` still shows the old scene in game. Swofty UI draws the scene the id names, marks the mismatch and refuses to export it; see [References](./idf#references).
 - **A scene replaces the whole stock scene.** When a game update changes a scene your addon ships, export it again from the new stock scene. The `.edits.json` holds your edits for [replaying them](./swofty-ui#http-api).
 
-For tracing what draws an element, counts fixed in native code and patching them safely, see [Techniques for UI mods](./techniques).
+## Next
+
+- [Techniques](./techniques): tracing what draws an element, counts fixed in native code and patching them safely.
+- [Debugging live](./debugging): attaching gdb to the running game.
+- [ERP operations](/reference/ops/erp#scenes): every field of `replace-resource`.
+- [Packaging and publishing](/reference/addons/publishing): sharing the addon.

@@ -1,8 +1,15 @@
+---
+title: UI patches
+description: The planned UI patch format for operations.ui — targets, node paths and screen edits. The build skips these files today.
+---
+
 # UI patches
 
-UI patches describe changes to menus, labels and routes. Save them as `*.pkgpatch.json` and list them in `operations.ui` in your [manifest](/reference/addons/manifest).
+UI patches describe changes to menus, labels and routes, one kind of [operation](/reference/data/operations). Save them as `*.pkgpatch.json` and list them in `operations.ui` in your [manifest](/reference/addons/manifest#operations).
 
-The current builder skips UI patches. This is the format for the planned build step.
+::: warning Not built yet
+The build skips `operations.ui` and prints `<addon>: <n> UI operation file(s) skipped; that stage is not built yet`. This is the format for the planned build step. To change a menu today, ship an edited scene with `replace-resource` ([Editing menus](/reference/ui/editing-menus)), or edit a `!pkg` resource with [`patch-pkg`](/reference/ops/erp#editing-pkg-resources).
+:::
 
 ## Example
 
@@ -43,6 +50,6 @@ For `.uir` and `.uidb` files, use `clone-entry` or `set-value`. Paths use dots f
 
 ## Text and prompts
 
-Use `set-text` with `"localise": false` for literal text. Game language files are not editable yet.
+Use `set-text` with `"localise": false` for literal text. To change a string in every menu that shows it, use `lang.set` ([In-game text](/reference/data/text)).
 
 Keyboard and controller icons come from entries in `tool_tips.uidb`. See [`!pkg` resources](/reference/pkg) for the file format.

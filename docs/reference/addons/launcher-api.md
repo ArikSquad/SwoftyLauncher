@@ -1,11 +1,11 @@
 ---
-title: Launcher plugin
-description: A launcher plugin is a helper program named in launcher.program, run as a subprocess that speaks newline-delimited JSON. It adds sidebar pages, an importer, a build hook, swofty commands and a profile summary.
+title: Launcher plugins
+description: A launcher plugin is a helper program named in launcher.program, run as a subprocess that speaks newline-delimited JSON. It adds sidebar pages, an importer, a build hook, swofty commands and a profile summary. The steps to make one, and the full protocol.
 ---
 
-# Launcher plugin
+# Launcher plugins
 
-You ship a **launcher plugin** as a prebuilt program inside your addon, then name it in the `launcher` block of `swofty.json`. The launcher runs your program as a subprocess, exchanging newline-delimited JSON over stdin and stdout. Use it to add any of:
+A **launcher plugin** is a prebuilt program inside your addon, named in the `launcher` block of `swofty.json`. The launcher runs it as a subprocess and exchanges newline-delimited JSON with it over stdin and stdout. A plugin can add any of:
 
 - pages in the launcher's sidebar;
 - an importer for files dropped on the window;
@@ -13,7 +13,29 @@ You ship a **launcher plugin** as a prebuilt program inside your addon, then nam
 - `swofty` subcommands;
 - a line on the profile card.
 
-You can write the plugin in any language: it needs to read a line of JSON from stdin and write a line of JSON to stdout. The examples here use [`templates/launcher-addon`](./template), a Rust helper that depends only on `serde_json`.
+You can write the plugin in any language that reads and writes a line of JSON. The examples here use [`templates/launcher-addon`](./template#templates-launcher-addon), a Rust helper that depends only on `serde_json`.
+
+## Make a launcher plugin
+
+1. **Copy the template.** Start from `templates/launcher-addon`, or from the smaller helper in [Your first addon](./first-addon) ([Copy the template](#_1-copy-the-template)).
+2. **Name it in `swofty.json`.** Set `launcher.program` for each OS, and list the `sections`, `imports`, `build` and `commands` you answer ([Name it](#_2-name-it-in-swofty-json)).
+3. **Answer the calls.** Reply to `hello`, then to `view`, `event`, `import`, `build`, `command` and `summary` as you need them ([The protocol](#the-protocol)).
+4. **Build the binary.** Build one binary per OS and copy it to the path in `program` ([Build the binary](#_4-build-the-binary)).
+5. **Install and open it.** Install and enable the addon, open its sidebar page, and read `helper.log` when something fails ([Install and open it](#_5-install-and-open-it), [Isolation and failures](#isolation-and-failures)).
+6. **Package it.** Ship the binaries in the `.swoftyaddon` ([Packaging and publishing](./publishing)).
+
+## What's on this page
+
+| Section | What it covers |
+|---|---|
+| [How the launcher runs the plugin](#how-the-launcher-runs-the-plugin) | When the plugin starts, its working directory and its log |
+| [The protocol](#the-protocol) | Messages, the calls the launcher sends and the host calls the plugin sends back |
+| [Views](#views) | The blocks a sidebar page is built from, and its events and effects |
+| [The build reply](#the-build-reply) | Asset ops returned at build |
+| [Importers and drag-and-drop](#importers-and-drag-and-drop) | Claiming dropped files and folders |
+| [Commands](#commands) | `swofty` subcommands |
+| [Profile summary](#profile-summary) | A line on the profile card |
+| [Changes at runtime](./runtime-assets#from-a-build-hook) | How build-hook ops reach the game while it boots |
 
 ## Build a plugin
 

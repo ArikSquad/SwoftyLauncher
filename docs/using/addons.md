@@ -1,31 +1,44 @@
+---
+title: Addons
+description: Install addons on the Addons page, turn them on per profile, check their details and settings, and remove them.
+---
+
 # Addons
 
-Use an addon to change the game through pages, settings and engine code: a bigger grid, for example. If you're adding content with no code, such as liveries and tracks, that's a [mod](/using/mods).
+An addon is anything with a `swofty.json`. A data addon changes the game's database, text, archives and files through operations; a code addon adds an engine plugin, a launcher page or both. Mods and tracks have no `swofty.json`; you import those on the [Mods](/using/mods) page.
 
 ## Install an addon
 
-You can install a folder that holds `swofty.json`, a `.swoftyaddon` file, or a zip of either. In the launcher, you have two ways to do it:
+You can install a folder that holds `swofty.json`, a `.swoftyaddon` file, or a zip of either. Drag it anywhere on the launcher window, or:
 
-- **Drop it:** drag the folder, `.swoftyaddon` file or zip anywhere on the launcher window.
-- **Browse to it:** open the **Addons** page, select **Install addon…**, select **Install** (the browse button), choose the addon folder, then select **Install**.
+1. Open the **Addons** page.
+2. Select **Install addon…**.
+3. Type the addon's path, or select **Browse…** and choose the addon folder.
+4. Select **Install**.
 
-You'll find the addon on the **Addons** page once the launcher copies it to `$DATA/addons/<id>/`. If you've already installed an addon with the same id, this replaces it.
-
-To install from a terminal and list your addons:
-
-```sh
-swofty addons install <path>
-swofty addons list
-```
+The launcher copies the addon to `$DATA/addons/<id>/` and lists it on the **Addons** page. If you've already installed an addon with the same id, this replaces it. A new addon starts off in every profile.
 
 ## Turn an addon on or off
 
-1. Open the **Addons** page and find your addon's row. Its switch controls whether the addon is on in the active [profile](/using/profiles).
-2. Toggle the switch to turn the addon on or off in that profile.
+1. Open the **Addons** page and find your addon's row. Its switch shows whether the addon is on in the active [profile](/using/profiles).
+2. Toggle the switch.
 
-If you're using the `vanilla` profile, switch to a modded profile first. The switch is locked on `vanilla`, and the row reads **Switch away from vanilla to use…**.
+The next time you press **Play**, the launcher builds the profile with the change.
 
-To see an addon's version, author, game builds, requirements and settings, expand its row. Check for requirements or conflicts here and resolve any you see before you press Play.
+If you're using the `vanilla` profile, switch to a modded profile first: on `vanilla`, rows read **Switch away from vanilla to use addons** instead of showing a switch. Addons the launcher needs show **Always on** with a lock.
+
+## Check an addon
+
+Expand an addon's row to see its status, version, author, licence, the game builds it was made for, the addons it requires and its id. **GAME BUILDS** reads **matches** with your build, or **not tested on** it when the addon wasn't made for it. The tags on the row show what the addon changes: **Database**, **ERP**, **UI**, **Files** or **Native**.
+
+If an addon requires another addon that's off, or conflicts with one that's on, the launch stops with an error that names both. Turn the required addon on, or one of the conflicting addons off.
+
+## Change its settings
+
+1. Expand the addon's row.
+2. Under **SETTINGS**, change a value. **Reset to defaults** puts every setting back.
+
+Settings save to the active profile. When you change a database setting, the status line next to **Play** says the profile rebuilds on launch. You can change the same settings in game; see [In-game addon settings](/using/swofty-mod).
 
 ## Remove an addon
 
@@ -33,13 +46,33 @@ To see an addon's version, author, game builds, requirements and settings, expan
 2. Select **Remove addon**.
 3. In the **Remove _name_?** dialog, select **Remove addon**.
 
-Removing an addon deletes its files and takes it out of every profile.
+Removing an addon deletes its files and takes it out of every profile. You can't remove the built-in addons.
 
 ## Built-in addons
 
 | Addon | What it does |
 |---|---|
 | **SwoftyMod** | Loads addons in game and adds **ADDON SETTINGS**. It's always on in modded profiles. |
-| **Team Simplified** | Adds the [Mods](/using/mods) page and is on by default. If you turn it off, you'll hide the Mods page and leave those mods out of the profile. |
+| **Simplified for Swofty** | Team Simplified's addon. Adds the [Mods](/using/mods) page. The launcher installs it, [keeps it up to date](/using/updating#simplified-for-swofty) and keeps it on. |
 
 If an addon adds its own page, you'll find it in the sidebar under a heading with the addon's name.
+
+## From a terminal
+
+| Command | Does |
+|---|---|
+| `swofty addons list` | List installed addons and whether each is on in the profile |
+| `swofty addons install <path>` | Install a folder, `.swoftyaddon` or zip |
+| `swofty addons enable <id>` | Turn an addon on |
+| `swofty addons disable <id>` | Turn an addon off |
+| `swofty settings list [id]` | List addon settings with the profile's values |
+| `swofty settings set <id> <setting> <value>` | Change a setting |
+| `swofty settings reset <id>` | Put an addon's settings back to their defaults |
+
+Add `--profile <name>` to work on a profile other than the active one.
+
+## Next
+
+- [Mods and tracks](/using/mods): import content with no `swofty.json`.
+- [Profiles](/using/profiles): keep different sets of addons apart.
+- To make an addon, see [Addons](/reference/addons/) in the developer docs.

@@ -1,9 +1,9 @@
 ---
-title: Techniques for UI mods
+title: Techniques for menu edits
 description: General methods for changing F1 25 menus — trace what draws an element, tell a data limit from a screen limit, spot counts fixed in native code, patch native builders safely, edit scenes without breaking references, test, and a checklist for AI agents.
 ---
 
-# Techniques for UI mods
+# Techniques for menu edits
 
 These methods apply to any menu change. The formats are on [UI scenes (.idf)](./idf), the addon workflow on [Editing menus with an addon](./editing-menus), and the editor on [Swofty UI](./swofty-ui). Native changes go through the [mixin system](/reference/addons/hooking). To trace native code while the game runs, see [Debugging live](./debugging).
 
@@ -122,7 +122,7 @@ These rules come on top of the [engine plugin rules](/reference/addons/native-pl
 - **Set `xref` with `fileRef`.** The game loads a reference by its `xref` id. Use **Retarget** in Swofty UI or `tools/idf.py retarget`, and check with `tools/idf.py refs` or `swofty-ui --check-refs` ([References](./idf#references)).
 - **Keep ids consistent.** Each `elementId` is the djb2 of its dotted path, `nodeidlookup` holds every leaf name's djb2, and every leaf name is unique. Clone, rename and delete with Swofty UI or `tools/idf.py clone-slot` ([Identity](./idf#identity)).
 - **Animations and stackers replace stored positions.** Move an animated element's unanimated children instead. A stacker lays its children out at runtime. Some elements are stored collapsed and grown by an animation or live data ([What a scene stores](./idf#what-a-scene-stores)).
-- **New shapes need new meshes.** A shape, such as a wedge's angle, is baked into its mesh, and rotating copies of a mesh made for four parts to make five overlaps them. A new image is a new texture ([Textures and models](/reference/mods/erp-assets)).
+- **New shapes need new meshes.** A shape, such as a wedge's angle, is baked into its mesh, and rotating copies of a mesh made for four parts to make five overlaps them. A new image is a new texture ([Textures and models](/reference/data/textures)).
 - **Replace the scene everywhere.** Ship it to every archive that holds it; the game reads the copy in whichever archive loads first.
 - **Change the chain the screen uses.** Different screens can draw the same component through different scenes. Follow the chain from the root attach of the screen you're changing.
 - **Wire the new element.** A new element stays empty until a `.ui` node attaches to its leaf name. When the screen refreshes its widgets through a list of named targets, such as an event sent to each tile, add the new node to that list.

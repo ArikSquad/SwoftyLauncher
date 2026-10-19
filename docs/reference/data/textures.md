@@ -1,13 +1,19 @@
 ---
 title: Textures and models
-description: List an archive's resources, then replace a fragment, copy a resource between archives, add mip files, and patch a !pkg layer with ERP operations.
+description: Change art, models, worlds and menus from a data addon — list an archive's resources, then replace a fragment, copy a resource between archives, add mip files and patch a !pkg layer with ERP operations.
 ---
 
 # Textures and models
 
-To change F1 25's art, models, worlds or menus, you'll work with `.erp` archives under `2025_asset_groups/`. Inside each archive are named resources, each with one or more fragments. You edit those with [ERP operations](/reference/ops/erp), listed in your mod's `operations.erp`.
+F1 25's art, models, worlds and menus live in `.erp` archives under `2025_asset_groups/`. Inside each archive are named resources, each with one or more fragments. To change them, add [ERP operations](/reference/ops/erp) to your [data addon](./) and list the file in `operations.erp`:
 
-The build writes a new copy of each archive your operations touch. If you have the in-game loader, it delivers changed and added resources as overlay archives under `swofty/assets/resources/`. That leaves the stock archives in the game folder. See [deliveries](/reference/addons/asset-api#deliveries).
+```json [swofty.json]
+"operations": {
+  "erp": ["erp/texture.json"]
+}
+```
+
+With the in-game loader, the build delivers changed and added resources as overlay archives under `swofty/assets/resources/`, and the stock archives stay in the game folder. Without it, the build writes a new copy of each archive your operations touch. See [Build route and runtime route](./operations#build-route-and-runtime-route).
 
 ## Look inside an archive
 
@@ -33,7 +39,7 @@ For the file format, see [ERP archives](/reference/erp).
 
 ## Replace a fragment
 
-Use `replace-resource` when you want to swap one fragment for a raw file from your mod and keep the others. Choose the fragment to match what you're changing: a texture's fragment 0 is its header, while fragment 1 holds its top-mip pixels:
+Use `replace-resource` when you want to swap one fragment for a raw file from your addon and keep the others. Choose the fragment to match what you're changing: a texture's fragment 0 is its header, while fragment 1 holds its top-mip pixels:
 
 ```json [erp/texture.json]
 {
@@ -50,11 +56,11 @@ Use `replace-resource` when you want to swap one fragment for a raw file from yo
 }
 ```
 
-Your `source` file must contain raw fragment bytes: the data you'd get after decompression. The build compresses those bytes the way the archive stores that fragment, then updates the sizes and resource hash. If you leave out `fragment`, it defaults to `0`. Give `erp` paths relative to the game folder and `source` paths relative to your mod folder.
+Your `source` file must hold raw fragment bytes: the data you'd get after decompression. The build compresses those bytes the way the archive stores that fragment, then updates the sizes and resource hash. If you leave out `fragment`, it defaults to `0`. Give `erp` paths relative to the game folder and `source` paths relative to your addon folder.
 
 ## Copy a resource between archives
 
-If you already have the resource in another archive, use `copy-resource` to append it to `erp`, byte for byte. Choose `source` for an archive in your mod, or `from_erp` for one the game ships. Use `as` to give the copy a new name:
+If you already have the resource in another archive, use `copy-resource` to append it to `erp`, byte for byte. Choose `source` for an archive in your addon, or `from_erp` for one the game ships. Use `as` to give the copy a new name:
 
 ```json
 {
@@ -66,7 +72,7 @@ If you already have the resource in another archive, use `copy-resource` to appe
 }
 ```
 
-Choose a name that isn't already in `erp`, or the copy will fail. [Adding a livery](./livery) shows how to copy a whole car this way.
+Choose a name that isn't already in `erp`, or the copy fails. [Adding a livery](./livery) shows how to copy a whole car this way.
 
 ## Add a resource
 
@@ -128,7 +134,7 @@ Worlds, layers and UI databases are `!pkg` resources: trees of named entries. Wi
 To find the entry you need, extract the fragment, then read its tree with `python3 tools/pkg.py text <fragment.bin>`. Address entries with dots and `[field=value]` selectors. Your replacement value takes the existing value's type, so supply a number for an int or float, 16 numbers for a `mat4`, or a hex string for a `woid`.
 
 ::: warning Not built yet
-Only `clone-entry` and `set-value` are built; the other `patch-pkg` edits are defined but not built. If you use one of those other edits in an ERP file, the build skips all your mod's ERP files and warns you.
+Only `clone-entry` and `set-value` are built; the other `patch-pkg` edits are defined but not built. If you use one of those other edits, the build skips all your addon's ERP operations and warns you.
 :::
 
 ## Settings and warnings
@@ -140,4 +146,17 @@ You can use `when` and <span v-pre>`{{id}}`</span> with `db` [settings](/referen
   "message": "Monaco has room for 28 cars; a 30-car race there leaves 2 cars without a grid slot." }
 ```
 
-You'll find every operation in the [ERP operations](/reference/ops/erp) reference. For menu screens, see [UI patches](/reference/ops/ui-patches).
+## Build and check
+
+```sh
+swofty build
+```
+
+On the runtime route, the output counts your resources in `runtime: swofty/assets.json with ... <n> resource(s)`. On the build route, it lists each rewritten archive as `replace 2025_asset_groups/...`. It also prints every `warn` message, each archive it had to rewrite, and each conflict.
+
+## Reference
+
+- [ERP operations](/reference/ops/erp): every operation and field.
+- [Operations](./operations): how ERP files fit with the other operation kinds, order and conflicts.
+- [ERP archives](/reference/erp) and [`!pkg` resources](/reference/pkg): the file formats.
+- [Editing menus](/reference/ui/editing-menus): ship an edited menu scene with `replace-resource`.

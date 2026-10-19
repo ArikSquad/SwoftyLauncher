@@ -1,97 +1,40 @@
 ---
-title: Make a mod
-description: Build a mod with data operations, a swofty.json manifest and one database change, then follow the guide for the content you want to edit.
+title: Mods
+description: Make content for the Team Simplified suite — .serps packages, game files laid out like the game folder, and community track zips — and import it on the Mods page.
 ---
 
-# Make a mod
+# Mods
 
-To change F1 25's content, you can ship a mod: an [addon](/reference/addons/) with no code, DLL or launcher plugin. You describe your changes as `operations`, which edit the game database, in-game text, archive resources and loose files.
+A mod is content for the Team Simplified suite: the files players drop on the launcher's **Mods** page, which the Simplified for Swofty addon adds. A mod has no `swofty.json`. It carries game files in the game folder's layout, and the importer compares them with the game's own files and merges only what changed. To describe changes as operations you write yourself, make a [data addon](/reference/data/) instead.
 
-You supply the operations; the launcher applies them when it builds a profile, to a copy of the game's files or in memory while the game boots. This keeps the game folder's stock files intact. To remove every change, run `swofty restore`.
+## Mod types
 
-## What a mod changes
+| Type | What it holds | Made with | Players install it |
+|---|---|---|---|
+| `.serps` package | `mod.serps` and an `F1 25/` folder of game files: the database, language files, `.erp` archives, other files | Simplified Studio, or by hand | Drop it on the **Mods** page, or `swofty mods import` |
+| Game files in a zip, 7z, RAR or folder | `.erp` archives and other game files at their game paths, with no `mod.serps` | Any tool | The same |
+| Track zip | `manifest.json`, the track's `.erp`, menu pictures and mip files, in the EGO GameDatabases Editor format | Track tools for the EGO editor | The same |
 
-| Change | Game files | Page |
-|---|---|---|
-| Teams, cars, drivers, tracks, rules, unlocks | `game_package/gamedatabases/gamedatabases.2025.bin` | [Game database](./database) |
-| Textures, models, materials, worlds | `.erp` archives under `2025_asset_groups/` | [Textures and models](./erp-assets) |
-| A special livery for one car | A `wep` archive plus the livery and unlock tables | [Adding a livery](./livery) |
-| Menu layouts | `.idf` scenes in the UI archives under `2025_asset_groups/ui_package/` | [Editing menus](/reference/ui/editing-menus) |
-| Names and descriptions | Text tags and language strings | [In-game text](./text) |
-| A new track | A track package | [Tracks](./tracks) |
+A single `.erp` file isn't a mod on its own: put it at its game path, such as `F1 25/2025_asset_groups/ui_package/<name>.erp`, and zip the folder.
 
-## The manifest
+## Make one
 
-Start with a folder containing a `swofty.json` manifest at its root. Alongside it, put the files your operations name:
+1. Pick the type from the table above.
+2. Build it: a `.serps` package or game files as in [`.serps` packages](./serps), a track as in [Track packages](./tracks).
+3. Import it into a test profile, turn it on and build: `swofty mods import <file>`, `swofty mods enable <id>`, `swofty build`. Read every line of output ([Import and build](./serps#_3-import-and-build)).
+4. Test it in game with only your mod turned on, then with the mods players combine it with.
+5. Publish the file. Players drop it on the **Mods** page ([Mods and tracks](/using/mods)).
 
-```
-my-mod/
-├── swofty.json
-└── db/
-    └── changes.json
-```
+## What's in this section
 
-In `swofty.json`, give your mod a name and list its `operations` so the launcher knows what to apply:
+| Page | Covers |
+|---|---|
+| [`.serps` packages](./serps) | The package layout, `mod.serps`, what the importer reads, compares and merges |
+| [Track packages](./tracks) | The EGO track zip, its `manifest.json` and the track's name |
+| [How tracks are installed](/reference/installing-tracks) | What activating a track changes in the archives, database, menus and ERS |
 
-```json [swofty.json]
-{
-  "schema_version": 1,
-  "id": "yourname.my-mod",
-  "name": "My Mod",
-  "version": "1.0.0",
-  "author": "Your Name",
-  "description": "One line shown on the Addons page.",
-  "kind": ["database"],
-  "compat": { "game": "f1_25", "game_builds": [">=25251167"] },
-  "operations": {
-    "database": ["db/changes.json"]
-  }
-}
-```
+## How mods load
 
-Since your mod ships data only, set `operations` and leave out anything that carries code: the `native` and `launcher` fields. See the [addon manifest](/reference/addons/manifest) reference for every field.
+Every profile shares one library under `$DATA/addon-data/teamsimplified.mods/library/` and keeps its own order and switches. At each build, the addon's build hook turns every enabled mod into [operations](/reference/data/operations), in profile order: `db.put-record` for database records, `erp.put-resource` for archive resources, `lang.set` for text, `file.put` for other files, and `track.add` for each track. Where two mods change the same thing, the one lower in the list wins.
 
-| `operations` field | Contains | Reference |
-|---|---|---|
-| `database` | database operation files (`set`, `add-row`, `remove-row`, `put-record`, ...) | [Database operations](/reference/ops/database) |
-| `erp` | ERP operation files (`copy-resource`, `put-resource`, `replace-resource`, `patch-pkg`, ...) | [ERP operations](/reference/ops/erp) |
-| `files` | loose file copies: `[{ "source": "files/x", "target": "game/path" }]` | [File operations](/reference/ops/files) |
-| `assets` | one file mixing prefixed ops — `db.set`, `erp.put-resource`, `lang.set`, `group.register` | [Asset API](/reference/addons/asset-api) |
-
-Use `kind` to list the categories shown for your mod on the Addons page: `database`, `erp`, `ui`, `files`.
-
-## Your first mod
-
-For your first mod, make a stop-go penalty last 10 seconds. You only need one database operation.
-
-Create `db/changes.json` in the folder shown above:
-
-```json [db/changes.json]
-{
-  "schema_version": 1,
-  "ops": [
-    { "op": "set", "select": "rules.stop_go_penalty", "field": "penalty_duration", "value": "10" }
-  ]
-}
-```
-
-Next, install the folder, enable it on a modded profile, and build:
-
-```sh
-swofty addons install ./my-mod
-swofty addons enable yourname.my-mod
-swofty build
-```
-
-`swofty build` applies your operation to a copy of the database and writes the plan to `$DATA/cache/overlay/<profile>/<buildhash>/`. To try the change in-game, press **Play** in the launcher or run `swofty run --apply`. You need a modded profile because the `vanilla` profile takes no addons.
-
-## The path
-
-Choose a guide for the change you want to make:
-
-1. [Adding a livery](./livery) — the full worked example: a special livery as a new picker choice.
-2. [Textures and models](./erp-assets) — replace and add resources in `.erp` archives.
-3. [Game database](./database) — change values, copy rows, rename tracks.
-4. [In-game text](./text) — set names and descriptions with `lang` operations.
-5. [Tracks](./tracks) — import and activate a community track.
-6. [Packaging a mod](./packaging) and [Testing and publishing](./publishing) — prepare your mod to share.
+The `.serps` format and the importer come from Simplified Suite by Team Simplified, [github.com/TeamSimplified/simplified-suite](https://github.com/TeamSimplified/simplified-suite).

@@ -157,5 +157,11 @@ Use [UI patches](/reference/ops/ui-patches) to describe edits to the game's scre
 ```
 
 ::: warning Not built yet
-The build skips `operations.ui` and prints a warning. To apply the same `clone-entry` and `set-value` edits to `!pkg` resources, use the [`patch-pkg` ERP operation](/reference/mods/erp-assets#patch-a-pkg-resource).
+The build skips `operations.ui` and prints a warning. To apply the same `clone-entry` and `set-value` edits to `!pkg` resources, use the [`patch-pkg` ERP operation](/reference/data/textures#patch-a-pkg-resource).
 :::
+
+## Reference
+
+- [Addon manifest](./manifest#operations): the `screens` field.
+- [UI library](/reference/std/ui): view-model properties and commands.
+- [Menus and UI](/reference/ui/): editing a screen's layout with Swofty UI.

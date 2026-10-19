@@ -4,7 +4,7 @@
   "name": "Sample Mod",
   "version": "0.1.0",
   "author": "Your Name",
-  "description": "A starting point for a mod: a database edit driven by a setting, one UI patch and a native plugin that reads its settings.",
+  "description": "A starting point for an addon: a database edit driven by a setting, one UI patch and a native plugin that reads its settings.",
   "license": "MIT",
   "kind": ["database", "ui", "native"],
   "compat": { "game": "f1_25", "game_builds": [">=25251167"] },

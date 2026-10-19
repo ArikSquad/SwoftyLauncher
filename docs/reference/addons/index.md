@@ -1,24 +1,26 @@
 ---
-title: What an addon is
-description: An addon is a .swoftyaddon — a zip with a manifest — that can ship data, an engine plugin, a launcher plugin, or all three.
+title: Addons
+description: An addon is a folder or .swoftyaddon with a swofty.json. It can change game data through operations, run an engine plugin in the game, run a launcher plugin, or all three. The five steps to make one.
 ---
 
-# What an addon is
+# Addons
 
-You hand out your addon as a single `.swoftyaddon` file: a zip with a `swofty.json` inside. You'll find the exact format in [the manifest](./manifest), but roughly you can think of it as a listing of what SwoftyLauncher loads for your addon. There are three different kinds of thing an addon can be, and it can be several of them at once, depending on what its manifest declares:
+An addon is a folder with a `swofty.json` at its root, shared as a `.swoftyaddon` file and installed on the launcher's **Addons** page. The manifest lists what the addon ships:
 
-- **Data** — definitions in this part of the manifest edit the game's files, such as a livery, a database value or a line of text. No code runs here; the build merges your changes into copies of those files. On its own this is the same as a [mod](/reference/mods/), but you can combine it with the next two kinds.
-- **An engine plugin** — a native DLL loaded *inside* F1 25, where it hooks the game through the mixin system. This lets you read telemetry, draw an overlay or change how the game behaves.
-- **A launcher plugin** — a small program the launcher runs to add a page to the launcher. The built-in Team Simplified addon, for example, is what adds the **Mods** page.
+- **Data.** [Operations](/reference/data/operations) that change the game's database, text, archives and files. No code runs. An addon with only operations is a **data addon**.
+- **Code.** An [engine plugin](./native-plugins), a DLL that runs inside F1 25, and a [launcher plugin](./launcher-api), a program that adds pages and commands to the launcher. An addon with either is a **code addon**.
 
-## Initialising an Addon
+One addon can ship data and code together. Content players drop on the **Mods** page (`.serps` packages, track zips) is a mod, not an addon; see [Mods](/reference/mods/).
 
-To get an addon installed, you only need a folder with one file:
+## Make an addon
 
-```
-my-addon/
-└── swofty.json
-```
+1. **Create the folder and `swofty.json`.** Give the addon an `id`, `name`, `version` and `author`; [Your first addon](./first-addon) walks through it, and [the manifest](./manifest) lists every field.
+2. **Add operations, code or both.** List data changes under `operations` ([Data addons](/reference/data/)), name a DLL in `operations.native` ([Engine plugins](./native-plugins)), or name a program in `launcher` ([Launcher plugins](./launcher-api)). A [template](./template) gives you a working start.
+3. **Add settings.** Declare `options` so players can change your addon from the launcher and in game ([Settings](./settings)).
+4. **Build and test.** Install the folder, run `swofty build`, read the warnings, then play with `swofty run --apply` ([Build and test](./publishing#build)).
+5. **Package and publish.** Zip the folder's contents as a `.swoftyaddon` and share it ([Packaging and publishing](./publishing#package-it)).
+
+The smallest addon installs and does nothing:
 
 ```json [swofty.json]
 {
@@ -31,65 +33,56 @@ my-addon/
 }
 ```
 
-Install that folder directly:
-
 ```sh
 swofty addons install ./my-addon
 ```
 
-You'll see it on the launcher's **Addons** page straight away. With no content, it won't do anything yet. To give it something to load, fill in the manifest.
+## Pick your path
 
-## Example manifests
+| You want to | Path | Manifest field | Start at |
+|---|---|---|---|
+| Change database values, in-game text, textures, models or loose files | Data addon | `operations` | [Data addons](/reference/data/) |
+| Run code in the game: hooks, telemetry, an overlay | Engine plugin | `operations.native` | [Engine plugins](./native-plugins) |
+| Add launcher pages, an importer, commands or a build step | Launcher plugin | `launcher` | [Launcher plugins](./launcher-api) |
+| Move or add elements on a menu screen, or add a screen | Menu edit | `operations.erp`, `operations.screens` | [Menus and UI](/reference/ui/) |
 
-You've seen the minimal manifest. To ship content you add one of these blocks to it. For every field, and for building a manifest in depth, see [the manifest](./manifest).
+One manifest can combine them. This one has a database operation, an engine plugin, a launcher page and a setting:
 
-**[Data](/reference/mods/)** — the same thing a mod ships. Edits go under [`operations`](./manifest#operations):
-
-```json
-"operations": { "database": ["db/livery.json"], "erp": ["erp/car.json"] }
-```
-
-**An [engine plugin](./native-plugins)** — a DLL that runs in the game, under [`operations.native`](./manifest#operations):
-
-```json
-"operations": { "native": [{ "dll": "native/hud.dll" }] }
-```
-
-**A [launcher plugin](./launcher-api)** — a helper that adds a page, under [`launcher`](./manifest#launcher):
-
-```json
-"launcher": {
-  "program": { "linux": "bin/helper", "windows": "bin/helper.exe" },
-  "sections": [{ "id": "mods", "title": "Mods" }]
+```json [swofty.json]
+{
+  "schema_version": 1,
+  "id": "me.my-addon",
+  "name": "My Addon",
+  "version": "0.1.0",
+  "author": "Me",
+  "compat": { "game": "f1_25" },
+  "options": [{ "id": "verbose", "type": "toggle", "label": "Verbose", "default": false, "binds": "native" }],
+  "operations": {
+    "database": ["db/changes.json"],
+    "native": [{ "dll": "native/my_plugin.dll" }]
+  },
+  "launcher": {
+    "program": { "linux": "bin/helper", "windows": "bin/helper.exe" },
+    "sections": [{ "id": "items", "title": "Items", "icon": "package" }]
+  }
 }
 ```
 
-**[Settings](./settings)** — toggles, choices and sliders, under [`options`](./manifest#options):
+## What's in this section
 
-```json
-"options": [{ "id": "verbose", "type": "toggle", "label": "Verbose", "default": false }]
-```
+| Page | What it covers |
+|---|---|
+| [Your first addon](./first-addon) | A complete addon with one setting and a launcher page, built and installed step by step |
+| [Templates](./template) | The two repository templates, what each file is and how to build them |
+| [Settings](./settings) | Declaring options, reading them in operations, engine plugins and launcher plugins |
+| [Packaging and publishing](./publishing) | Building, testing in game, reading logs, packaging a `.swoftyaddon` and releasing it |
+| [Addon manifest](./manifest) | Every `swofty.json` field |
 
-## Package it
-
-When you're ready to share it, zip the folder's *contents* and give the archive the `.swoftyaddon` extension. The manifest has to sit at the root of the zip, so change into the folder before zipping it:
-
-```sh
-cd my-addon
-zip -r ../me.my-addon.swoftyaddon .
-```
-
-Share that file. People can drag it onto the launcher to install it, or run `swofty addons install me.my-addon.swoftyaddon`. See [Package & distribute](/reference/mods/packaging) for the details.
-
-## What the launcher does with it
-
-The manifest tells the launcher what to load, but the work happens at different points. Here's where your data, plugins and settings come into play:
+## What the launcher does with an addon
 
 1. **Install.** `swofty addons install <path>` checks the manifest and copies the addon to `$DATA/addons/<id>/`.
 2. **Enable.** Your [profile](/using/profiles) lists the addons it uses, their load order and each addon's settings.
-3. **Build.** Press **Play** (or run `swofty build`) and the launcher merges every enabled addon's data into a copy of the game's files. It also runs each launcher plugin's build step.
-4. **Launch.** The launcher puts the build and the in-game loader into the game folder. That loader starts SwoftyMod, which loads each addon's engine plugin.
-5. **Play.** Open the in-game **ADDON SETTINGS** screen to see each addon's options. Change one and its engine plugin receives the change right away.
-6. **Exit.** When you leave the game, any settings you changed there are saved back to the profile. The game folder returns to exactly how it was.
-
-To build a tiny addon end to end, follow [Your first addon](./first-addon). If you'd rather start from something you can trim down, copy [a template](./template).
+3. **Build.** Press **Play** (or run `swofty build`) and the launcher applies every enabled addon's operations to copies of the game's files, or queues them for the game to apply in memory. It also runs each launcher plugin's build step.
+4. **Launch.** The launcher puts the build and the in-game loader into the game folder. The loader starts SwoftyMod, which loads each addon's engine plugin.
+5. **Play.** Open **ADDON SETTINGS** in game to see each addon's options. Change one and its engine plugin receives the change right away.
+6. **Exit.** Settings you changed in game are saved back to the profile, and the game folder returns to how it was.

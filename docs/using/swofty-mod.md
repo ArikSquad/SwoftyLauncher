@@ -1,3 +1,8 @@
+---
+title: In-game addon settings
+description: Open ADDON SETTINGS in the F1 25 home menu to see what your profile turns on and change addon settings without leaving the game.
+---
+
 # In-game addon settings
 
 To change an addon's settings without leaving the game, open **ADDON SETTINGS**. SwoftyMod adds this screen to the home menu, directly under **Career**.
@@ -11,11 +16,11 @@ You'll also see a panel on the home screen confirming you launched with Swofty L
 
 ## What's listed
 
-**ADDON SETTINGS** lists a tile for every enabled addon, every mod and every track in the active profile. Each tile shows its name, author and version. Addons come first, then mods, then tracks.
+**ADDON SETTINGS** lists a tile for every enabled addon, mod and track in the active profile. Each tile shows its name, author and version. Addons come first, then mods, then tracks.
 
 ## Change a setting
 
-1. On **ADDON SETTINGS**, select the tile for the enabled addon you want to change.
+1. On **ADDON SETTINGS**, select the tile for the addon you want to change.
 2. Move to a setting row on the addon's page.
 3. Press **Left** or **Right** to change the value.
 
@@ -26,3 +31,8 @@ Only addons have settings. A mod's page shows its id, author and version; a trac
 Your changes save to the active profile, but when they take effect depends on the setting: a live setting reaches the addon at once, while a database setting applies after you restart the game. You can also find these settings in the launcher, in each addon's row on the **Addons** page.
 
 If the game build isn't recognised, the **ADDON SETTINGS** entry may be unavailable.
+
+## Next
+
+- [Addons](/using/addons#change-its-settings): the same settings in the launcher.
+- [Profiles](/using/profiles): keep different settings in different profiles.

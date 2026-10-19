@@ -2,7 +2,7 @@
 
 You'll find most of F1 25's artwork and track assets in `.erp` files under `2025_asset_groups/`. Inside each archive are named resources. Each resource has one or more parts, called fragments.
 
-To change one of those assets in your addon, follow [ERP operations](/reference/ops/erp).
+To change one of those assets from an addon, follow [Textures and models](/reference/data/textures); [ERP operations](/reference/ops/erp) lists every operation.
 
 ## Tools
 

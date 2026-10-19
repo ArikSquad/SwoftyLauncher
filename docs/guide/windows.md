@@ -1,21 +1,30 @@
+---
+title: Windows
+description: Set up Swofty Launcher for F1 25 on Windows, point it at the game and launch your first modded session.
+---
+
 # Windows
 
-## Set up
+## 1. Install the launcher
 
-1. Follow [Installation](/guide/installation) to install the launcher with the installer or by hand.
-2. Make sure you have F1 25 installed, then start Steam.
-3. Open **Swofty Launcher** from the Start menu, or `bin\swofty-launcher.exe` in the install folder.
+Follow [Installation](/guide/installation) to install the launcher with the installer or by hand.
+
+## 2. Open it and find the game
+
+1. Make sure you have F1 25 installed, then start Steam.
+2. Open **Swofty Launcher** from the Start menu, or `bin\swofty-launcher.exe` in the install folder.
 
 Watch the status line next to **Play**: you'll see **Detecting F1 25…** while the launcher looks for the game, then **Ready** when it finds it.
 
-## If the game is not found
+### If the game is not found
 
 If the launcher can't find the game, you'll see **Install it with Steam or locate its folder** in the status line and a **Locate game** button. To point it to your installation:
 
 1. Select **Locate game**.
-2. Choose the F1 25 folder — look for `F1_25.exe` inside it. You'll usually find it at `...\steamapps\common\F1 25`.
+2. Type the F1 25 folder's path, or select **Browse…** and choose it. It's the folder with `F1_25.exe`, usually `...\steamapps\common\F1 25`.
+3. Select **Use this folder**.
 
-## Play
+## 3. Play
 
 1. [Install your addons](/using/addons) and [mods](/using/mods), then pick a [profile](/using/profiles).
 2. Press **Play**.
@@ -30,3 +39,8 @@ To follow the logs as you play, select the arrow next to **Play** and choose **P
 The session puts the game folder back to vanilla when the game exits, crash or not. If the launcher was closed first, it puts the folder back the next time it starts. See [Restoring the game](/using/profiles-and-restoring).
 
 To read a summary of your last session, run `swofty logs`. You'll find the logs in `$DATA\sessions\<id>`.
+
+## Next
+
+- [Using the launcher](/using/): addons, mods, profiles and in-game settings.
+- [Launching the game](/reference/launch): logs and what a session does.

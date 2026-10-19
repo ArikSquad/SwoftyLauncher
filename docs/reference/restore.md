@@ -1,3 +1,8 @@
+---
+title: Backups and recovery
+description: For contributors — how the baseline, the journal and session locks let the launcher undo every change to the game folder.
+---
+
 # Backups and recovery
 
 This page is for contributors. Players should use [Restoring the game](/using/profiles-and-restoring).

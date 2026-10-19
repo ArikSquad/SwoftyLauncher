@@ -1,13 +1,32 @@
 ---
-title: Engine plugin
-description: Build a native DLL and name it in operations.native. The in-game loader loads it into F1 25 and gives it SwoftyApi.
+title: Engine plugins
+description: An engine plugin is a native DLL an addon names in operations.native. The in-game loader loads it into F1 25 and gives it SwoftyApi. The steps to make one, and the SwoftyApi and operations.native reference.
 ---
 
-# Engine plugin
+# Engine plugins
 
-To run your own code inside F1 25, you ship an engine plugin: a prebuilt native DLL named in `operations.native` in `swofty.json`. The build copies it into the game folder. Then the in-game loader loads it and hands it a `const SwoftyApi *`, your way into the engine. You use that pointer to hook the engine through [the mixin system](/reference/addons/hooking) and call the [standard library](/reference/std/) for events, overlay, telemetry, database reads, storage, settings and logging.
+An engine plugin is your own code running inside F1 25: a prebuilt Windows x86-64 DLL that your addon names in `operations.native` in `swofty.json`. The build copies it into the game folder. The in-game loader loads it and hands it a `const SwoftyApi *`, your way into the engine. Through it you hook the engine with [the mixin system](/reference/addons/hooking) and call the [standard library](/reference/std/) for events, overlay, telemetry, database reads, storage, settings and logging.
 
-Write your plugin in C or C++ against [`swofty_api.h`](https://github.com/Swofty-Developments/SwoftyLauncher/blob/main/packages/sdk/include/swofty_api.h) (MIT), targeting a Windows x86-64 DLL.
+Write your plugin in C or C++ against [`swofty_api.h`](https://github.com/Swofty-Developments/SwoftyLauncher/blob/main/packages/sdk/include/swofty_api.h) (MIT).
+
+## Make an engine plugin
+
+1. **Start from the template.** Copy [`templates/addon`](./template#templates-addon) and edit `native/src/sample_plugin.cpp` ([Write the plugin](#_1-write-the-plugin)).
+2. **Build the DLL.** The template's `native/build.sh` builds it with `zig c++`; any toolchain that makes a Windows x86-64 DLL works ([Build the DLL](#_2-build-the-dll)).
+3. **Declare it in `native`.** Name the DLL, and the files it reads in game, in `operations.native` ([Name it in the manifest](#_3-name-it-in-the-manifest)).
+4. **Hook the game with mixins.** Wrap an engine function or run code at an instruction ([The mixin system](./hooking)).
+5. **Use the standard library.** Subscribe to events, draw on the overlay, read telemetry and the database, store data, read settings and log ([Standard library](/reference/std/)).
+6. **Test it.** Build the profile, play, and find your lines in `swofty/loader.log` ([Launch and read the log](#_5-launch-and-read-the-log), [Packaging and publishing](./publishing)).
+
+## What's in this section
+
+| Page | What it covers |
+|---|---|
+| [The mixin system](./hooking) | Wrapping engine functions and running code at an instruction, with chains and rules |
+| [In-game UI](./in-game-ui) | Adding a screen and a home tile, and changing existing screens |
+| [Standard library](/reference/std/) | The headers and `SwoftyApi` tables: mixins, settings, logging, events, overlay, telemetry, database reads, storage, UI |
+| [Engine API](/reference/game/) | The engine functions, structs and sites you can call and hook |
+| [Changes at runtime](./runtime-assets#from-a-native-plugin) | Changing textures, text and database records from a plugin while the game boots |
 
 ## Build and load one
 
@@ -97,7 +116,7 @@ The `const SwoftyApi *` you receive in `SwoftyAddonInit` gives you these members
 | `fields(obj, size)` | `swofty_core.dll` (v4) | Per-addon storage on a game object. See [fields](/reference/std/mixin#fields) |
 | `setting(id, type, &out)` | `swofty_core.dll` (v4) | Read a [setting](/reference/std/settings#read-from-c) |
 | `watch_setting(id, fn, user)` | `swofty_core.dll` (v4) | Call `fn` when a setting changes |
-| `assets` | `swofty_core.dll` (v4) | Load mods at runtime. See [Asset API](/reference/addons/asset-api#native-plugins) |
+| `assets` | `swofty_core.dll` (v4) | Change assets while the game boots. See [Asset API](/reference/addons/asset-api#native-plugins) |
 | `events` | `swofty_core.dll` (v5) | Lifecycle events and the frame tick. See [Events](/reference/std/events) |
 | `overlay` | `swofty_core.dll` (v5) | The 2D overlay. See [Overlay](/reference/std/overlay) |
 | `telemetry` | `swofty_core.dll` (v5) | Live car and session reads. See [Telemetry](/reference/std/telemetry) |

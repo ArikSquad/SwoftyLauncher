@@ -1,11 +1,11 @@
 ---
-title: Tracks
-description: Import a community track package, enable it on a profile, build it, and check it with map_check.py.
+title: Track packages
+description: Make a community track package in the EGO GameDatabases Editor format, import it on the Mods page, build it, and check it with map_check.py.
 ---
 
-# Tracks
+# Track packages
 
-You ship a track as a package zip in the format made for the EGO GameDatabases Editor. The built-in Team Simplified addon imports that zip unchanged into its mod library. To use the track, enable it in a profile and build: activation clones a base track's database rows, installs your track's archive and adds its menu entries.
+A community track is a [mod](./): a package zip in the format made for the EGO GameDatabases Editor. The Simplified for Swofty addon imports that zip unchanged into its mod library. To use the track, turn it on in a profile and build: activation clones a base track's database rows, installs your track's archive and adds its menu entries.
 
 ## Import and activate
 
@@ -17,11 +17,11 @@ swofty build
 
 1. `swofty mods import` stores your package under `$DATA/addon-data/teamsimplified.mods/library/<track_code>/track/`. The track code becomes its mod id.
 2. `swofty mods enable` turns it on in your profile.
-3. `swofty build` activates every enabled track before running the other operations.
+3. `swofty build` activates every enabled track before the other operations run: the addon's build hook emits a `track.add` [operation](/reference/data/operations) for each.
 
 You can also do this from the [Mods page](/using/mods#tracks).
 
-The importer recognises a track package by the `manifest.json` at the root of its zip. If you give it a zip containing exactly one such zip, it unwraps it. It refuses 7z and RAR.
+The importer recognises a track package by a `manifest.json` with a `track_code` at the root of its zip. If you give it a download zip that holds exactly one such zip, it unwraps it. The track code becomes the mod's id, or `<code>-track` when a mod in the library already has that id.
 
 ## Package layout
 
@@ -73,17 +73,13 @@ Keep every path in the package inside the package. For every table, archive and 
 
 ## The track's name
 
-Menus read `TrackNameData_0.title` on the cloned `TrackData` rows, so they'll show the base track's name until you override it:
-
-1. Add an `activation.overrides` entry with a language key as its `value`:
+Menus read `TrackNameData_0.title` and the other `TrackNameData_0` fields on the cloned `TrackData` rows, so they show the base track's names until you override them. A track package carries no text, so point each field at a stock language key with an `activation.overrides` entry:
 
 ```json
-{ "path": "TrackNameData_0.title", "value": "lng_my_track_title" }
+{ "path": "TrackNameData_0.title", "value": "lng_track_jpn_gp_title_short" }
 ```
 
-2. Give that key a string with a `lang` operation — see [In-game text](./text).
-
-You're setting the same field a database mod uses in [Rename a track](./database#_4-rename-a-track).
+To give the track a name of its own, with new keys and strings, ship it in a data addon with `track.add`, `lang.set` and `db.set` ([A track with its own name](/reference/data/track-names)).
 
 ## Using the package elsewhere
 
