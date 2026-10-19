@@ -187,6 +187,37 @@ to an empty handle, so the slice is populated but no wedge draws yet. See
 | upgrade tree | `attach_tyres_tree` | 3 nodes in all 46 real `trees.<team_link>.fake` hubs (`upgrade_department=Fake`), instancecount 1->4, hub `links` attach + outward chain, + container-confirm hook | branch render/buyability confirm + rating integration (in-game test) |
 | 5th pie slice | `render_fifth_pie` (off) | buffer grow + 5th slot + guard relax | authored wedge geometry + jump-table case 4 |
 
+## v0.5.0 — the 5th department SELECTION (flag `select_fifth_dept`, default on)
+
+The code-4 (`Fake`/Tyres) department is now made SELECTABLE so its upgrade page can
+be the active one. The tile data for code 4 is already loaded; the only blocker is
+that the active-department index (the global `DAT_145f93c08`) is clamped `< 4` at
+every non-pie read site, so dept 4 can never be the active page.
+
+The crash trap is the department name table `k_Career_RnDDeptNameTable`
+(`0x145755e58`, four entries): the colour table immediately follows it, so a naive
+clamp relax makes the box grid read `nameTable[4]` = `colour[0]` and dereference it
+as a `char*` → crash. So the fix is ordered:
+
+1. **Name-guard first.** A safetyhook MidHook at the box-grid name read
+   (`0x141c86c9b`) returns a static `"Tyres & Thermal Management"` C-string for
+   index 4, so `nameTable[4]` is never dereferenced. Installed before any clamp is
+   relaxed and always active once installed.
+2. **Relax the box-grid clamp** `cmp al,4` → `cmp al,5` (`0x141c86c88`), only after
+   the name hook is live.
+3. **Relax the tile-page clamp** `cmp al,4` → `cmp al,5` (`0x1423380f3`, the TeamHQ
+   MyTeam VM command handler at `0x142337ff0`). That site indexes a different
+   4-entry table whose `[4]` is a valid string, so it does not crash.
+
+Independently gated (two unique `.xtls` scans + the flag); benign on any miss. The
+box-grid on-screen RECT and the pie wedge remain the separate authored-asset
+follow-ups. Whether the `@rows`/`@tiles` spawner then renders the Fake(4) tiles is
+the in-game test (see `native/HOOKS.md`).
+
+| piece | flag | shipped | deferred |
+|---|---|---|---|
+| 5th dept selection | `select_fifth_dept` | name-guard + box-grid and tile-page active-dept clamp relax (dept 4 selectable, crash trap closed) | tiles-render confirm (in-game test); box RECT + pie wedge (authored art) |
+
 ## Residual unknowns (the in-game test resolves these)
 
 - **Does the game read the 5th department row?** Resolved by RE + the live

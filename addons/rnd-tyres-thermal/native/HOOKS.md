@@ -397,3 +397,101 @@ a relaunch.
 - `career.rnd_pie_buf_alloc` → `site_Career_RnDPieBufAlloc` @0x141f46f6b
 - `career.rnd_box_layout_probe` → `site_Career_RnDDeptBoxLayoutProbe` @0x141c86d86
 - `career.load_upgrade_rows_deptpath` → `site_Career_LoadUpgradeRows_DeptPath` @0x143539c84
+
+## v0.5.0 — the 5th department SELECTION (flag `select_fifth_dept`, default on)
+
+Makes the code-4 (`Fake`/Tyres) department SELECTABLE so it can be the active R&D
+page. The tile data for code 4 is already loaded (both `Career_Load_UpgradeRows`
+@0x143539bc0 and `Career_Load_UpgradeTreeNodes` @0x14353b030 loop codes 0..4, and
+the v0.4.2 `diag_tree_rowcount` probe reports the code-4 row count). The blocker is
+purely DISPLAY/SELECTION: the active-department index is the global
+`DAT_145f93c08` (u8), and every non-pie reader clamps it `< 4`
+(`cmp al,4 ; cmovae eax,0`), so the active dept can never be 4 and the Fake(4)
+`@rows`/`@tiles` are never spawned.
+
+### The crash trap (RESOLVED, verified against the exe)
+`k_Career_RnDDeptNameTable` @0x145755e58 has only FOUR entries
+(`{aero,chassis,maintenance,engine}`) and `k_Career_RnDDeptColourTable`
+@0x145755e78 immediately follows it (+0x20). So reading `nameTable[4]` returns the
+qword at 0x145755e78 = `colour[0]|colour[1]` = `0xff3ec58dffeead00`, which the box
+grid then dereferences as a `char*` → crash. This is THE crash that a naive clamp
+relax would hit on the first name read of dept 4.
+
+### The two active-dept read/clamp sites (RIP-xref of 0x145f93c08; the four
+`0x141f4xxxx` pie reads are a separate authored-art follow-up and are LEFT ALONE)
+- **Box grid** `Career_Build_RnDDeptBoxGrid` @0x141c85f70, the name read (decomp
+  141c85f70.c:488-493). Disassembly @0x141c86c7e:
+  ```
+  141c86c7e  0f b6 05 83 cf 30 04   movzx eax,[DAT_145f93c08]
+  141c86c85  31 c9                  xor ecx,ecx
+  141c86c87  3c 04                  cmp al,4            <- clamp immediate @0x141c86c88
+  141c86c89  0f 43 c1               cmovae eax,ecx      (idx>=4 -> 0)
+  141c86c8c  48 0f be c0            movsx rax,al
+  141c86c90  48 8d 0d c1 f1 ac 03   lea rcx,[k_Career_RnDDeptNameTable]
+  141c86c97  48 8b 14 c1            mov rdx,[rcx+rax*8]  <- the crash-trap read
+  141c86c9b  48 c7 44 24 50 00..00  mov [rsp+0x50],0     <- MidHook site (rdx=name, rax=idx)
+  ...
+  141c86caf  e8 ..                  call Ne_Make_StrFromCStr(&out, rdx, 0, 0)
+  ```
+  Scan (`.xtls`, unique, count=1, hit=0x141c86c7e):
+  `0F B6 05 83 CF 30 04 31 C9 3C 04 0F 43 C1 48 0F BE C0 48 8D 0D C1 F1 AC 03 48 8B 14 C1`
+  → clamp immediate = hit+10 (0x141c86c88), MidHook site = hit+29 (0x141c86c9b).
+- **Tile page** — a TeamHQ MyTeam career VM command dispatcher, func @0x142337ff0,
+  the `cmp eax,0x55702d31`/`je` case @0x1423380e9 (not in the decompiled corpus).
+  IDENTICAL clamp, but indexing a DIFFERENT 4-entry dept code-name table
+  @0x145784d80 (`{aero,chassis,maintenance,engine}`) that is followed by unrelated
+  panel-event strings, so `table[4]` = `"open_driver_ratings_rtt_panel"` — a VALID
+  C-string. Relaxing this clamp therefore does NOT crash; it only lets the
+  active-dept content resolver run for index 4. Disassembly @0x1423380e9:
+  ```
+  1423380e9  0f b6 05 18 bb c5 03   movzx eax,[DAT_145f93c08]
+  1423380f0  31 c9                  xor ecx,ecx
+  1423380f2  3c 04                  cmp al,4            <- clamp immediate @0x1423380f3
+  1423380f4  0f 43 c1               cmovae eax,ecx
+  1423380f7  48 0f be c0            movsx rax,al
+  1423380fb  48 8d 0d 7e cc 44 03   lea rcx,[0x145784d80]
+  142338102  48 8b 14 c1            mov rdx,[rcx+rax*8]
+  ```
+  Scan (`.xtls`, unique, count=1, hit=0x1423380e9):
+  `0F B6 05 18 BB C5 03 31 C9 3C 04 0F 43 C1 48 0F BE C0 48 8D 0D 7E CC 44 03 48 8B 14 C1`
+  → clamp immediate = hit+10 (0x1423380f3).
+
+### What ships (own gate, flag `select_fifth_dept`, default on)
+1. **Name-guard FIRST.** safetyhook MidHook at the box-grid name site (hit+29): for
+   `rax == 4` it sets `rdx` to a static `"Tyres & Thermal Management"` C-string, so
+   `nameTable[4]` = colour[0] is never dereferenced. Installed BEFORE any clamp is
+   relaxed, and it protects index 4 for the life of the process (not runtime-gated
+   off while a clamp is relaxed). No-op for idx 0..3.
+2. **Box-grid clamp** `cmp al,4` → `cmp al,5` (one byte @ hit+10), byte-verified
+   (must be 0x04) and VirtualProtect-guarded, applied ONLY after the name hook is
+   live.
+3. **Tile-page clamp** `cmp al,4` → `cmp al,5` (one byte @ hit+10), byte-verified +
+   guarded. No name hook needed (table[4] is a valid string).
+
+Both clamp relaxations are inert until the active dept is actually 4, so they
+cannot misbehave unless the 5th department is genuinely selected. Independent of
+Hooks A/B, the colour write, the box inject and the probes; on any scan miss /
+mismatch / >1 match the feature installs nothing and the rest keep working. The
+`select_fifth_dept` ON_CHANGE only logs (the clamp byte-patches are install-time).
+
+### Confirmed-safe vs test-resolves
+- **Safe (static-proven against the exe):** both scans are unique on this build; the
+  name read returns a valid string for idx 4 (crash trap closed); the tile table[4]
+  is a valid string; both clamp bytes are verified 0x04 before patching; every
+  read/write is region- and value-guarded; relaxations are inert unless dept 4 is
+  active. The box grid's name-hash dispatch (0xc239ed13/0xfb78dbfb/0x7c93fd0c) has no
+  case for a 5th card, so with the Tyres name it falls to the default branch — no
+  crash either way.
+- **Test resolves:** whether, with dept 4 active, the non-decompiled `@rows`/`@tiles`
+  spawner (`0x141808d90` populate / `Career_Bind_UpgradeCard` @0x1417f8090) actually
+  renders the Fake(4) tiles, or the page is still empty (the content resolver may
+  key off the wrong/short name), or the tile-page handler keys the content
+  differently. The `diag_tree_rowcount` line + the `dept-name[4] overrun intercepted`
+  line disambiguate the outcome.
+
+### New sites (record into the KB later; NOT written to re/db here)
+- box-grid active-dept name read + clamp: func @0x141c85f70, clamp imm @0x141c86c88,
+  name MidHook @0x141c86c9b
+- tile-page (TeamHQ VM cmd 0x55702d31) active-dept clamp: func @0x142337ff0, clamp
+  imm @0x1423380f3
+- crash trap: `k_Career_RnDDeptNameTable[4]` @0x145755e78 = `colour[0]` as char*
