@@ -609,37 +609,41 @@ void install_fifth_box(uintptr_t base)
 // ---------------------------------------------------------------------------
 // R&D > Performance: the LIVE development-potential pie 5th slice (Tyres).
 //
-// The live Performance-page pie is built by Career_Build_RnDPieOverview
-// (0x141f46eb0) + populate helper Career_Populate_RnDPieSlices (0x141f48030) on
-// class-B vtable 0x14575e300 (NOT the dormant class-A builder 0x141f41d60, which
-// does not open on this page). The builder allocates a per-slice buffer at
-// EXACTLY 0x900 (= 0x80 + 4*0x220) at 0x141f46f75, constructs four slots via
-// FUN_141f45650 (slot i at buf+0x80+i*0x220: +0x80/+0x2a0/+0x4c0/+0x6e0), stores
-// the buffer at builder+0x670, then the populate loop (code table 0x145735d60)
-// writes each dept code < 4 into its slot at builder+0x670 + i*0x220.
+// The class-B view model (vtable 0x14575e300, `tab_content_rnd_upgrades_alt`) is
+// created by 0x141c43290 from the career-hub laptop builder 0x141c3f130, and its
+// binding-event override 0x1414bf420 maps event 7 to slot 19 =
+// Career_Build_RnDPieOverview (0x141f46eb0). That runs when the hub laptop binds at
+// CAREER LOAD, before R&D is opened:
+//   0x141f46f75  alloc(0x900, 16) from [this+0x270]
+//   0x141f46f94  FUN_14180c490(obj, this+8): header handles +0x00..+0x80, then an
+//                inlined loop (0x14180c7c0..0x14180c98e, `cmp rax,0xb08`) that
+//                constructs EXACTLY four 0x220 slots of 17 typed VM handles
+//   0x141f46fb8  FUN_142116c80(this+0x668, &{alloc, obj}): unique_ptr move-assign;
+//                destroys and frees the previous object
+//   0x141f47825  Career_Populate_RnDPieSlices (0x141f48030, also run from the
+//                0x141f4a760 callback) move-assigns a temp slot into
+//                obj+0x80+i*0x220 (FUN_141f45500 -> FUN_1442bc170 per handle)
+// The object is destroyed by 0x142116c80 (rebuild), 0x141f44fa0 (slot-20 teardown)
+// and 0x142170f20 (class-B dtor); each calls the slot DESTRUCTOR 0x141f45650 on
+// +0x6e0, +0x4c0, +0x2a0, +0x80.
 //
-// This piece grows the buffer to 0xb20 (= 0x80 + 5*0x220), constructs a real 5th
-// slot (FUN_141f45650 at buf+0x900), and relaxes the populate loop's `code < 4`
-// guard (cmp r14d,3 @0x141f48218) to `< 5` so dept code 4 (the "fake"/Tyres
-// spare, dept-name-table[4] = "fake") is populated into the 5th slot. These are
-// NOT blind writes: the buffer size, slot stride (0x220) and slot constructor
-// (FUN_141f45650) are exactly what the stock prologue uses for slots 0..3; the
-// populate's second index guard (cmp r13d,4 @0x141f4821e) already permits five
-// writes, so it is left untouched.
+// v0.7.0 grew the alloc to 0xb20 but ran the slot DESTRUCTOR on slot 4 from the
+// builder's block that destroys the moved-from temporary (0x141f47012), which the
+// move-assign always leaves null. Slot 4 stayed uninitialised heap, and the first
+// populate at career load unlinked a garbage handle in it
+// (`mov [rdx+8],rcx` @0x1442bc19d).
 //
-// v0.7.0: the wedge geometry ships as authored art (ui/pie, five 72-degree
-// sectors, erp/rnd_fifth_pie.json), and rnd_fifth_pie.cpp names code 4 `tyres`
-// (lng_rnd_dept_tyres, colour 0xff0078ff) at the populate's default jump-table
-// case instead of extending the 4-entry jump table, routes the Tyres tile focus
-// and publishes department_performance.tyres. render_fifth_pie now DEFAULTS ON.
-//
-// Independent gate: one unique scan of the buffer-alloc site; all sites then
-// addressed by fixed RVA (no ASLR) and region-guarded, with the live immediate
-// bytes verified before any write. The static code patches (buffer size + guard
-// immediate) are applied ONLY when the flag is on at load, together with the
-// slot-construct hook, and the guard patch is applied LAST, so the guard is never
-// relaxed unless the buffer is grown and the 5th slot is constructed. Runtime
-// toggling logs that a relaunch is needed (code patches are install-time).
+// v0.7.1, all sites byte-verified, hooks all-or-nothing, guard relaxed LAST:
+//   0x141f46f76  alloc 0x900 -> 0xb40 (0x80 header + 5*0x220 slots + 0x20 footer)
+//   0x141f46f99  after the ctor (r14 = new object): construct slot 4 exactly like
+//                the ctor loop (17 handles {vtable, 0, 0, 0}), write the footer,
+//                register the object
+//   0x141f45650  slot-dtor entry: the first stock slot destroy of a registered
+//                object destroys slot 4 first and unregisters it (every path)
+//   0x141f48228  populate gate: slot index 4 runs only on a registered object with
+//                its footer and slot-4 vtables intact; otherwise the iteration is
+//                skipped (resume 0x141f48200, the loop's next-code path) and logged
+//   0x141f4821b  `cmp r14d,3` -> 4 (codes 0..4)
 
 SWOFTY_SETTING(bool, render_fifth_pie, true);
 std::atomic<bool> g_pie_enabled{true};
@@ -650,45 +654,78 @@ SWOFTY_ON_CHANGE(render_fifth_pie, bool on)
                 on ? "on" : "off");
 }
 
-constexpr uintptr_t kRvaPieAllocSite = 0x141f46f6bull - kImageBase; // scan match: mov rbx,[rsi+0x270]
-constexpr uintptr_t kRvaPieAllocImm  = 0x141f46f76ull - kImageBase; // the 0x900 immediate (4 bytes LE)
-constexpr uintptr_t kRvaPieSlotHook  = 0x141f47012ull - kImageBase; // after the 4th FUN_141f45650; rbx = buffer
-constexpr uintptr_t kRvaPieGuard1Imm = 0x141f4821bull - kImageBase; // the `03` in cmp r14d,3 (code < 4 guard)
-constexpr uintptr_t kRvaPieSlotCtor  = 0x141f45650ull - kImageBase; // FUN_141f45650(slot)
+constexpr uintptr_t kRvaPieAllocSite = 0x141f46f6bull - kImageBase;
+constexpr uintptr_t kRvaPieAllocImm  = 0x141f46f76ull - kImageBase;
+constexpr uintptr_t kRvaPieCtorCall  = 0x141f46f8eull - kImageBase;
+constexpr uintptr_t kRvaPieCtorRet   = 0x141f46f99ull - kImageBase;
+constexpr uintptr_t kRvaPieSlotDtor  = 0x141f45650ull - kImageBase;
+constexpr uintptr_t kRvaPieNextCode  = 0x141f48200ull - kImageBase;
+constexpr uintptr_t kRvaPieLoopHead  = 0x141f48213ull - kImageBase;
+constexpr uintptr_t kRvaPieGate      = 0x141f48228ull - kImageBase;
+constexpr uintptr_t kRvaPieGuard1Imm = 0x141f4821bull - kImageBase;
+constexpr uintptr_t kRvaPieObjLoad   = 0x141f482a5ull - kImageBase;
+constexpr uintptr_t kRvaPieSlotAddr  = 0x141f48327ull - kImageBase;
+constexpr uintptr_t kRvaCtorVtR14    = 0x14180c54cull - kImageBase;
+constexpr uintptr_t kRvaCtorVtR13    = 0x14180c627ull - kImageBase;
+constexpr uintptr_t kRvaCtorLoop     = 0x14180c79bull - kImageBase;
+constexpr uintptr_t kRvaCtorBound    = 0x14180c982ull - kImageBase;
 
-constexpr size_t   kPieSlotStride = 0x220;
-constexpr size_t   kPieSlot4Off   = 0x80 + 4 * kPieSlotStride; // 0x900
-constexpr uint32_t kPieBufNew     = 0x80 + 5 * kPieSlotStride; // 0xb20
+constexpr size_t   kPieHeader      = 0x80;
+constexpr size_t   kPieSlotStride  = 0x220;
+constexpr size_t   kPieHandleSize  = 0x20;
+constexpr size_t   kPieHandles     = kPieSlotStride / kPieHandleSize;
+constexpr size_t   kPieSlot4Off    = kPieHeader + 4 * kPieSlotStride;
+constexpr size_t   kPieFooterOff   = kPieHeader + 5 * kPieSlotStride;
+constexpr uint32_t kPieBufStock    = 0x900;
+constexpr uint32_t kPieBufNew      = static_cast<uint32_t>(kPieFooterOff + 0x20);
+constexpr size_t   kPieFrameThis   = 0x40;
+constexpr size_t   kPieObjField    = 0x670;
+constexpr uint64_t kPieFooterMagic = 0x3545525954444e52ull;
+constexpr uint64_t kPieFooterKey   = 0x9e3779b97f4a7c15ull;
+static_assert(kPieHandles == 17 && kPieSlot4Off == 0x900 && kPieFooterOff == 0xb20 && kPieBufNew == 0xb40);
 
-using PieSlotCtorFn = void (*)(void *slot);
+constexpr uintptr_t kVtA = 0x14565e588ull;
+constexpr uintptr_t kVtB = 0x145670ca8ull;
+constexpr uintptr_t kVtC = 0x14565f6e0ull;
+constexpr uintptr_t kVtD = 0x1456f8310ull;
+constexpr uintptr_t kVtE = 0x14565f670ull;
+constexpr uintptr_t kVtF = 0x14565f1f0ull;
+constexpr uintptr_t kPieSlotVt[kPieHandles] = {kVtA, kVtA, kVtB, kVtB, kVtC, kVtC, kVtF, kVtC, kVtC,
+                                               kVtC, kVtA, kVtD, kVtE, kVtF, kVtF, kVtF, kVtE};
 
-safetyhook::MidHook g_pie_slot_hook;
-std::atomic<int> g_pie_slot_log{0};
+struct PieFooter {
+    uint64_t magic;
+    uint64_t self;
+    uint64_t size;
+    uint64_t gen;
+};
+static_assert(sizeof(PieFooter) == 0x20);
 
-// At 0x141f47012 (right after the 4th slot ctor returns): rbx = the (grown) slice
-// buffer. Construct the 5th slot at buf+0x900 the game's own way so the populate
-// loop can write code 4 into it without touching uninitialised memory.
-void on_pie_slot_construct(safetyhook::Context &c)
+struct PieReg {
+    uintptr_t obj;
+    uint64_t gen;
+};
+
+constexpr size_t kPieRegCap = 16;
+SRWLOCK g_pie_reg_lock = SRWLOCK_INIT;
+PieReg g_pie_reg[kPieRegCap];
+std::atomic<int> g_pie_live{0};
+std::atomic<uint64_t> g_pie_gen{0};
+uintptr_t g_pie_base = 0;
+
+safetyhook::MidHook g_pie_ctor_hook;
+safetyhook::MidHook g_pie_dtor_hook;
+safetyhook::MidHook g_pie_gate_hook;
+std::atomic<int> g_pie_ctor_log{0};
+std::atomic<int> g_pie_dtor_log{0};
+std::atomic<int> g_pie_gate_log{0};
+std::atomic<int> g_pie_skip_log{0};
+
+using PieSlotDtorFn = void (*)(void *slot);
+
+uintptr_t pie_vt(uintptr_t va)
 {
-    if (!g_pie_enabled.load())
-        return;
-    uintptr_t base = swofty::api ? swofty::api->module_base() : 0;
-    if (!base)
-        return;
-    uintptr_t buf = c.rbx;
-    void *slot = reinterpret_cast<void *>(buf + kPieSlot4Off);
-    bool first = g_pie_slot_log.fetch_add(1) == 0;
-    if (buf == 0 || !region_writable(slot, kPieSlotStride)) {
-        if (first)
-            swofty::log("[rnd-tyres] pie: 5th slot @0x%llx not writable (buffer not grown?); NOT constructing (SAFE)",
-                        (unsigned long long)(buf + kPieSlot4Off));
-        return;
-    }
-    auto ctor = reinterpret_cast<PieSlotCtorFn>(base + kRvaPieSlotCtor);
-    ctor(slot);
-    if (first)
-        swofty::log("[rnd-tyres] pie: constructed 5th slice slot @0x%llx (buffer=0x%llx stride=0x220)",
-                    (unsigned long long)(buf + kPieSlot4Off), (unsigned long long)buf);
+    return g_pie_base + (va - kImageBase);
 }
 
 bool pie_bytes_are(uintptr_t addr, const uint8_t *want, size_t n)
@@ -719,13 +756,248 @@ bool pie_patch(uintptr_t addr, const uint8_t *bytes, size_t n, const char *what)
         reinterpret_cast<volatile uint8_t *>(p)[i] = bytes[i];
     DWORD tmp = 0;
     VirtualProtect(p, n, old, &tmp);
+    FlushInstructionCache(GetCurrentProcess(), p, n);
     return true;
 }
 
-// Independent gate: one unique scan of the buffer-alloc site. All sites then by
-// fixed RVA, each region- and value-verified. Installs are ordered so the
-// code-4 guard (the only thing that makes the populate touch the 5th slot) is
-// relaxed LAST, after the buffer is grown and the slot-ctor hook is live.
+uint32_t pie_alloc_imm()
+{
+    const uint8_t *p = reinterpret_cast<const uint8_t *>(g_pie_base + kRvaPieAllocImm);
+    return static_cast<uint32_t>(p[0]) | static_cast<uint32_t>(p[1]) << 8 | static_cast<uint32_t>(p[2]) << 16
+           | static_cast<uint32_t>(p[3]) << 24;
+}
+
+bool pie_reg_add(uintptr_t obj, uint64_t gen, int &live)
+{
+    AcquireSRWLockExclusive(&g_pie_reg_lock);
+    PieReg *slot = nullptr;
+    for (auto &e : g_pie_reg) {
+        if (e.obj == obj) {
+            slot = &e;
+            break;
+        }
+        if (!slot && e.obj == 0)
+            slot = &e;
+    }
+    bool ok = slot != nullptr;
+    if (ok) {
+        if (slot->obj == 0)
+            g_pie_live.fetch_add(1);
+        slot->obj = obj;
+        slot->gen = gen;
+    }
+    live = g_pie_live.load();
+    ReleaseSRWLockExclusive(&g_pie_reg_lock);
+    return ok;
+}
+
+bool pie_reg_find(uintptr_t obj, uint64_t &gen)
+{
+    bool found = false;
+    AcquireSRWLockShared(&g_pie_reg_lock);
+    for (const auto &e : g_pie_reg) {
+        if (e.obj == obj) {
+            gen = e.gen;
+            found = true;
+            break;
+        }
+    }
+    ReleaseSRWLockShared(&g_pie_reg_lock);
+    return found;
+}
+
+bool pie_reg_take(uintptr_t obj, uint64_t &gen)
+{
+    bool found = false;
+    AcquireSRWLockExclusive(&g_pie_reg_lock);
+    for (auto &e : g_pie_reg) {
+        if (e.obj == obj) {
+            gen = e.gen;
+            e.obj = 0;
+            e.gen = 0;
+            g_pie_live.fetch_sub(1);
+            found = true;
+            break;
+        }
+    }
+    ReleaseSRWLockExclusive(&g_pie_reg_lock);
+    return found;
+}
+
+bool pie_footer_ok(uintptr_t obj, uint64_t gen)
+{
+    const auto *f = reinterpret_cast<const PieFooter *>(obj + kPieFooterOff);
+    return f->magic == kPieFooterMagic && f->self == (obj ^ kPieFooterKey) && f->size == kPieBufNew && f->gen == gen;
+}
+
+int pie_slot4_bad_handle(uintptr_t obj)
+{
+    for (size_t i = 0; i < kPieHandles; ++i) {
+        uintptr_t vt = *reinterpret_cast<const uintptr_t *>(obj + kPieSlot4Off + i * kPieHandleSize);
+        if (vt != pie_vt(kPieSlotVt[i]))
+            return static_cast<int>(i);
+    }
+    return -1;
+}
+
+void pie_skip_log(const char *fmt, unsigned long long a, unsigned long long b)
+{
+    int n = g_pie_skip_log.fetch_add(1);
+    if (n >= 8 && (n & 63) != 0)
+        return;
+    char reason[200];
+    snprintf(reason, sizeof reason, fmt, a, b);
+    swofty::log("[rnd-tyres] pie5 slice SKIPPED: %s; slot 4 left untouched, the stock four populate normally", reason);
+}
+
+void on_pie_ctor_ret(safetyhook::Context &c)
+{
+    uintptr_t obj = c.r14;
+    bool first = g_pie_ctor_log.fetch_add(1) < 8;
+    if (!obj) {
+        if (first)
+            swofty::log("[rnd-tyres] pie: pie object alloc returned null; slot 4 not constructed (SAFE)");
+        return;
+    }
+    uint32_t imm = pie_alloc_imm();
+    if (imm != kPieBufNew) {
+        if (first)
+            swofty::log("[rnd-tyres] pie: object 0x%llx was allocated with 0x%x bytes (not 0x%x); slot 4 not "
+                        "constructed (SAFE)",
+                        (unsigned long long)obj, imm, kPieBufNew);
+        return;
+    }
+    if (!region_writable(reinterpret_cast<void *>(obj), kPieBufNew)) {
+        if (first)
+            swofty::log("[rnd-tyres] pie: object 0x%llx not writable to +0x%x; slot 4 not constructed (SAFE)",
+                        (unsigned long long)obj, kPieBufNew);
+        return;
+    }
+    uintptr_t vt0 = *reinterpret_cast<const uintptr_t *>(obj + kPieHeader);
+    uintptr_t vt3 = *reinterpret_cast<const uintptr_t *>(obj + kPieSlot4Off - kPieHandleSize);
+    if (vt0 != pie_vt(kPieSlotVt[0]) || vt3 != pie_vt(kPieSlotVt[kPieHandles - 1])) {
+        if (first)
+            swofty::log("[rnd-tyres] pie: object 0x%llx slots 0..3 not as the ctor builds them (vt 0x%llx/0x%llx); "
+                        "slot 4 not constructed (SAFE)",
+                        (unsigned long long)obj, (unsigned long long)vt0, (unsigned long long)vt3);
+        return;
+    }
+    for (size_t i = 0; i < kPieHandles; ++i) {
+        auto *h = reinterpret_cast<uintptr_t *>(obj + kPieSlot4Off + i * kPieHandleSize);
+        h[0] = pie_vt(kPieSlotVt[i]);
+        h[1] = 0;
+        h[2] = 0;
+        h[3] = 0;
+    }
+    uint64_t gen = g_pie_gen.fetch_add(1) + 1;
+    auto *f = reinterpret_cast<PieFooter *>(obj + kPieFooterOff);
+    f->magic = kPieFooterMagic;
+    f->self = obj ^ kPieFooterKey;
+    f->size = kPieBufNew;
+    f->gen = gen;
+    int live = 0;
+    if (!pie_reg_add(obj, gen, live)) {
+        f->magic = 0;
+        if (first)
+            swofty::log("[rnd-tyres] pie: registry full (%d live); object 0x%llx slot 4 constructed empty but NOT "
+                        "registered, populate will skip it (SAFE)",
+                        live, (unsigned long long)obj);
+        return;
+    }
+    if (first)
+        swofty::log("[rnd-tyres] pie: constructed slot 4 @0x%llx in pie object 0x%llx (alloc 0x%x, 17 handles, "
+                    "footer gen %llu, %d live)",
+                    (unsigned long long)(obj + kPieSlot4Off), (unsigned long long)obj, kPieBufNew,
+                    (unsigned long long)gen, live);
+}
+
+void on_pie_slot_dtor(safetyhook::Context &c)
+{
+    if (g_pie_live.load(std::memory_order_relaxed) == 0)
+        return;
+    uintptr_t s = c.rcx;
+    for (size_t k = 0; k < 4; ++k) {
+        uintptr_t off = kPieHeader + (3 - k) * kPieSlotStride;
+        if (s < off)
+            continue;
+        uintptr_t obj = s - off;
+        uint64_t gen = 0;
+        if (!pie_reg_take(obj, gen))
+            continue;
+        bool first = g_pie_dtor_log.fetch_add(1) < 8;
+        if (!region_writable(reinterpret_cast<void *>(obj), kPieBufNew) || !pie_footer_ok(obj, gen)) {
+            if (first)
+                swofty::log("[rnd-tyres] pie: object 0x%llx footer lost before destroy; slot 4 NOT destroyed (SAFE)",
+                            (unsigned long long)obj);
+            return;
+        }
+        int bad = pie_slot4_bad_handle(obj);
+        reinterpret_cast<PieFooter *>(obj + kPieFooterOff)->magic = 0;
+        if (bad >= 0) {
+            if (first)
+                swofty::log("[rnd-tyres] pie: object 0x%llx slot 4 handle %d vtable changed; slot 4 NOT destroyed "
+                            "(SAFE)",
+                            (unsigned long long)obj, bad);
+            return;
+        }
+        auto dtor = reinterpret_cast<PieSlotDtorFn>(g_pie_base + kRvaPieSlotDtor);
+        dtor(reinterpret_cast<void *>(obj + kPieSlot4Off));
+        if (first)
+            swofty::log("[rnd-tyres] pie: destroyed slot 4 of pie object 0x%llx (gen %llu) before the stock slot "
+                        "destructors (%d live)",
+                        (unsigned long long)obj, (unsigned long long)gen, g_pie_live.load());
+        return;
+    }
+}
+
+void on_pie_gate(safetyhook::Context &c)
+{
+    uint32_t index = static_cast<uint32_t>(c.r13);
+    if (index < 4)
+        return;
+    uintptr_t next = g_pie_base + kRvaPieNextCode;
+    auto skip = [&](const char *fmt, unsigned long long a, unsigned long long b) {
+        pie_skip_log(fmt, a, b);
+        c.rip = next;
+    };
+    if (index != 4) {
+        skip("slot index %llu (code %llu) is past slot 4", index, static_cast<uint32_t>(c.r14));
+        return;
+    }
+    uintptr_t self = *reinterpret_cast<const uintptr_t *>(c.rsp + kPieFrameThis);
+    if (!self || !region_readable(reinterpret_cast<void *>(self + kPieObjField), sizeof(uintptr_t))) {
+        skip("view model 0x%llx unreadable (code %llu)", self, static_cast<uint32_t>(c.r14));
+        return;
+    }
+    uintptr_t obj = *reinterpret_cast<const uintptr_t *>(self + kPieObjField);
+    if (!obj) {
+        skip("view model 0x%llx has no pie object (code %llu)", self, static_cast<uint32_t>(c.r14));
+        return;
+    }
+    uint64_t gen = 0;
+    if (!pie_reg_find(obj, gen)) {
+        skip("pie object 0x%llx was not built with the 0x%llx-byte buffer by this addon (no slot 4)", obj, kPieBufNew);
+        return;
+    }
+    if (!region_readable(reinterpret_cast<void *>(obj), kPieBufNew)) {
+        skip("pie object 0x%llx not readable to +0x%llx", obj, kPieBufNew);
+        return;
+    }
+    if (!pie_footer_ok(obj, gen)) {
+        skip("pie object 0x%llx footer at +0xb20 missing or stale (gen %llu); capacity not proven", obj, gen);
+        return;
+    }
+    int bad = pie_slot4_bad_handle(obj);
+    if (bad >= 0) {
+        skip("pie object 0x%llx slot 4 handle %llu is not the constructed vtable", obj, static_cast<unsigned>(bad));
+        return;
+    }
+    if (g_pie_gate_log.fetch_add(1) < 4)
+        swofty::log("[rnd-tyres] pie5 slice slot 4 verified: object 0x%llx gen %llu, capacity 0x%x (footer), 17 "
+                    "constructed handles; populating code %u",
+                    (unsigned long long)obj, (unsigned long long)gen, kPieBufNew, static_cast<uint32_t>(c.r14));
+}
+
 void install_fifth_pie(uintptr_t base)
 {
     if (!g_pie_enabled.load()) {
@@ -745,50 +1017,98 @@ void install_fifth_pie(uintptr_t base)
         return;
     }
 
-    const uint8_t kImm900[4] = {0x00, 0x09, 0x00, 0x00};
-    const uint8_t kGuard3[4] = {0x41, 0x83, 0xfe, 0x03};
-    uintptr_t imm_at   = base + kRvaPieAllocImm;
-    uintptr_t guard_at = base + kRvaPieGuard1Imm; // the `03` operand (last byte of the cmp)
-    uintptr_t guard_ins = base + (0x141f48218ull - kImageBase);
-    uintptr_t slot_at  = base + kRvaPieSlotHook;
-
-    // Verify every site matches the decompile for THIS build before touching anything.
-    if (!pie_bytes_are(imm_at, kImm900, 4) || !pie_bytes_are(guard_ins, kGuard3, 4)
-        || !region_readable(reinterpret_cast<void *>(slot_at), 16)
-        || !region_readable(reinterpret_cast<void *>(base + kRvaPieSlotCtor), 16)) {
-        swofty::log("[rnd-tyres] pie: site bytes differ from the decompile (imm/guard/slot/ctor); pie NOT patched (SAFE)");
-        return;
+    static const uint8_t kImm900[] = {0x00, 0x09, 0x00, 0x00};
+    static const uint8_t kCtorCall[] = {0x4c, 0x89, 0xf1, 0x48, 0x89, 0xfa, 0xe8, 0xf7, 0x54, 0x8c,
+                                        0xff, 0x48, 0x89, 0x9c, 0x24, 0xc0, 0x02, 0x00, 0x00};
+    static const uint8_t kVtR14[] = {0x4c, 0x8d, 0x35, 0x9d, 0x2c, 0xe5, 0x03};
+    static const uint8_t kVtR13[] = {0x4c, 0x8d, 0x2d, 0x42, 0x30, 0xe5, 0x03};
+    static const uint8_t kLoop[] = {0xb8, 0x88, 0x02, 0x00, 0x00, 0x48, 0x8d, 0x0d, 0xe1, 0x1d, 0xe5, 0x03,
+                                    0x48, 0x8d, 0x15, 0xfa, 0x44, 0xe6, 0x03, 0x4c, 0x8d, 0x05, 0x2b, 0x2f,
+                                    0xe5, 0x03, 0x4c, 0x8d, 0x0d, 0x54, 0xbb, 0xee, 0x03};
+    static const uint8_t kBound[] = {0x48, 0x05, 0x20, 0x02, 0x00, 0x00, 0x48, 0x3d, 0x08,
+                                     0x0b, 0x00, 0x00, 0x0f, 0x85, 0x2c, 0xfe, 0xff, 0xff};
+    static const uint8_t kDtorEntry[] = {0x56, 0x57, 0x53, 0x48, 0x83, 0xec, 0x20, 0x48, 0x89,
+                                         0xce, 0x48, 0x8d, 0x3d, 0xe7, 0xd7, 0x6c, 0x03};
+    static const uint8_t kNextCode[] = {0x48, 0x8d, 0x05, 0x5f, 0xdb, 0x7e, 0x03, 0x48, 0xff, 0xc5, 0x48, 0x39, 0xc5};
+    static const uint8_t kLoopHead[] = {0x44, 0x0f, 0xb6, 0x75, 0x00, 0x41, 0x83, 0xfe, 0x03, 0x77,
+                                        0xe9, 0x41, 0x83, 0xfd, 0x04, 0x0f, 0x87, 0x6b, 0x19, 0x00,
+                                        0x00, 0x44, 0x89, 0xf6, 0x41, 0x83, 0xfe, 0x03, 0x77, 0x22};
+    static const uint8_t kObjLoad[] = {0x4c, 0x8b, 0xa3, 0x70, 0x06, 0x00, 0x00};
+    static const uint8_t kSlotAddr[] = {0x44, 0x89, 0xe8, 0x41, 0xff, 0xc5, 0x44, 0x89, 0xac, 0x24, 0x84, 0x00,
+                                        0x00, 0x00, 0x4c, 0x69, 0xe8, 0x20, 0x02, 0x00, 0x00, 0x4b, 0x8d, 0x1c,
+                                        0x2c, 0x48, 0x81, 0xc3, 0x80, 0x00, 0x00, 0x00, 0x49, 0x83, 0xec, 0x80};
+    struct Check {
+        uintptr_t rva;
+        const uint8_t *bytes;
+        size_t n;
+        const char *what;
+    };
+    const Check checks[] = {
+        {kRvaPieAllocImm, kImm900, sizeof kImm900, "alloc immediate 0x900"},
+        {kRvaPieCtorCall, kCtorCall, sizeof kCtorCall, "ctor call + return site"},
+        {kRvaCtorVtR14, kVtR14, sizeof kVtR14, "ctor slot vtable lea r14"},
+        {kRvaCtorVtR13, kVtR13, sizeof kVtR13, "ctor slot vtable lea r13"},
+        {kRvaCtorLoop, kLoop, sizeof kLoop, "ctor slot loop vtables"},
+        {kRvaCtorBound, kBound, sizeof kBound, "ctor slot loop bound 0xb08"},
+        {kRvaPieSlotDtor, kDtorEntry, sizeof kDtorEntry, "slot destructor entry"},
+        {kRvaPieNextCode, kNextCode, sizeof kNextCode, "populate next-code path"},
+        {kRvaPieLoopHead, kLoopHead, sizeof kLoopHead, "populate guards + gate site"},
+        {kRvaPieObjLoad, kObjLoad, sizeof kObjLoad, "populate object load"},
+        {kRvaPieSlotAddr, kSlotAddr, sizeof kSlotAddr, "populate slot addressing"},
+    };
+    for (const auto &k : checks) {
+        if (!pie_bytes_are(base + k.rva, k.bytes, k.n)) {
+            swofty::log("[rnd-tyres] pie: %s @0x%llx differs from the disassembly; pie NOT patched (SAFE)", k.what,
+                        (unsigned long long)(base + k.rva));
+            return;
+        }
     }
+    g_pie_base = base;
 
-    // 1) 5th-slot constructor hook (does nothing until the buffer is grown).
-    auto r = safetyhook::MidHook::create(reinterpret_cast<void *>(slot_at), &on_pie_slot_construct);
-    if (!r) {
-        swofty::log("[rnd-tyres] pie: slot-ctor MidHook::create failed @0x%llx (err %d); pie NOT patched (SAFE)",
-                    (unsigned long long)slot_at, (int)r.error().type);
-        return;
+    struct Site {
+        uintptr_t rva;
+        void (*fn)(safetyhook::Context &);
+        const char *what;
+    };
+    const Site sites[] = {
+        {kRvaPieCtorRet, &on_pie_ctor_ret, "slot-4 construct after the pie ctor"},
+        {kRvaPieSlotDtor, &on_pie_slot_dtor, "slot-4 destroy at slot-dtor entry"},
+        {kRvaPieGate, &on_pie_gate, "populate slot-4 gate"},
+    };
+    std::array<safetyhook::MidHook, 3> tmp;
+    for (size_t i = 0; i < tmp.size(); ++i) {
+        auto r = safetyhook::MidHook::create(reinterpret_cast<void *>(base + sites[i].rva), sites[i].fn);
+        if (!r) {
+            swofty::log("[rnd-tyres] pie: MidHook::create failed for %s @0x%llx (err %d); pie NOT patched (SAFE)",
+                        sites[i].what, (unsigned long long)(base + sites[i].rva), (int)r.error().type);
+            return;
+        }
+        tmp[i] = std::move(*r);
     }
-    g_pie_slot_hook = std::move(*r);
+    g_pie_ctor_hook = std::move(tmp[0]);
+    g_pie_dtor_hook = std::move(tmp[1]);
+    g_pie_gate_hook = std::move(tmp[2]);
+    for (const auto &s : sites)
+        swofty::log("[rnd-tyres] pie: hooked %s @0x%llx (base+0x%llx)", s.what, (unsigned long long)(base + s.rva),
+                    (unsigned long long)s.rva);
 
-    // 2) grow the slice buffer 0x900 -> 0xb20.
     const uint8_t newimm[4] = {(uint8_t)(kPieBufNew & 0xff), (uint8_t)((kPieBufNew >> 8) & 0xff),
                                (uint8_t)((kPieBufNew >> 16) & 0xff), (uint8_t)((kPieBufNew >> 24) & 0xff)};
-    if (!pie_patch(imm_at, newimm, 4, "buffer-size immediate")) {
-        swofty::log("[rnd-tyres] pie: buffer not grown; code-4 guard left intact (SAFE)");
+    if (!pie_patch(base + kRvaPieAllocImm, newimm, 4, "buffer-size immediate")) {
+        swofty::log("[rnd-tyres] pie: buffer not grown; code-4 guard left intact, slot 4 never built (SAFE)");
         return;
     }
 
-    // 3) LAST: relax the populate `code < 4` guard (cmp r14d,3 -> cmp r14d,4).
     const uint8_t four = 0x04;
-    if (!pie_patch(guard_at, &four, 1, "code<4 guard immediate")) {
-        swofty::log("[rnd-tyres] pie: guard not relaxed; 5th slot is built but unused, buffer grown (SAFE)");
+    if (!pie_patch(base + kRvaPieGuard1Imm, &four, 1, "code<4 guard immediate")) {
+        swofty::log("[rnd-tyres] pie: guard not relaxed; slot 4 is built but unused (SAFE)");
         return;
     }
 
-    swofty::log("[rnd-tyres] pie 5th slice INSTALLED: buffer 0x900->0x%x, slot-ctor hook @0x%llx (base+0x%llx), "
-                "guard cmp r14d,3->4 @0x%llx; code 4 populates slot[4]@buf+0x900 (name=error_department default, "
-                "colour=white; wedge geometry + jump-table case 4 DEFERRED - no wedge draws yet)",
-                kPieBufNew, (unsigned long long)slot_at, (unsigned long long)(slot_at - base),
-                (unsigned long long)guard_ins);
+    swofty::log("[rnd-tyres] pie 5th slice INSTALLED: buffer 0x%x->0x%x (5 slots + footer), slot 4 constructed after "
+                "the ctor and destroyed with the stock four, populate gate @0x%llx, guard cmp r14d,3->4 @0x%llx",
+                kPieBufStock, kPieBufNew, (unsigned long long)(base + kRvaPieGate),
+                (unsigned long long)(base + kRvaPieGuard1Imm - 3));
 }
 
 // ---------------------------------------------------------------------------

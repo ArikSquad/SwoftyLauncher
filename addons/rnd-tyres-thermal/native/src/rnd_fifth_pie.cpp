@@ -3,9 +3,10 @@
 // R&D: Tyres & Thermal Management - the development-potential pie's 5th slice.
 //
 // The addon's render_fifth_pie piece makes Career_Populate_RnDPieSlices
-// (0x141f48030) process department code 4 (buffer 0x900->0xb20, 5th slot
-// constructed, `code < 4` guard relaxed). On its own that code-4 pass takes the
-// jump-table DEFAULT case: name "error_department", description key
+// (0x141f48030) process department code 4 (buffer 0x900->0xb40, 5th slot
+// constructed after the pie ctor and gated at populate, `code < 4` guard
+// relaxed). On its own that code-4 pass takes the jump-table DEFAULT case:
+// name "error_department", description key
 // lng_rnd_dept_error_department_overview_description, colour white, and an icon
 // path overrides.career.rnd_wheel_icon.error_department that does not exist. The
 // pie wedges themselves are bound in laptop_r_and_d.ui to a SECOND data source,
@@ -39,7 +40,7 @@
 // every hook acts ONLY on department code 4 - the stock four never change. The
 // whole file is inert unless the addon's render_fifth_pie (default off) is on;
 // the slice and focus pieces additionally require its code patches to be live
-// in memory (populate guard imm == 4, slice buffer imm == 0xb20).
+// in memory (populate guard imm == 4, slice buffer imm == 0xb40).
 //
 // All addresses are for build d873a1c8 (image base 0x140000000). See SITES.md
 // for the disassembly that proves each site.
@@ -93,7 +94,7 @@ const uint8_t kErrorDeptBytes[] = {'e', 'r', 'r', 'o', 'r', '_', 'd', 'e', 'p', 
 
 // The addon's render_fifth_pie code patches, read back to prove they are live.
 constexpr uintptr_t kVaPieGuardImm = 0x141f4821bull; // cmp r14d,3 -> 4
-constexpr uintptr_t kVaPieBufImm   = 0x141f46f76ull; // mov edx,0x900 -> 0xb20
+constexpr uintptr_t kVaPieBufImm   = 0x141f46f76ull; // mov edx,0x900 -> 0xb40
 
 std::atomic<uintptr_t> g_err{0};
 
@@ -729,12 +730,12 @@ void install(uintptr_t base, bool render_fifth_pie_on)
         install_perf(base);
 
     const uint8_t kGuard4[] = {0x04};
-    const uint8_t kBufB20[] = {0x20, 0x0b, 0x00, 0x00};
-    bool live = bytes_are(base + rva(kVaPieGuardImm), kGuard4, 1) && bytes_are(base + rva(kVaPieBufImm), kBufB20, 4);
+    const uint8_t kBufB40[] = {0x40, 0x0b, 0x00, 0x00};
+    bool live = bytes_are(base + rva(kVaPieGuardImm), kGuard4, 1) && bytes_are(base + rva(kVaPieBufImm), kBufB40, 4);
     if (!live) {
         if (slice_on || focus_on)
             swofty::log("[rnd-tyres] pie5: render_fifth_pie code patches are not live (guard imm != 4 or buffer imm "
-                        "!= 0xb20); slice + focus NOT installed (SAFE)");
+                        "!= 0xb40); slice + focus NOT installed (SAFE)");
         return;
     }
     if (slice_on)
