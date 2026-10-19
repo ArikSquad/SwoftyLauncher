@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "_comment": "R&D department UI is hardcoded to 4 (see native/HOOKS.md). These keys follow the discovered convention lng_rnd_dept_<code>[_overview_description] that the stock UI binds (aero/chassis/engine/maintenance); they are the identity groundwork for the deferred 5th-department (code 'tyres') native+UIDF rework and are inert until that patch references the 'tyres' code.",
   "ops": [
     { "op": "lang.set", "language": "*",   "key": "lng_rnd_dept_tyres",                       "value": "Tyres & Thermal Management" },
     { "op": "lang.set", "language": "eng", "key": "lng_rnd_dept_tyres_overview_description",  "value": "Manage tyre degradation, brake cooling and thermal reliability." }
