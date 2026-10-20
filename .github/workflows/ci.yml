@@ -13,27 +13,86 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  rust:
-    name: Format, clippy, test
+  # A pull request runs only the jobs whose files it changes; a push to main runs every job.
+  changes:
+    name: Changed areas
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      rust: ${{ github.event_name != 'pull_request' || steps.filter.outputs.rust == 'true' }}
+      installer: ${{ github.event_name != 'pull_request' || steps.filter.outputs.installer == 'true' }}
+      native: ${{ github.event_name != 'pull_request' || steps.filter.outputs.native == 'true' }}
+      swofty-ui: ${{ github.event_name != 'pull_request' || steps.filter.outputs.swofty-ui == 'true' }}
+      docs: ${{ github.event_name != 'pull_request' || steps.filter.outputs.docs == 'true' }}
     steps:
-      - uses: actions/checkout@v7
+      - id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            # Every area: this workflow, and the line-ending rules every checkout applies.
+            always: &always
+              - .github/workflows/ci.yml
+              - .gitattributes
+            # Every crate, plus the files outside them that the crates embed or their tests read.
+            rust:
+              - *always
+              - '**/*.rs'
+              - '**/Cargo.toml'
+              - Cargo.lock
+              - rust-toolchain.toml
+              - rustfmt.toml
+              - apps/**
+              - packages/**
+              - installer/**
+              - templates/**
+              - addons/builtins/**
+              - addons/swoftymod/**
+              - addons/custom-grid-size/**
+              - re/db/functions.tsv
+            # The installer crate, its path dependencies (swofty-core, -addon, -formats, -sdk) and what they embed.
+            installer:
+              - *always
+              - Cargo.toml
+              - Cargo.lock
+              - rust-toolchain.toml
+              - installer/**
+              - packages/core/**
+              - packages/addon-api/**
+              - packages/formats/**
+              - packages/sdk/**
+              - templates/addon/native/include/**
+              - addons/swoftymod/swofty.json
+              - apps/launcher/assets/**
+            # native/build.sh bundles the whole re-optimization addon, so its manifest and README count too.
+            native:
+              - *always
+              - native/**
+              - re/**
+              - addons/*/native/**
+              - addons/re-optimization/**
+              - packages/sdk/**
+              - tools/pack_addon.py
+              - tools/rtassets.py
+            # build.py puts tools/ on the module path; the app imports erp, pkg and idf from there.
+            swofty-ui:
+              - *always
+              - tools/swofty-ui/**
+              - tools/erp.py
+              - tools/pkg.py
+              - tools/idf.py
+            docs:
+              - *always
+              - docs/**
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
 
-      # Installs the toolchain rust-toolchain.toml pins, with rustfmt and clippy.
-      - uses: actions-rust-lang/setup-rust-toolchain@v2
-
-      - name: Format
-        run: cargo fmt --all --check
-
-      - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
-
-      # The real-file round trips skip without F1_25_DIR; CI has no game files.
-      - name: Test
-        run: cargo test
-
-  launcher:
-    name: Launcher (${{ matrix.os }})
+  rust:
+    name: Rust (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -42,7 +101,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Installs the toolchain rust-toolchain.toml pins, with rustfmt and clippy.
       - uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          cache: false
+
+      # Only main saves, so pull requests restore main's caches instead of evicting them with their own.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: workspace-debug
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: GPUI system libraries
         if: runner.os == 'Linux'
@@ -51,18 +119,25 @@ jobs:
           sudo apt-get install -y pkg-config libfontconfig-dev libfreetype-dev libwayland-dev \
             libxkbcommon-dev libxkbcommon-x11-dev libx11-xcb-dev libxcb1-dev libvulkan-dev
 
+      - name: Format
+        if: runner.os == 'Linux'
+        run: cargo fmt --all --check
+
+      # The launcher and the installer are not default members; --workspace reaches them too.
       - name: Clippy
-        run: cargo clippy -p swofty-launcher --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Build the workspace
         run: cargo build --workspace
 
+      # The real-file round trips skip without F1_25_DIR; CI has no game files.
       - name: Test
-        if: runner.os == 'Windows'
         run: cargo test
 
   swofty-ui:
     name: Swofty UI (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.swofty-ui == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -96,8 +171,11 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  # The rust job lints the installer on both systems; this job builds the release binary people test.
   installer:
     name: Installer (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.installer == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -108,9 +186,13 @@ jobs:
       - uses: actions/checkout@v7
 
       - uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          cache: false
 
-      - name: Clippy
-        run: cargo clippy -p swofty-launcher-installer --all-targets -- -D warnings
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: installer-release
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Build
         run: cargo build --release -p swofty-launcher-installer
@@ -127,6 +209,8 @@ jobs:
 
   docs:
     name: Documentation build
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -142,13 +226,56 @@ jobs:
 
   native:
     name: Native loader and Wine test
+    needs: changes
+    if: needs.changes.outputs.native == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
+      # Only the Wine tests need these, so the install runs in the background while the build and unit tests do.
+      - name: Start installing Wine and Xvfb
+        run: |
+          (
+            set +e
+            sudo dpkg --add-architecture i386 &&
+              sudo apt-get update &&
+              sudo apt-get install -y wine64 wine xvfb
+            echo $? > "$RUNNER_TEMP/wine-install.status"
+          ) > "$RUNNER_TEMP/wine-install.log" 2>&1 &
+
+      # The native scripts pin their compilers to the maintainer's healthy cores (taskset -c 2-7,...),
+      # which leaves two of a hosted runner's four. This shim drops the pin and runs the command as is.
+      - name: Use every runner core
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          cat > "$RUNNER_TEMP/bin/taskset" <<'EOF'
+          #!/bin/sh
+          [ "$1" = -c ] && shift 2
+          exec "$@"
+          EOF
+          chmod +x "$RUNNER_TEMP/bin/taskset"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      # The scripts below keep their own Zig cache under native/build, which the restore step covers.
       - uses: mlugg/setup-zig@v2
         with:
           version: 0.16.0
+          use-cache: false
+
+      # The key starts over each month so the content-addressed cache cannot grow without bound.
+      - name: Zig cache period
+        id: zig-period
+        run: echo "month=$(date -u +%Y-%m)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the Zig cache
+        id: zig-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            native/build/zig-cache
+            addons/re-optimization/native/build/zig-cache
+          key: zig-${{ runner.os }}-0.16.0-${{ steps.zig-period.outputs.month }}-${{ hashFiles('native/**', 'addons/*/native/**', 'packages/sdk/include/**') }}
+          restore-keys: zig-${{ runner.os }}-0.16.0-${{ steps.zig-period.outputs.month }}-
 
       - name: Build version.dll, swofty_core.dll and the bundled addons
         run: native/build.sh
@@ -178,15 +305,19 @@ jobs:
       - name: Overlay draw-list unit test
         run: native/test/run_hud_test.sh
       - name: Telemetry feed unit test
+        env:
+          ZIG_GLOBAL_CACHE_DIR: ${{ github.workspace }}/native/build/zig-cache
+          ZIG_LOCAL_CACHE_DIR: ${{ github.workspace }}/native/build/zig-cache
         run: |
           zig c++ -std=c++23 -O2 -I packages/sdk/include native/test/telemetry_feed_test.cpp -o telemetry_feed_test
           ./telemetry_feed_test
 
       - name: Wine and Xvfb
+        timeout-minutes: 10
         run: |
-          sudo dpkg --add-architecture i386
-          sudo apt-get update
-          sudo apt-get install -y wine64 wine xvfb
+          while [ ! -f "$RUNNER_TEMP/wine-install.status" ]; do sleep 2; done
+          cat "$RUNNER_TEMP/wine-install.log"
+          exit "$(cat "$RUNNER_TEMP/wine-install.status")"
 
       # A synthetic F1_25.exe carries the signatures; no game files are used.
       - name: Wine test
@@ -194,3 +325,13 @@ jobs:
 
       - name: Runtime assets Wine test
         run: native/test/run_runtime_assets_test.sh
+
+      # Saved after the Wine tests, which compile their fixtures into the same cache.
+      - name: Save the Zig cache
+        if: github.ref == 'refs/heads/main' && steps.zig-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            native/build/zig-cache
+            addons/re-optimization/native/build/zig-cache
+          key: ${{ steps.zig-cache.outputs.cache-primary-key }}
