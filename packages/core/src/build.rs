@@ -693,11 +693,7 @@ pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
         .filter(|(_, pkg)| !pkg.ers.is_empty())
         .map(|(_, pkg)| ErsMap {
             code: &pkg.track_code,
-            base: pkg
-                .activation
-                .copy_from_track
-                .as_deref()
-                .unwrap_or(&pkg.track_code),
+            base: pkg.activation.base_track().unwrap_or(&pkg.track_code),
             values: &pkg.ers,
         })
         .collect();

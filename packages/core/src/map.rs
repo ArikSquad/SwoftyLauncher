@@ -44,6 +44,12 @@ pub struct Activation {
     pub track_overrides: Vec<Override>,
 }
 
+impl Activation {
+    pub fn base_track(&self) -> Option<&str> {
+        self.copy_from_track.as_deref().or(self.copy_slot.as_deref())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Override {
     pub path: String,
@@ -98,6 +104,7 @@ impl TrackPackage {
                 self.track_code
             )));
         }
+        self.base_track()?;
         let paths = std::iter::once(&self.erp).chain(self.copy_directories.iter().map(|c| &c.source));
         let ui = self
             .ui
@@ -112,6 +119,15 @@ impl TrackPackage {
             )));
         }
         Ok(())
+    }
+
+    pub fn base_track(&self) -> Result<&str> {
+        self.activation.base_track().ok_or_else(|| {
+            Error::Map(format!(
+                "{}: manifest.json needs activation.copy_from_track (or copy_slot) naming a stock track to clone",
+                self.track_code
+            ))
+        })
     }
 
     pub fn display_name(&self) -> &str {
@@ -308,6 +324,39 @@ pub(crate) mod tests {
         assert_eq!(p.activation.track_overrides[0].value, "64");
         let bad = OKAYAMA_LIKE.replace(r#""value": "C3""#, r#""value": [1]"#);
         assert!(TrackPackage::parse(bad.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn base_track_falls_back_to_copy_slot() {
+        let both = TrackPackage::parse(
+            OKAYAMA_LIKE
+                .replace(r#""copy_slot": "melbourne""#, r#""copy_slot": "suzuka""#)
+                .as_bytes(),
+        )
+        .unwrap();
+        assert_eq!(both.base_track().unwrap(), "melbourne");
+        let slot_only = OKAYAMA_LIKE.replace(r#""copy_from_track": "melbourne", "#, "");
+        let p = TrackPackage::parse(slot_only.as_bytes()).unwrap();
+        assert_eq!(p.activation.copy_from_track, None);
+        assert_eq!(p.base_track().unwrap(), "melbourne");
+    }
+
+    #[test]
+    fn rejects_a_package_without_a_base_track() {
+        let no_base =
+            OKAYAMA_LIKE.replace(r#""copy_from_track": "melbourne", "copy_slot": "melbourne","#, "");
+        let no_activation = r#"{ "track_code": "portimao", "erp": "portimao.erp" }"#;
+        for json in [no_base.as_str(), no_activation] {
+            let Err(Error::Map(e)) = TrackPackage::parse(json.as_bytes()) else {
+                panic!("{json} should be rejected");
+            };
+            assert!(
+                e.ends_with(
+                    ": manifest.json needs activation.copy_from_track (or copy_slot) naming a stock track to clone"
+                ),
+                "{e}"
+            );
+        }
     }
 
     #[test]

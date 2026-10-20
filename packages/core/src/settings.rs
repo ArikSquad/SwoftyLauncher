@@ -549,7 +549,7 @@ mod tests {
         let pkg = |code: &str, name: &str| {
             TrackPackage::parse(
                 format!(
-                    r#"{{"track_code":"{code}","track_name":"{name}","version":"1.0.0","author_name":"a","erp":"{code}.erp","description":"d"}}"#
+                    r#"{{"track_code":"{code}","track_name":"{name}","version":"1.0.0","author_name":"a","erp":"{code}.erp","description":"d","activation":{{"copy_from_track":"melbourne"}}}}"#
                 )
                 .as_bytes(),
             )

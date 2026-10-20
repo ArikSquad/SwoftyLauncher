@@ -15,7 +15,7 @@ fn game_dir() -> Option<PathBuf> {
         .filter(|d| d.join(GVDB).is_file())
 }
 
-fn package(code: &str, from: &str, slot: Option<&str>, name: &str) -> TrackPackage {
+fn package(code: &str, from: Option<&str>, slot: Option<&str>, name: &str) -> TrackPackage {
     let json = serde_json::json!({
         "track_code": code,
         "track_name": name,
@@ -30,8 +30,8 @@ fn activated(dir: &std::path::Path) -> (Gvdb, Vec<PlanTrack>) {
     let reg = Registry::builtin();
     let lists = std::collections::BTreeSet::new();
     let pkgs = [
-        package("bahrain24", "bahrain", None, "Sepang"),
-        package("testring", "melbourne", Some("melbourne"), "Test Ring"),
+        package("bahrain24", Some("bahrain"), None, "Sepang"),
+        package("testring", Some("melbourne"), Some("melbourne"), "Test Ring"),
     ];
     let mut plan = Vec::new();
     for pkg in &pkgs {
@@ -138,4 +138,48 @@ fn the_profiles_latest_build_supplies_the_tracks() {
     let other = for_profile(&data, &game, "other").unwrap();
     assert!(!other.built && other.tracks.len() == 43);
     std::fs::remove_dir_all(&data).ok();
+}
+
+#[test]
+fn copy_slot_alone_activates_like_the_full_pair() {
+    let Some(dir) = game_dir() else {
+        eprintln!("F1_25_DIR is not set; skipping");
+        return;
+    };
+    let stock = std::fs::read(dir.join(GVDB)).unwrap();
+    let reg = Registry::builtin();
+    let lists = std::collections::BTreeSet::new();
+    let build = |pkg: &TrackPackage| {
+        let mut db = Gvdb::parse(&stock).unwrap();
+        let report = activate(&mut db, pkg, &reg, Some(&TrackHost::Natural), &lists).unwrap();
+        (db, report.lines)
+    };
+    let (pair, pair_lines) = build(&package(
+        "testring",
+        Some("melbourne"),
+        Some("melbourne"),
+        "Test Ring",
+    ));
+    let (slot, slot_lines) = build(&package("testring", None, Some("melbourne"), "Test Ring"));
+    assert_eq!(slot_lines, pair_lines);
+    assert!(
+        slot_lines
+            .iter()
+            .any(|l| l.starts_with("track data: testring cloned from melbourne in ")),
+        "{slot_lines:?}"
+    );
+    assert!(
+        slot.to_bytes() == pair.to_bytes(),
+        "copy_slot alone builds the same database"
+    );
+    let plan = [PlanTrack {
+        code: "testring".into(),
+        name: Some("Test Ring".into()),
+        addon: Some("teamsimplified.mods".into()),
+    }];
+    let ring = list(&slot, &plan)
+        .into_iter()
+        .find(|t| t.code == "testring")
+        .unwrap();
+    assert!(ring.modded && ring.playable);
 }

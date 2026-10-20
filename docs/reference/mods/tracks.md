@@ -61,13 +61,15 @@ The importer recognises a track package by a `manifest.json` with a `track_code`
 | `track_code` | Names your track everywhere; use letters, digits, `_` and `-` |
 | `track_name`, `version`, `author_name` | Optional display fields |
 | `erp` | Path to your track archive, relative to the package |
-| `activation.copy_from_track` | Base track to clone `TrackData` rows from in every dataset |
-| `activation.copy_slot` | Track to clone the `Track` row and resource row from |
+| `activation.copy_from_track` | Base track to clone `TrackData` rows from in every dataset; without it, `copy_slot` is the base track |
+| `activation.copy_slot` | Track to clone the `Track` row and resource row from; defaults to `copy_from_track` |
 | `activation.overrides` | Set `path` to `value` on the cloned `TrackData` rows; give `datasets` to limit which datasets you change |
 | `activation.track_overrides` | Set `path` to `value` on the cloned `Track` row |
 | `ers` | Per-track ERS values written into every 2026 car handling file |
 | `copy_directories` | `source` folders in the package and their `destination` in the game |
 | `ui.images_file`, `ui.minimap_file` | Menu artwork and minimap files |
+
+`activation` needs `copy_from_track`, `copy_slot` or both, each naming a stock track. A package with neither stops the build with `<code>: manifest.json needs activation.copy_from_track (or copy_slot) naming a stock track to clone`.
 
 An override `path` is relative to the row. A segment of it can name a sub-row by number (`TyreData_0`), every sub-row (`TyreData_*`) or the one sub-row whose field matches (`Name[field=value]`, as in [Selecting rows](/reference/ops/database#selecting-rows)). A selector that matches more than one sub-row fails the build.
 

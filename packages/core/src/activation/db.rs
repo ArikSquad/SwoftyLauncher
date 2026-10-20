@@ -431,11 +431,7 @@ pub fn activate(
     let mut db = Db::new(gvdb);
     let mut report = Report::default();
     let code = pkg.track_code.as_str();
-    let from = pkg
-        .activation
-        .copy_from_track
-        .as_deref()
-        .ok_or_else(|| Error::Map(format!("{code}: activation needs copy_from_track")))?;
+    let from = pkg.base_track()?;
     let slot = pkg.activation.copy_slot.as_deref().unwrap_or(from);
     let tracks = Table::of(&reg.track)?;
     let label = |s: &TableSpec| s.labels.first().cloned().unwrap_or_else(|| "_metadata_".into());
