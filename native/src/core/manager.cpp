@@ -86,7 +86,7 @@ struct Mark {
     size_t written, stubs, mids, inlines, sites;
 };
 
-constexpr size_t MAX_SITES = 64;
+constexpr size_t MAX_SITES = 256;
 
 SwoftyApi *api;
 uintptr_t base;
@@ -226,6 +226,12 @@ bool is_code(uintptr_t a)
 {
     auto s = section_of(a);
     return s && (s->Characteristics & IMAGE_SCN_MEM_EXECUTE) && !(s->Characteristics & IMAGE_SCN_MEM_WRITE);
+}
+
+bool is_data1_code(uintptr_t a)
+{
+    auto s = section_of(a);
+    return s && !memcmp(s->Name, ".data1", 7) && (s->Characteristics & IMAGE_SCN_MEM_EXECUTE);
 }
 
 uint8_t byte_at(uintptr_t a)
@@ -413,7 +419,8 @@ uintptr_t apply_match(const Binding &b, uintptr_t match, const char **why)
         return 0;
     }
     bool code = b.kind == "func" || b.kind == "site" || b.kind == "call";
-    if (code ? !is_code(target) : !section_of(target)) {
+    bool data1_site = b.kind == "site" && b.section == ".data1" && is_data1_code(target);
+    if (code ? !is_code(target) && !data1_site : !section_of(target)) {
         *why = code ? "target is not in read-only code" : "target is outside the exe";
         return 0;
     }
@@ -422,6 +429,47 @@ uintptr_t apply_match(const Binding &b, uintptr_t match, const char **why)
         return 0;
     }
     return target;
+}
+
+const std::vector<uint8_t> *hooked_range(uintptr_t a, uintptr_t &start)
+{
+    for (auto &h : inline_hooks)
+        if (a - h.target_address() < h.original_bytes().size())
+            return start = h.target_address(), &h.original_bytes();
+    for (auto &h : mid_hooks)
+        if (a - h.target_address() < h.original_bytes().size())
+            return start = h.target_address(), &h.original_bytes();
+    for (auto &w : written)
+        if (a - w.first < w.second.size())
+            return start = w.first, &w.second;
+    return nullptr;
+}
+
+uintptr_t match_under_hooks(const Binding &b)
+{
+    if (!same_build || b.rva < 0 || b.rkind != "addr")
+        return 0;
+    uintptr_t at = base + b.rva - b.anchor;
+    std::vector<int> pat;
+    for (size_t p = 0; p < b.pattern.size();) {
+        size_t e = b.pattern.find(' ', p);
+        std::string tok = b.pattern.substr(p, e == std::string::npos ? std::string::npos : e - p);
+        if (!tok.empty())
+            pat.push_back(tok[0] == '?' ? -1 : (int)strtoul(tok.c_str(), nullptr, 16));
+        p = e == std::string::npos ? b.pattern.size() : e + 1;
+    }
+    if (pat.empty() || !page_readable(at, pat.size()))
+        return 0;
+    bool under = false;
+    for (size_t k = 0; k < pat.size(); k++) {
+        uintptr_t start = 0;
+        auto orig = hooked_range(at + k, start);
+        under |= orig != nullptr;
+        uint8_t v = orig ? (*orig)[at + k - start] : byte_at(at + k);
+        if (pat[k] >= 0 && v != pat[k])
+            return 0;
+    }
+    return under ? at : 0;
 }
 
 uintptr_t resolve_by_pattern(const Binding &b, const char **why)
@@ -433,6 +481,9 @@ uintptr_t resolve_by_pattern(const Binding &b, const char **why)
         api->scan(b.section.c_str(), b.pattern.c_str(), &match), scans[key] = match;
     else
         match = hit->second;
+    if (!match && (match = match_under_hooks(b)))
+        api->log("[core] binding %s: its bytes carry an installed hook; the pattern matches the bytes under it at the KB "
+                 "address 0x%llx", b.id.c_str(), (unsigned long long)match);
     if (!match) {
         *why = "signature did not match exactly once";
         return 0;

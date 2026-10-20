@@ -151,6 +151,32 @@ builder); mis-sizing risks a crash, and the pie physically cannot show a 5th
 slice without the extra UIDF sector node — so this is **not** safely
 implementable blind and is scoped as a following iteration.
 
+## Mixins in `rnd_departments.cpp` (KB bindings)
+Since the mixin port every hook below is a KB binding resolved by signature at load; the scans, byte
+windows, RVAs and per-site "NOT installed (SAFE)" paths of the sections that follow are gone. One
+unresolved binding drops the addon. The addon has no settings: every piece below is always on, and the
+former flags' defaults are the behaviour. A site that used to be a byte patch reproduces the patched
+instruction and resumes at its own join binding.
+
+Removed with the settings, together with their hooks: the box-layout probe (`render_fifth_box_layout`),
+the upgrade-tree instrument (`attach_tyres_tree`), the tree-rows probe (`diag_tree_rowcount`), the R&D page
+instance diagnostic (`diag_tyres_instances`), the box-grid selection clamp and its name guard
+(`select_fifth_dept`, default off; with the stock clamp the name read never sees index 4), the test price
+(`tyres_test_price`) and the three Develop Upgrade diagnostics (back_pressed, option rows, purchase request).
+
+| piece | bindings |
+|---|---|
+| Hook A, Hook B | `site_Career_TeamDeptEnumStore`, `site_Gdb_DeptCountStore` |
+| UI groundwork | `k_Career_RnDDeptColourTable` ([4] written once at load), `site_Career_RnDDeptBoxGridEntry`, `site_Career_RnDPotentialPieEntry`, `g_Career_RnDOverviewSelectedDept` |
+| 5th box | `site_Career_RnDDeptBoxGridInject`, `Career_Construct_RnDDeptCard`, `Ne_Make_StrFromCStr`, `Ne_Format_String`, `g_Ne_DefaultAllocator` |
+| pie 5th slice | `site_Career_RnDPieBufSize`, `site_Career_RnDPieCtorRet`, the four `site_Career_RnDPie*SlotDtor` / `site_Career_RnDPerfViewModelSlotDtor` redirects, `site_Career_RnDPiePopulateDeptGuard` → `site_Career_RnDPiePopulateSlotCap`, `site_Career_RnDPiePopulateGate` → `site_Career_RnDPiePopulateNextCode` |
+| tile counts | `site_Career_RnDTileCountGuards` → `site_Career_RnDTileCountIndexGuard` → `site_Career_RnDTileCountBody` / `site_Career_RnDTileCountExit` |
+| instances | `site_Career_UpgradeInitFakeDeptBranch` → `site_Career_UpgradeInitNormal`, the five `site_Career_Upgrade*DeptGate` → `*Body`, `site_Career_UpgradeGraphHubTest` → `site_Career_UpgradeGraphRegularNode`, `Car_Reset_LastFittedUpgrade`, a wrap of `Career_Refresh_UpgradeAvailability`, `site_Career_DeserialiseUpgradesEnd`, `site_Career_RnDDeptPagePreQuery` |
+| Develop Upgrade screen | `site_Career_RnDContainerOpenMaint` → `site_Career_RnDContainerOpenTail`, `Career_Refresh_RnDDeptMode`, `Vm_Set_TabEnabled`, `vt_Career_RnDDeptCard`, `site_Career_RnDBoxGridFirstTab`, `site_Career_RnDCompareDept`, `site_Career_RnDCardArt{Image,Mask}0..2`, `site_Career_RnDCardDeptIcon0..2`, `site_Career_RnDCardColourPick0..4` |
+
+Install lines name the binding instead of an address, for example
+`[rnd-tyres] 5th-box inject hook installed (site_Career_RnDDeptBoxGridInject)`.
+
 ## v0.3.0 — the LIVE 5th BOX, shipped (box only; pie deferred)
 
 A genuine 5th department box now renders on R&D > Performance behind its own
@@ -311,7 +337,7 @@ screen builder 0x141c43290) is not in the decompiled corpus and the 5th cell rec
 lives in the un-dumped `frontend_overlay.idf` scene; cloning a slot + fabricating
 a rect blind risks a crash, and the declarative UIDF/ERP pipeline is not built — so
 **no visible-cell lever is safely shippable from the addon this round**.
-**Shipped (flag `render_fifth_box_layout`, default on, scan
+**Shipped until the settings cleanup, which removed it (it was `render_fifth_box_layout`, scan
 `career.rnd_box_layout_probe` @0x141c86d86, read-only):** a one-shot diagnostic
 that dumps the live slot-vector vs card-vector + every authored slot's bound/inner
 node, so the follow-up (an external f1-modding ERP scene patch adding a 5th
@@ -319,6 +345,7 @@ authored cell, or a runtime slot+scene-node clone using the captured pointers) h
 exact ground truth.
 
 ### Piece 2 — the upgrade tree (flag `attach_tyres_tree`)
+The read-only instrument described here was removed with its setting; the data placement stands.
 `Career_Load_UpgradeRows` (0x143539bc0) loops codes 0..4 and opens
 `<team_link>.<deptname>` (`"%s.%s"`, deptname from `k_Career_UpgradeDeptNameTable`;
 [4]="fake"), reading `upgrade_<N>` rows into one vector. Each record stores only
@@ -403,6 +430,8 @@ a relaunch.
 - `career.load_upgrade_rows_deptpath` → `site_Career_LoadUpgradeRows_DeptPath` @0x143539c84
 
 ## v0.5.0 — the 5th department SELECTION (flag `select_fifth_dept`, default on)
+
+> **Removed.** The setting, the clamp relax and the name guard are gone; the box-grid clamp is stock.
 
 > **Superseded in v0.6.0 (dead end).** `DAT_145f93c08` is the R&D > Performance overview
 > box-grid selection; a hardware watchpoint proved it never changes while the department
@@ -595,23 +624,20 @@ so saves written with v0.4/v0.5 carry our sentinel and would overwrite a fixed i
 returned.
 
 ### The fix (flag `instantiate_tyres_upgrades`, default on, install-time)
-Gate: one exactly-one `.xtls` scan of the init site
-`C7 81 D8 00 00 00 00 00 00 00 48 8B 81 C0 00 00 00 48 89 81 C8 00 00 00 80 79 72 04 75 3A`
-(hit must be 0x143517df4), then every other site byte-verified at its fixed RVA. Core sites are
-all-or-nothing (rolled back on any create failure). Each hook is a safetyhook MidHook ON the
-conditional jump, adjusting ZF in the saved rflags, and acts only on OUR instances: dept 4, row
-flag 0xff, and `+0x58` in {0x27e41c13, 0x27f63494, 0x28084d15} or `upgrade_name` in our three.
+Mixin sites on the department compare of each gate (the KB rows the earlier sweep named), always on.
+Each acts only on OUR instances: dept 4, row flag 0xff, and `+0x58` in our node hashes or
+`upgrade_name` in our rows, and resumes on the branch the stock code takes for a real department.
 Identification is by content, never address (the init runs on a stack temp).
 
-| site | hook @ | effect for ours |
+| binding (instruction) | resumes at (ours) | effect for ours |
 |---|---|---|
-| init dept==4 branch | 0x143517e10 (`jne`) | clear ZF → normal init: Unavailable, enabled 1, locked 0 (`unlock_at_facility_level` = 0) |
-| PushState guard | 0x1435230f7 (`ja`) | set ZF → state changes apply |
-| SetEnabled guard | 0x143523524 | set ZF |
-| SetFacilityLocked guard | 0x143523744 | set ZF |
-| SetFitted guard | 0x1435157e4 | set ZF |
-| auto-fit pass guard | 0x1412486bc | set ZF |
-| graph-search hub test | 0x143528a09 (`je`) | clear ZF → regular node, not the hub |
+| `site_Career_UpgradeInitFakeDeptBranch` 0x143517e0c (`cmp [rcx+0x72],4 ; jne`) | `site_Career_UpgradeInitNormal` 0x143517e4c | normal init: Unavailable, enabled 1, locked 0 (`unlock_at_facility_level` = 0) |
+| `site_Career_UpgradePushStateDeptGate` 0x1435230f3 (`cmp [rcx+0x72],3 ; ja ret`) | `site_Career_UpgradePushStateBody` 0x1435230fd | state changes apply |
+| `site_Career_UpgradeSetEnabledDeptGate` 0x143523520 | `site_Career_UpgradeSetEnabledBody` 0x14352352a | as above |
+| `site_Career_UpgradeSetLockedDeptGate` 0x143523740 | `site_Career_UpgradeSetLockedBody` 0x14352374a | as above |
+| `site_Career_UpgradeSetFittedDeptGate` 0x1435157e0 | `site_Career_UpgradeSetFittedBody` 0x1435157ea | as above |
+| `site_Career_UpgradeAutoFitDeptGate` 0x1412486b8 | `site_Career_UpgradeAutoFitBody` 0x1412486be | as above |
+| `site_Career_UpgradeGraphHubTest` 0x143528a05 (`cmp [rax+0x72],4 ; je hub`) | `site_Career_UpgradeGraphRegularNode` 0x143528a0b | regular node, not the hub |
 
 The hub (`default`/`central_fake_upgrade`) never matches, so it keeps the stock sentinel, stays
 disabled, stays out of every query, and still terminates the graph search as the root.
@@ -620,9 +646,9 @@ Sanitizer (heals saves that persisted the sentinel): for OUR instances whose sta
 whose last entry is still disabled, call the game's own init (now on the normal path), then mirror
 `Career_ResetAll_Upgrades`: mode 0 → owner cache `+0x1aa8 = 0x3fff0000` so the next query runs
 `Upgrades_SetOwner` and recomputes availability; modes 1/2 → `Career_Refresh_UpgradeAvailability
-(U, 0)` (only at load). Runs at: load (`Upgrades_Deserialise` after the trees, 0x14353610f,
-`rdi` = U), refresh entry (0x14352f300, `rcx` = U), and the R&D page just before the query
-(0x141c7d8ba, `rcx` = U). Each optional site is byte-verified on its own.
+(U, 0)` (only at load). Runs at: load (`site_Career_DeserialiseUpgradesEnd` 0x14353610f, after the trees, `rdi` = U), a wrap of
+`Career_Refresh_UpgradeAvailability` (entry, `rcx` = U), and the R&D page just before the query
+(`site_Career_RnDDeptPagePreQuery` 0x141c7d8ba, `rcx` = U). The init it calls is `Car_Reset_LastFittedUpgrade`.
 
 Checked consumers of `+0x72` for index-by-department overruns once dept-4 upgrades become live:
 department name/colour lookups in the upgrade panels are bounded (`cmp 3/5 ; ja default`), the
@@ -631,8 +657,7 @@ department name/colour lookups in the upgrade panels are bounded (`cmp 3/5 ; ja 
 shows the bounded fallback department label (`error_department`) for Tyres upgrades.
 
 ### Diagnostic (flag `diag_tyres_instances`, default on, read-only)
-Own scan `48 8D 94 24 F0 0D 00 00 4C 8D 84 24 8C 00 00 00 66 41 B9 FF FF E8 FC AF 89 01 0F B6 8E D8 06 00 00`
-(hit 0x141c7d8ba); MidHook at hit+0x1a = 0x141c7d8d4 (after the query; `rsi` = card, count at
+Removed with its setting. It was site `site_Career_RnDDeptPageQueryDone` 0x141c7d8d4 (after the query; `rsi` = card, count at
 `rsp+0x19f0`). Logs per page build (Tyres page up to 24 times, other pages once):
 `instances: R&D page dept=N team=… query=… by dept 0:… 1:… 2:… 3:… 4:…`, the Tyres-listed names,
 and every dept-4 instance's last state.
@@ -718,38 +743,38 @@ Classified with `capstone` over a full `objdump` of `.xtls`; plus the panel/card
 | card binders `rnd_part_image/_mask.<upgrade_name>` | 6 Ne_Format_String sites | no frame for our names → blank card/unlock art | **yes** | borrowed parts |
 | 0x143525b60 | upgrade cost | formula (below) | **yes** | test price hook |
 
-### What v0.6.1 installs (gate: one `.xtls` scan of the dispatch, hit must be 0x141c873ac; flag `tyres_upgrade_screen`, default on)
-Every other site is byte-verified at its fixed RVA and installs on its own.
-- **Back route** — MidHook @0x141c873c2 (`cmp eax,0x5c31ec68`, the last name compare of the open case). For
-  name hash `tyres` (0x107666dc) or `error_department` (0x7e5c1342, only produced for department >= 4): find
-  the department card (vtable 0x145740250, `+0x6d8 == 4`) that owns a container slot
-  (`+0x548..+0x550`, `slotObj+0x20 == card+0x268`, `slotObj+8 != 0`), call `0x141c87620(&container, 0)` (the
-  stock department-mode refresh: dept cards on, panels off, `show_shoulders`), enable the Tyres card with
-  `0x14431f470(container+0x2d8, card+0x268, 1)`, set `rax = &cards[i]` and resume at the stock tail
-  0x141c875a5 (`mov [rsi+0x7b8],card` → slot lookup → `jmp 0x14431f6b0` select). If no such card/slot
-  exists, rewrite the hash to `maintenance` so the stock code opens Durability. Stock names never match.
-- **Comparison alias** — MidHook @0x141c8ec4c (before `call 0x1418130b0`): the comparison's department byte
-  at `[rsp+0x108]` is 4 only for our upgrades; Tyre Wear/Brakes → Chassis (1), Upgrade All Durability →
-  Durability (2), which are the stock departments of those effect types.
-- **Card art** — MidHooks on the `lea r9` before 9 `Ne_Format_String` calls (`[rsp+0x20]` = frame name):
-  `rnd_part_image`/`rnd_part_mask` @0x141810122/0x1418103a2/0x1418154d0/0x14181558f/0x14181845c/0x14181852e
-  (our names → `[om_xm_]tyre_blankets`, `calipers`, `turbo_charger_wear_1` + the state suffix; `om_xm_` when the
-  pkg path contains it), and `rnd_dept_icons_small` @0x141810482/0x141815670/0x14181861b
-  (`error_department` → `chassis`).
-- **Card colour** — `0x14571bce0[4]` white → Tyres orange 0xff0078ff (table verified stock first).
-- **Diagnostics** — back_pressed @0x141c8c172, option rows @0x141c8cbb0, purchase entry @0x1412414c0,
-  state pushes in the v0.6.0 push guard.
+### What v0.6.1 installs (flag `tyres_upgrade_screen`, default on; the Back route is latched at launch)
+All of it is always on.
+- **Back route** — `site_Career_RnDContainerOpenMaint` 0x141c873c2 (`cmp eax,0x5c31ec68`, the last name compare
+  of the open case). For name hash `tyres` (0x107666dc) or `error_department` (0x7e5c1342, only produced for
+  department >= 4): find the department card (`vt_Career_RnDDeptCard`, `+0x6d8 == 4`) that owns a container slot
+  (`+0x548..+0x550`, `slotObj+0x20 == card+0x268`, `slotObj+8 != 0`), call `Career_Refresh_RnDDeptMode(&container,
+  0)` (the stock department-mode refresh: dept cards on, panels off, `show_shoulders`), enable the Tyres card with
+  `Vm_Set_TabEnabled(container+0x2d8, card+0x268, 1)`, set `rax = &cards[i]` and resume at
+  `site_Career_RnDContainerOpenTail` 0x141c875a5 (`mov [rsi+0x7b8],card` → slot lookup → select). If no such
+  card/slot exists, rewrite the hash to `maintenance` so the stock code opens Durability. Stock names never match.
+- **Comparison alias** — `site_Career_RnDCompareDept` 0x141c8ec4c (before `call 0x1418130b0`): the comparison's
+  department byte at `[rsp+0x108]` is 4 only for our upgrades; it becomes the effect type's stock department
+  (Chassis for Tyre Thermal, Brake Cooling, Tyre Life; Powertrain for Power Unit Cooling).
+- **Card art** — sites on the `lea r9` before 9 `Ne_Format_String` calls (`[rsp+0x20]` = frame name):
+  `site_Career_RnDCardArtImage0..2` (`rnd_part_image`, 0x141810118/0x1418154c6/0x141818452, art sites 0/2/4),
+  `site_Career_RnDCardArtMask0..2` (`rnd_part_mask`, 0x141810398/0x141815585/0x141818524, art sites 1/3/5) and
+  `site_Career_RnDCardDeptIcon0..2` (`rnd_dept_icons_small`, 0x141810478/0x141815666/0x141818611, art sites 6..8,
+  `error_department` → the Tyres frame).
+- **Card colour** — `site_Career_RnDCardColourPick0..4`, on the instruction after each card binder's
+  `k_Career_RnDCardColourTable[dept]` load (0x14180eb3d, 0x14180ff2b, 0x141814baf, 0x1418174e0, 0x1418b0faf): department 4
+  reads Tyres orange 0xff0078ff instead of white. The table itself is not written.
+- **Diagnostics** — the state pushes in the v0.6.0 push guard. The back_pressed, option-row and
+  purchase-request diagnostics were removed with the settings.
 
 ### Test price (flag `tyres_test_price`, default on) — TEMPORARY
+Removed: the Tyres upgrades always use the database cost. The cost function below is unchanged.
 Cost = `0x143525b60(list, instance, team modifiers, option)`: base `cost` (+0x5c) or `cost_to_develop`
 (+0x60, option & 6), team rows only; × modifier kind 3 (research) / 0x13 (development) cost scale; + kind 10 ×
 upgrades owned; + `(base × instance+0xd8) / 100` (event-driven percent; −60 on the test save, which is why the
 1000-point row showed 400). It is called by the affordability list `0x1435329b0`, the research and
 development cost wrappers `0x14351dde0` / `0x14351df60` (`0x14351df60` is mislabelled
-`Car_Read_VehicleAttribute` in the KB), the card and the panel. A MidHook at its entry (scan + 60-byte
-verify) returns 5 for our three by resuming at a verified `ret` (0x14351df56). Restore: turn
-`tyres_test_price` off (database `cost`/`cost_to_develop` stay 1000). Research/development times were also
-shortened to 5/5 days for testing (database rows; real values 20/25).
+`Car_Read_VehicleAttribute` in the KB), the card and the panel.
 
 ### Names
 Per-upgrade name key = `lng_rnd_<upgrade_name>`, description = `lng_rnd_<upgrade_name>_description` (card
@@ -770,17 +795,19 @@ material/texture). The replacements change size, so both archives take the rewri
 (launcher PR #138; the v1.0.4 CLI drops them). The research overview (`team_hq/research`) keeps the
 stock four-sector pie.
 
-**Native** (`src/rnd_fifth_pie.cpp`, `rnd_fifth_pie::install` right after `install_fifth_pie`; every piece
-needs `render_fifth_pie`, now default on; slice and focus also need its patches live):
+**Native** (`src/rnd_fifth_pie.cpp`, `rnd_fifth_pie::install` right after `install_fifth_pie`, whose populate
+changes slice and focus rely on). The pieces have no options and are always on. Every hook is a mixin on a
+KB binding (`PIE_SITES.md`, "Bindings"):
 
-| option | scan gate | sites | for department code 4 |
-|---|---|---|---|
-| `pie_tyres_slice` | 0x141f48253 | 0x141f482a0, 0x141f485ab, 0x141f485b5, 0x141f48a64 | populate name `tyres`, description key, colour 0xff0078ff, wheel icon `maintenance` |
-| `pie_tyres_focus` | 0x141f4aa21 | 0x141f4aa28 (resume 0x141f4aa4f) | `department_focused "tyres"` highlights the sector; `DAT_145f93c08` untouched |
-| `pie_tyres_performance` | 0x1418945a5 | 0x1418945b6, 0x1418946d4, 0x141894702, 0x141894e03; data 0x14571bce0[4] | publisher `0x1418914f0` emits `department_performance.tyres` (derived current/potential) |
+| piece | bindings | for department code 4 |
+|---|---|---|
+| slice | `site_Career_RnDPieSliceNameJoin`, `site_Career_RnDPieSliceDescFormat` (redirect), `site_Career_RnDPieSliceDefaultColour`, `site_Career_RnDPieSliceIconArgs` | populate name `tyres`, description key, colour 0xff0078ff, wheel icon `maintenance` |
+| focus | `site_Career_RnDPieFocusNameCmp` (resume `site_Career_RnDPieFocusJoin`) | `department_focused "tyres"` highlights the sector; `g_Career_RnDOverviewSelectedDept` untouched |
+| performance | `site_Career_RnDPerfDeptLoopEnd`, `site_Career_RnDPerfDeptName`, `site_Career_RnDPerfChildName`, `site_Career_RnDPerfDeptColour`, `site_Career_RnDPerfGotoName` | publisher `0x1418914f0` emits `department_performance.tyres` (derived current/potential, orange `dept_colour`) |
 
-All sites were checked for in-function branch targets inside the patched bytes (none). The colour slot
-0x14571bce0[4] is shared with the v0.6.1 card colour write; both accept an already-orange slot.
+All sites were checked for in-function branch targets inside the patched bytes (none). The publisher's
+`dept_colour` is set at its read (`site_Career_RnDPerfDeptColour`), so `k_Career_RnDCardColourTable`
+0x14571bce0 is not written by this piece; a white read becomes orange and an already-orange one is kept.
 Expected log lines: `pie5 slice/perf/focus ... INSTALLED`, then on R&D > Performance
 `pie5 slice: code 4 ...`, `pie5 perf: dept 4 published as department_performance.tyres`, and on the
 Tyres tile `pie5 focus: department_focused "tyres" -> ...`.
@@ -832,33 +859,29 @@ freed memory. Hypotheses (a) "another alloc site" and (c) "raw `char*`" are rule
 callers are 0x141f46f94 (class B) and 0x141f41e56 (class A), and the name pointer is a static C
 string, exactly like the stock `error_department` literal.
 
-### The v0.7.1 fix (`install_fifth_pie`, flag `render_fifth_pie`, default on)
-Gate: unchanged exactly-one scan @0x141f46f6b. Then 11 byte windows are verified at fixed RVAs: alloc
-imm, ctor call/return 0x141f46f8e, ctor vtable leas 0x14180c54c/0x14180c627/0x14180c79b, loop bound
-0x14180c982, slot-dtor entry 0x141f45650, populate next-code 0x141f48200, loop head + guards
-0x141f48213, object load 0x141f482a5 and slot addressing 0x141f48327. The three hooks below are
-created all-or-nothing, then the alloc is grown, and the guard is relaxed LAST.
+### The v0.7.1 fix (flag `render_fifth_pie`, default on, latched at launch)
+Mixins in `rnd_departments.cpp`, all resolved from the KB at load (one unresolved binding drops the
+addon). Every handler is always on.
 
-| site | kind | does |
+| binding | kind | does |
 |---|---|---|
-| 0x141f46f76 | imm | `mov edx,0x900` → **0xb40** = 0x80 + 5×0x220 + 0x20 footer |
-| 0x141f46f99 | MidHook (after the ctor, `r14` = new object or 0) | Proceeds only if the alloc imm reads 0xb40, the object is writable to +0xb40, and slot 0 h0 and slot 3 h16 carry the ctor's vtables. It then constructs slot 4 exactly like the ctor loop (17 × `{vt, 0, 0, 0}`), writes the footer at +0xb20 `{"RNDTYRE5", obj ^ 0x9e3779b97f4a7c15, 0xb40, gen}`, and registers the object (16-entry SRW-locked registry) |
-| 0x141f45650 | MidHook (slot-dtor entry) | For `rcx - (0x80 + k×0x220)`, k = 3..0: if that object is registered, take it out of the registry and check its footer and slot-4 vtables. If they are intact, clear the footer and call the slot dtor on `obj+0x900` before the stock slot destroys run. This covers rebuild, teardown and dtor. A corrupt footer or vtable logs and leaves slot 4 alone. A no-op when nothing is registered |
-| 0x141f48228 | MidHook (populate, after both guards, before any side effect of the iteration) | For slot index `r13d ≥ 4`, read `obj = [[rsp+0x40]+0x670]` and require: registered, readable to +0xb40, footer intact (gen matches), all 17 slot-4 vtables as constructed. On any miss, log `pie5 slice SKIPPED: <reason>` and set `rip = 0x141f48200`, the loop's next-code path (`inc rbp`, codes ≥ 5 fail the guard, then exit) |
-| 0x141f4821b | imm | `cmp r14d,3` → 4 (applied last) |
+| `site_Career_RnDPieBufSize` (0x141f46f7a, `mov r8d,0x10` after `mov edx,0x900`) | site | `edx` = **0xb40** = 0x80 + 5×0x220 + 0x20 footer; marks the allocation as grown for this thread |
+| `site_Career_RnDPieCtorRet` (0x141f46f99, after the ctor, `r14` = new object or 0) | site | Proceeds only if this thread's allocation was grown, the object is writable to +0xb40, and slots 0..3 carry the same 17 handle vtables (the first object's are latched as the expected set). It then constructs slot 4 exactly like the ctor loop (17 × `{vt, 0, 0, 0}`, vtables copied from the stock slots), writes the footer at +0xb20 `{"RNDTYRE5", obj ^ 0x9e3779b97f4a7c15, 0xb40, gen}`, and registers the object (16-entry SRW-locked registry) |
+| `site_Career_RnDPieMoveAssignSlotDtor`, `site_Career_RnDPieTeardownSlotDtor`, `site_Career_RnDPerfViewModelSlotDtor`, `site_Career_RnDPieMovedFromSlotDtor` (the first `call Career_Destroy_RnDPieSlot` on `+0x6e0` in the move-assign 0x142116c80, the slot-20 teardown 0x141f44fa0, the class-B dtor 0x142170f20 and the dead moved-from block) | redirect | For `rcx - (0x80 + k×0x220)`, k = 3..0: if that object is registered, take it out of the registry and check its footer and slot-4 vtables. If they are intact, clear the footer and call the slot dtor on `obj+0x900`, then run the stock slot destroy. A corrupt footer or vtable logs and leaves slot 4 alone. A no-op when nothing is registered |
+| `site_Career_RnDPiePopulateDeptGuard` (0x141f48218, `cmp r14d,3 ; ja`) | site | Code 4 resumes at `site_Career_RnDPiePopulateSlotCap` (the guard reads as `cmp r14d,4`) |
+| `site_Career_RnDPiePopulateGate` (0x141f48228, after both guards, before any side effect of the iteration) | site | For slot index `r13d ≥ 4`, read `obj = [[rsp+0x40]+0x670]` and require: registered, readable to +0xb40, footer intact (gen matches), all 17 slot-4 vtables as constructed. On any miss, log `pie5 slice SKIPPED: <reason>` and resume at `site_Career_RnDPiePopulateNextCode` (0x141f48200, `inc rbp`, codes ≥ 5 fail the guard, then exit) |
 
-All four hook windows passed the in-function branch-target check, and a whole-`.xtls` rel32/rel8
-scan found no branches into them. The Windows x64 safetyhook stub resumes at `Context64::rip` with
-the original rsp (`lea rsp,[rsp+8] ; pop rsp ; ret`), which the gate's skip relies on.
-`rnd_fifth_pie.cpp` now treats the patches as live when guard == 4 and the buffer imm == **0xb40**.
+The slot dtor `Career_Destroy_RnDPieSlot` has no unique signature of its own (its body is a generic
+handle-release run shared with other functions) and no data pointer, so its 26 E8 callers are the
+only handle on it. The four redirected calls are the first slot destroy of every path that frees a
+class-B pie object; the other groups destroy class-A objects or populate temporaries, which are never
+registered.
+`rnd_fifth_pie.cpp` relies on these populate changes for its slice and focus pieces.
 
 ### Expected log
 Install:
 ```
-[rnd-tyres] pie: hooked slot-4 construct after the pie ctor @0x141f46f99 (base+0x1f46f99)
-[rnd-tyres] pie: hooked slot-4 destroy at slot-dtor entry @0x141f45650 (base+0x1f45650)
-[rnd-tyres] pie: hooked populate slot-4 gate @0x141f48228 (base+0x1f48228)
-[rnd-tyres] pie 5th slice INSTALLED: buffer 0x900->0xb40 (5 slots + footer), slot 4 constructed after the ctor and destroyed with the stock four, populate gate @0x141f48228, guard cmp r14d,3->4 @0x141f48218
+[rnd-tyres] pie 5th slice INSTALLED: buffer 0x900->0xb40 (5 slots + footer), slot 4 constructed after the ctor and destroyed with the stock four, populate gate site_Career_RnDPiePopulateGate, guard cmp r14d,3->4 at site_Career_RnDPiePopulateDeptGuard
 ```
 Career load (and each rebuild):
 ```
@@ -892,7 +915,9 @@ upgrades of the dept with last state InProgress (0x141c8e5df..0x141c8e764); flag
 `{alloc, begin, end, cap}`.
 Cause: entries are only ever CREATED by the per-team inits, unrolled over depts 0..3:
 `0x1434f9770` (modes 1/2, 232 calls to TeamModifiers_Add 0x1434f8a00, base loop `{0,1,2,3}` @0x1434fadd1)
-and `0x1434f58b0` (mode 0, 80 calls). TeamModifiers_Add = add-if-absent + stable sort by kind. Listeners
+and `0x1434f58b0` (mode 0, 80 calls). TeamModifiers_Add = add-if-absent, then two stable passes by kind and by dept (the
+vector ends ordered by dept, then kind), and it adds kind/dept/source to the small sets at
+list+0x20/+0x50/+0x80/+0x90. Listeners
 (0x141238520 → callback 0x1412bc4c0) only update existing `kind|dept<<8|0x1070000` entries; the save
 loader 0x1434fc330 (+0x1434f85e0) only restores saved keys. The Fake row gives the kind maps key 4, but no
 list holds a dept-4 entry → slots 0 → limit. The v0.6.1 "fixed: Fake row" modifier consumers
@@ -902,22 +927,22 @@ TeamModifiers_Add, present ones get Durability's value); stock entries are never
 sit after the null check and BEFORE the game loads `[list+8]/[list+0x10]`, so a reallocation inside
 TeamModifiers_Add is invisible to it.
 
-| site | hook | effect |
+| binding | hook | effect |
 |---|---|---|
-| 0x141c8e280 | scan anchor (exactly one hit) | — |
-| 0x141c8e2a7 | panel, rax = list, bl = dept | mirror for dept 4 |
-| 0x141c8e766 | panel check, ebp slots / eax in-use / r12b gate | diagnostic `capacity check:` (+ Durability slots/in-use from `[rsp+0x1ba0]`, count `[rsp+0x27a0]`) |
-| 0x141c7dcca | dept page 0x141c7b880, rax = list, bl = card dept | mirror for dept 4 (Tyres tab slot count) |
-| 0x1434f8a00 | called (68-byte verify) | TeamModifiers_Add(list, key, float value in xmm2) |
+| `site_Career_RnDPanelModifierList` 0x141c8e2a7 | panel, rax = list, bl = dept | mirror for dept 4 |
+| `site_Career_RnDPanelResearchLimit` 0x141c8e766 | panel check, ebp slots / eax in-use / r12b gate | diagnostic `capacity check:` (+ Durability slots/in-use from `[rsp+0x1ba0]`, count `[rsp+0x27a0]`) |
+| `site_Career_RnDPageModifierList` 0x141c7dcca | dept page `Career_Build_RnDDeptPage`, rax = list, bl = card dept | mirror for dept 4 (Tyres tab slot count) |
+| `Career_Add_TeamModifier` 0x1434f8a00 | called (`fn` binding) | TeamModifiers_Add(list, key, float value in xmm2) |
 
-No in-function branch targets inside the hook windows. The whole-`.xtls` scan flags only non-code bytes (a
+The three sites are one all-or-nothing set with the rest of the addon. The capacity piece has no option
+and is always on; every handler is a no-op until `rnd_capacity::install` runs. No in-function branch targets inside the hook
+windows. The whole-`.xtls` scan flags only non-code bytes (a
 rel8 inside `mov [rsp+0x78],r14` at 0x141c7dcc3, and junk at 0x140f5cac9 outside any `.pdata` function).
 Limits: AI teams' lists get no dept-4 entries (stock); a list re-init (0x1434f9770 from 0x14123b3f0, or
 0x1434f95f0 rebuild) drops them until the next Tyres page/panel open. Saves persist the mirrored entries.
 
 Expected log:
 ```
-[rnd-tyres] capacity: tyres_research_capacity=on
 [rnd-tyres] capacity panel: hooked panel modifier list (rax) @0x141c8e2a7 (base+0x1c8e2a7)
 [rnd-tyres] capacity panel: hooked panel research-limit check (ebp/eax) @0x141c8e766 (base+0x1c8e766)
 [rnd-tyres] capacity INSTALLED: dept 4 mirrors Durability's team modifiers (research slots, scales, rush) when the develop-upgrade panel reads them; TeamModifiers_Add @0x1434f8a00
@@ -925,7 +950,6 @@ Expected log:
 -- Tyres tab / upgrade --
 [rnd-tyres] capacity: Tyres page team 0x… list 0x…: dept 4 mirrored from Durability (src 58, inserted 58, updated 0) -> research slots dept4=N durability=N
 [rnd-tyres] capacity check: team 0x… dept 4 slots=N in-progress=0 gate=1 -> research-limit=0 | Durability slots=N in-progress=M
-[rnd-tyres] develop-upgrade options: tyres_thermal_1 "tyres_wear_reduction" … research-limit=0
 ```
 (src is 58 in list modes 1/2, 20 in mode 0.)
 
@@ -971,7 +995,7 @@ different scene chain and a different view-model class (class A, vtable 0x14575e
 0x141f45d30 compares only aero/chassis/maintenance/engine, pie populate gated `< 4`), with four authored
 tiles and no Tyres focus. Its pie binds the same `focused_team_perf_root.department_performance.*` root, so
 a fifth sector there would get data from the publisher, but without a Tyres tile it would be a wedge nobody
-can focus, and with `pie_tyres_performance` off an empty 72° gap. The Performance page has its own chain, so
+can focus, and without the publisher's Tyres entry an empty 72° gap. The Performance page has its own chain, so
 it gets the five sectors and Team HQ keeps the stock pie with no gap.
 
 ### 2. The Tyres tile count (flag `pie_tyres_counts`, default on, install-time)
@@ -983,95 +1007,99 @@ The tile shows `lng_progress_num_total` with `NUM = upgrades_fitted`, `TOTAL = t
 with `+0x72 == code`, fitted = those whose last state is Completed (3); the four handles are written at
 `[this+0x670] + 0x88/0xa8/0xc8/0xe8 + idx*0x220`. Two guards kept slot 4 out:
 
-| site | bytes | v0.7.2 |
+| binding | instruction | v0.7.2 |
 |---|---|---|
-| 0x141f49c1e | scan anchor `41 0F B6 4D 00 80 F9 03 77 EA 83 FB 03 0F 87 2A 03 00 00 48 C7 84 24 30 0C 00 00` (unique) | — |
-| 0x141f49c25 | `cmp cl,3` (code guard) | imm → 4 |
-| 0x141f49c2a | `cmp ebx,3` (slot index guard) | imm → 4 |
-| 0x141f49c31 | `mov qword [rsp+0xc30],0` (after both guards, before any write) | MidHook gate: index 4 needs a registered pie object with an intact footer and 17 slot-4 vtables, else `rip = 0x141f49f5b` (the function's exit = stock behaviour) |
-| verified | 0x141f49be2 (null check, `mov rsi,rdx ; mov rdi,rcx`), 0x141f49d61 (`mov rax,[rdi+0x670] ; imul r12,rcx,0x220`), 0x141f49f5b (epilogue) | — |
+| `site_Career_RnDTileCountGuards` (0x141f49c23) | `cmp cl,3 ; ja` (code guard) | site: code 4 resumes at `site_Career_RnDTileCountIndexGuard` (reads as `cmp cl,4`) |
+| `site_Career_RnDTileCountIndexGuard` (0x141f49c28) | `cmp ebx,3 ; ja exit` (slot index guard) | site: index 4 needs a registered pie object with an intact footer and 17 slot-4 vtables; then it resumes at `site_Career_RnDTileCountBody` (0x141f49c31, reads as `cmp ebx,4`), else at `site_Career_RnDTileCountExit` (0x141f49f5b, the function's exit = stock behaviour) |
 
-The hook is created first, then the index guard, then the code guard (either alone is inert). Installed only
-when `install_fifth_pie` completed. The `.ui` also missed the tile's refresh: `focusable.trigger` (raised by
+Both sites are always on.
+The `.ui` also missed the tile's refresh: `focusable.trigger` (raised by
 `onTabActivated`) sent `Trigger` to the four stock tiles only, and the tile's `Trigger` is what runs
 `progress_value.refreshTextInst` and the ring's `slowRefresh`; it now also targets `focusable.tyres`.
 
-### 3. Tyres icon and colour in the R&D lists (flag `tyres_dept_tags`, default on, install-time)
-`src/rnd_dept_tags.cpp`. Every tag names its frame `dept < 4 ? table[dept] : "error_department"` (0x14587e10d,
-51 references) and reads a `< 6` colour table whose [4] is white. The name was already right through the
+### 3. Tyres icon and colour in the R&D lists (always on)
+`src/rnd_dept_tags.cpp`. Every tag falls back to the frame `"error_department"` (0x14587e10d, 51 references)
+when its lookup misses: the lists test the department byte (`dept < 4 ? table[dept]`), the upgrade card the part
+type and the perks title the `return_department_name` hash (both below). Colours read a `< 6` table on the
+department byte whose [4] is white. The name was already right through the
 `lng_rnd_dept_error_department` lang key. Sweep of every `%s.%s.%s` icon path on the R&D atlases
 (`rnd_dept_icons_small` ×12, `rnd_category_icons` ×6, `rnd_department_strips` ×1, `rnd_wheel_icon` ×2):
 
-| hook (`lea r9,[atlas]`, frame in `[rsp+0x20]`) | screen | department 4 frame |
+| site (`lea r9,[atlas]`, frame in `[rsp+0x20]`) | screen | department 4 frame |
 |---|---|---|
-| 0x141f3da29 (fn 0x141f3bec0) | R&D In Progress list ("Part Information") part icon | `error_department_<type>` → stock `<dept>_<type>` (`chassis_tyre_wear`, `chassis_brakes`, `maintenance_general_maintenance`) |
-| 0x141f3d71d (fn 0x141f3bec0) | same list, Driver Career colour strip | `rnd_error_department_strip` → `rnd_maintenance_strip` |
-| 0x141c83920 (fn 0x141c82470) | department page category rows (`rnd_category_row`, keyed by the card's +0x6d8) | category mapping |
-| 0x141c78018 (fn 0x141c76b60) | research category rows (`research_upgrades_category_row`) | category mapping |
-| 0x1419bf600 (fn 0x1419be1e0) | Team HQ R&D popups (research/development completed, failed, delayed) | category mapping |
-| 0x14174dc04 (fn 0x14174cb20), 0x14174eea5 (fn 0x14174e170) | upgrade lists in the 0x1417 family | `error_department` → `maintenance` |
-| 0x1417f87af (fn 0x1417f8090) | upgrade card (`Career_Bind_UpgradeCard`, car monitor objectives) | `maintenance` |
-| 0x141c8876f (fn 0x141c87af0) | department perks title icon (`return_department_name`) | `maintenance` |
+| `site_Career_RnDInProgressPartIcon` 0x141f3da29 (fn 0x141f3bec0) | R&D In Progress list ("Part Information") part icon | `error_department_<type>` → stock `<dept>_<type>` (`chassis_tyre_wear`, `chassis_brakes`, `maintenance_general_maintenance`) |
+| `site_Career_RnDInProgressStrip` 0x141f3d71d (fn 0x141f3bec0) | same list, Driver Career colour strip | `rnd_error_department_strip` → `rnd_maintenance_strip` |
+| `site_Career_RnDDeptRowCategoryIcon` 0x141c83920 (fn 0x141c82470) | department page category rows (`rnd_category_row`, keyed by the card's +0x6d8) | category mapping |
+| `site_Career_RnDResearchRowCategoryIcon` 0x141c78018 (fn 0x141c76b60) | research category rows (`research_upgrades_category_row`) | category mapping |
+| `site_Career_RnDPopupCategoryIcon` 0x1419bf600 (fn 0x1419be1e0) | Team HQ R&D popups (research/development completed, failed, delayed) | category mapping |
+| `site_Career_RnDUpgradeListDeptIcon` 0x14174dc04 (fn 0x14174cb20), `site_Career_RnDListRowDeptIcon` 0x14174eea5 (fn 0x14174e170) | upgrade lists in the 0x1417 family | `error_department` → `maintenance` |
+| `site_Career_UpgradeCardDeptIcon` 0x1417f87af (fn 0x1417f8090) | upgrade card (`Career_Bind_UpgradeCard`, car monitor objectives); the frame (`rbx`) comes from the part type, 0–2 engine, 3–6 chassis, 7–10 aero, 11–18 maintenance (table 0x14571bcc0), and type > 18, so the Tyres types 19–22, gives `error_department` | `error_department` → `maintenance` |
+| `site_Career_RnDPerksTitleDeptIcon` 0x141c8876f (fn 0x141c87af0) | department perks title icon; the frame (`r12`) is a literal picked by the djb2 hash of `return_department_name` (aero 0x7c93fd0c, chassis 0xc239ed13, maintenance 0x5c31ec68, engine 0xfb78dbfb), anything else gives `error_department` | `error_department` → `maintenance` |
 
-Each window (`mov [rsp+0x20],reg` … `call Ne_Format_String`, 27 bytes) is verified, and the hook sits on the
-7-byte `lea r9`; none contains an in-function branch target (the three whole-`.xtls` rel8 candidates into
-0x141c88771/0x141c7801d/0x141c83925 are bytes inside `lea r15/r14,[rsp+..]`). Gate: the In Progress strip
-format at 0x141f3d6b0 (`4C 8D 0D 56 0A 94 03 40 80 FF 03 77 0B 48 8D 05 AC 10 83 03 4C 8B 0C F8 BA 80 00 00
-00`, unique). The v0.6.1 card-binder department icons (0x141810478/0x141815666/0x141818611) now borrow
-`maintenance` too (was `chassis`), so Tyres has one department icon, the one its tile shows.
+Each site is the 7-byte `lea r9`, one MidHook window. No window holds a branch target: none in its function's
+linear disassembly or jump tables, and the four whole-`.xtls` rel8 candidates (from 0x1417f87ad, 0x141c8874b,
+0x141c77ff7, 0x141c838ff) are bytes inside other instructions. The v0.6.1 card-binder department icons
+(0x141810478/0x141815666/0x141818611) now borrow `maintenance` too (was `chassis`), so Tyres has one department
+icon, the one its tile shows.
 
-Colours: 0x14570ddd8[4] (fn 0x14174e170) → 0xff0078ff and its light twin 0x14570ddf0[4] → 0xff99c9ff;
-0x145736548[4] (fn 0x1419be1e0) → 0xff0078ff; each after a full six-entry layout check, single reader each.
-The In Progress list's table 0x14576f5d8 is shared with the Driver Career rewards (0x1420bcfb0,
-0x1420c1bd0), so that list gets a MidHook on its colour store instead: 0x141f3dacf `mov [rsp+0x6c],eax`
-(window from 0x141f3dab5 verified), `eax` white → 0xff0078ff when `[r13+0x72] == 4`. Not touched:
-0x145784c18 (Team HQ department tiles 0x1422fe430 and department events 0x1422e5af0 index it by an event
-department, where [4] may not mean Tyres) and the perks title colour (the perks panel maps unknown names to
-index 5).
+Colours: the tables stay stock. A site on the store after each `< 6` read sets department 4's white to the Tyres
+orange, testing the movsx'd department still in the index register:
+
+| site | store, table | colour, department | department 4 white → |
+|---|---|---|---|
+| `site_Career_RnDListRowColourStore` 0x14174e591 (fn 0x14174e170) | `mov [rsp+0x3c],r8d`, `k_Career_RnDListColourTable` | r8d, rdx | 0xff0078ff |
+| `site_Career_RnDListRowLightColourStore` 0x14174e5af (fn 0x14174e170) | `mov [rsp+0x44],ecx`, `k_Career_RnDListLightColourTable` | ecx, rdx | 0xff99c9ff |
+| `site_Career_RnDPopupColourStore` 0x1419bf5aa (fn 0x1419be1e0) | `mov [rsp+0x8c],ecx`, `k_Career_RnDPopupColourTable` | ecx, rax | 0xff0078ff |
+| `site_Career_RnDInProgressColourStore` 0x141f3dacf (fn 0x141f3bec0) | `mov [rsp+0x6c],eax`, `k_Career_RnDInProgressColourTable` | eax, rcx | 0xff0078ff |
+
+Each store is the `ja` target of its bound check and that `ja` is the only branch to it, so the department
+register holds on both paths. Windows: 5, 8, 7 and 12 bytes, none with a branch target inside. The In Progress
+table 0x14576f5d8 is also read by the Driver Career rewards (0x1420bcfb0, 0x1420c1bd0). Not touched: 0x145784c18
+(Team HQ department tiles 0x1422fe430 and department events 0x1422e5af0 index it by an event department, where [4]
+may not mean Tyres) and the perks title colour (the perks panel maps unknown names to index 5).
 
 ### 4. The Tyres tile opens Durability (flag `pie_tyres_open`, default on, install-time)
 Tile press → `focusable.select_pressed` → `raiseEvent goto_rnd_departments` → `laptop_container.ui`
 `raise_command goto_rnd` → the departments flow → `Career_Build_RnDDeptBoxGrid` picks the first tab from
 `DAT_145f93c08` clamped `< 4` (0x141c86c7e) and maps the name to a card (aero/chassis/engine, else
-`cards[3]` = Durability). `pie_tyres_focus` deliberately never writes `DAT_145f93c08` (every pie/box read
+`cards[3]` = Durability). The Tyres focus deliberately never writes `DAT_145f93c08` (every pie/box read
 clamps it), so the screen opened the last stock department focused before Tyres. The v0.7.1 log has
 `box-grid builder reached: … selection=2` right after `department_focused "tyres"`, and the box-layout probe
 right after shows the Tyres card already owns slot[6] (`bound-node=0x32a091068 = card+0x268`), so the
 Back-route fallback was not involved.
 
-`DAT_145f93c08` has exactly two writers (RIP-xref): 0x141f4aa49 (class B, Performance page focus) and
-0x141f460a9 (class A, Team HQ research overview focus). Fix:
+`DAT_145f93c08` (`g_Career_RnDOverviewSelectedDept`) has exactly two writers (RIP-xref): 0x141f4aa49
+(class B, Performance page focus) and 0x141f460a9 (class A, Team HQ research overview focus). Each runs
+exactly when its handler's strcmp chain (aero/chassis/maintenance/engine) matches. The two handlers are
+byte clones around both stores, so the flag hooks sit on each chain's first strcmp, where the code still
+differs, and compare the data string themselves. Fix:
 
 | site | kind | does |
 |---|---|---|
-| on_focus (0x141f4aa28, existing) | flag | data `tyres` sets "Tyres is the focused tile" |
-| 0x141f4aa49 `mov [DAT_145f93c08],al` | MidHook | a stock focus on the Performance page clears the flag |
-| 0x141f460a9 `mov [DAT_145f93c08],al` (window 0x141f4609b verified) | MidHook | a stock focus on the Team HQ research overview clears it |
-| 0x141f48476 `cmp r14b,al ; jne` (populate focus restore; scan 0x141f48465 `0F B6 05 9C B7 04 04 3C 04 B9 00 00 00 00 0F 43 C1 41 38 C6 75 2F`, unique) | MidHook | flag set: al = 4 for code 4, 0xff for codes 0..3, so the rebuilt page focuses the Tyres tile again |
-| 0x141c86d03 `mov rax,[rax] ; mov [rsi+0x7b8],rax` (box-grid first-tab join; scan of the 30 bytes from there, unique; 0x141c86cde verified) | MidHook | flag set and the Tyres card (vtable 0x145740250, `+0x6d8 == 4`) owns a container slot: `rax` = its card-vector element, and the stock tail stores, enables and selects it. No such slot: stock first tab |
+| `site_Career_RnDPieFocusNameCmp` 0x141f4a9e6 (class B, also the focus hook) | site | data `tyres` sets "Tyres is the focused tile"; a stock name clears it (a stock focus on the Performance page) |
+| `site_Career_RnDResearchFocusNameCmp` 0x141f46046 (class A) | site | a stock name clears it (a stock focus on the Team HQ research overview) |
+| `site_Career_RnDPieFocusRestore` 0x141f48476 `cmp r14b,al ; jne` (populate focus restore) | site | flag set: al = 4 for code 4, 0xff for codes 0..3, so the rebuilt page focuses the Tyres tile again |
+| `site_Career_RnDBoxGridFirstTab` 0x141c86d03 `mov rax,[rax] ; mov [rsi+0x7b8],rax` (box-grid first-tab join) | site | flag set and the Tyres card (`vt_Career_RnDDeptCard`, `+0x6d8 == 4`) owns a container slot: `rax` = its card-vector element, and the stock tail stores, enables and selects it. No such slot: stock first tab |
 
 All windows pass the in-function branch-target check; the whole-`.xtls` scan finds no branch into them. The
-route hook is installed by `install_upgrade_screen` next to the Back route (it reuses `find_tyres_tab`), only
-when the tracking hooks are live. Other ways in already land on the Tyres tab: the departments tab bar, Back
+route site sits next to the Back route (it reuses `find_tyres_tab`) and acts only when the tracking hooks are
+live. Other ways in already land on the Tyres tab: the departments tab bar, Back
 from a Tyres upgrade, the perks back and cross-department jumps (v0.6.1 open dispatch).
 
 ### Expected log (v0.7.2 additions)
 Install:
 ```
-[rnd-tyres] pie5: pie_tyres_slice=on pie_tyres_focus=on pie_tyres_open=on pie_tyres_performance=on
-[rnd-tyres] pie5 open: hooked R&D > Performance stock index store @0x141f4aa49 (base+0x1f4aa49)
-[rnd-tyres] pie5 open: hooked Team HQ research overview stock index store @0x141f460a9 (base+0x1f460a9)
+[rnd-tyres] pie5 open: hooked R&D > Performance stock focus @0x141f4a9e6 (base+0x1f4a9e6)
+[rnd-tyres] pie5 open: hooked Team HQ research overview stock focus @0x141f46046 (base+0x1f46046)
 [rnd-tyres] pie5 open: hooked populate focus restore compare @0x141f48476 (base+0x1f48476)
 [rnd-tyres] pie5 open INSTALLED: the Tyres focus is tracked for the departments screen's first tab and restored on the Performance page
-[rnd-tyres] pie5 counts: hooked tile-count slot-4 gate @0x141f49c31 (base+0x1f49c31)
-[rnd-tyres] pie5 counts INSTALLED: FUN_141f49bc0 counts code 4 into slot 4 (cmp cl,3->4 @0x141f49c25, cmp ebx,3->4 @0x141f49c2a, gate @0x141f49c31)
+[rnd-tyres] pie5 counts INSTALLED: Career_Write_RnDPieTileCounts counts code 4 into slot 4 (cmp cl,3->4 at site_Career_RnDTileCountGuards, cmp ebx,3->4 and the slot-4 gate at site_Career_RnDTileCountIndexGuard)
 [rnd-tyres] dept tag: hooked <site> @0x… (base+0x…)                       (x9)
+[rnd-tyres] dept tag: hooked R&D list row colour store @0x14174e591 (base+0x174e591)
+[rnd-tyres] dept tag: hooked R&D list row light colour store @0x14174e5af (base+0x174e5af)
+[rnd-tyres] dept tag: hooked Team HQ R&D popup colour store @0x1419bf5aa (base+0x19bf5aa)
 [rnd-tyres] dept tag: hooked in-progress list colour store @0x141f3dacf (base+0x1f3dacf)
-[rnd-tyres] dept tag: R&D upgrade list 0x14174e170 colour [4] white -> 0xff0078ff (@0x14570dde8)
-[rnd-tyres] dept tag: R&D upgrade list 0x14174e170 light colour [4] white -> 0xff99c9ff (@0x14570de00)
-[rnd-tyres] dept tag: Team HQ R&D popup 0x1419be1e0 colour [4] white -> 0xff0078ff (@0x145736558)
 [rnd-tyres] dept tags INSTALLED: 9/9 icon sites; …
-[rnd-tyres] Tyres tile route (box-grid first tab -> Tyres tab while Tyres is the focused tile) installed @0x141c86d03
 [rnd-tyres] Tyres tile route LIVE: pressing the Tyres tile on R&D > Performance opens the Tyres department page
 ```
 R&D > Performance:
@@ -1085,10 +1113,11 @@ Focus Tyres, press it:
 [rnd-tyres] departments first tab: Tyres was the focused tile -> Tyres tab (card=0x… slot elem=0x…, stock element 0x…)
 ```
 Focus a stock tile afterwards: `[rnd-tyres] pie5 open: R&D > Performance focused stock department index N;
-Tyres focus cleared`. In Progress with a Tyres upgrade listed: `dept tag: in-progress list 0x141f3bec0 part
-icon "error_department_tyre_wear" -> "chassis_tyre_wear"` and `dept tag: in-progress list colour for
-department 4 white -> 0xff0078ff`. Refusals end in `(SAFE)` (`pie5 counts SKIPPED: …`, `dept tag: … NOT
-hooked (SAFE)`, `… stock first tab kept`).
+Tyres focus cleared`. In Progress with a Tyres upgrade listed: `dept tag: in-progress list part icon
+"error_department_tyre_wear" -> "chassis_tyre_wear"` and `dept tag: in-progress list colour for department 4
+white -> 0xff0078ff`; an R&D list row: `dept tag: R&D list row colour for department 4 white -> 0xff0078ff`;
+a Team HQ R&D popup: `dept tag: Team HQ R&D popup colour for department 4 white -> 0xff0078ff`. Refusals end
+in `(SAFE)` (`pie5 counts SKIPPED: …`, `… stock first tab kept`).
 
 ### Live checks (gdb under Wine, `handle all nostop noprint pass` + `handle SIGTRAP stop noprint nopass`)
 Hardware breakpoints on the instruction after each hook window:
@@ -1127,7 +1156,7 @@ scenes, `.ui` and databases); the pie's round sectors are BC7 quarter-disc masks
 array gets `replace-resource` on the head (slices + 1), the pixels (stock slices byte for byte + the new slice)
 and the SRV view (slices + 1): 18 operations in `flow_career_hub.erp` and 12 in `flow_team_hq.erp`. One `patch-pkg`
 on `overrides.uidb` appends the six entries with `clone-entry` (`src` = the list's last entry, `as` = the frame,
-`Value` = `…/tyres.tif` or `…/rnd_tyres_strip.tif`). Every operation carries `"when": {"tyres_icon": true}`.
+`Value` = `…/tyres.tif` or `…/rnd_tyres_strip.tif`).
 
 Offline check (stock copies, every operation applied with `tools/erpw.py` and `tools/pkg.py`): 10332 untouched
 resources of `flow_career_hub.erp`, 19716 of `flow_team_hq.erp` and 7 of `databases.erp` decompress byte-identical;
@@ -1146,7 +1175,7 @@ every stock slice of the ten grown arrays is byte-identical; the lists read `[�
 | In Progress colour strip (`TagKind::Strip`) | `rnd_dept_tags.cpp` | `rnd_maintenance_strip` | `rnd_tyres_strip` |
 | Tyres tile wheel icon (`on_slice_icon`, populate H4) | `rnd_fifth_pie.cpp` | `rnd_wheel_icon.maintenance` | `rnd_wheel_icon.tyres` |
 
-Any other probe result (setting off, archives not rewritten, a runtime delivery that left the files stock) keeps
+Any other probe result (archives not rewritten, a runtime delivery that left the files stock) keeps
 the 0.7.2 frames, so no hook ever names a frame the game lacks. No new hook sites.
 
 ### Expected log (v0.8.0)
@@ -1160,3 +1189,219 @@ the 0.7.2 frames, so no hook ever names a frame the game lacks. No new hook site
 ```
 Fallback: `tyres icon off: 0/6 grown R&D icon arrays … (SAFE)` and the 0.7.2 lines with `maintenance` /
 `aero` / `rnd_maintenance_strip`.
+
+## v0.9.0 — the Tyres upgrade types (setting `tyres_upgrade_types`, default on, install-time)
+
+`src/rnd_upgrade_types.cpp`. The `tyres_upgrade_types` setting is gone: the types are always on while the addon is
+enabled. The Tyres department gets its own upgrade types instead of borrowing stock ones, so its upgrades never
+dilute Chassis' Tyre Wear or Brakes:
+
+| id | `upgrade_type` | camel-case (telemetry) | UI key suffix | VTF block | full-progress effect |
+|---|---|---|---|---|---|
+| 19 | `Tyre Thermal` | `TyreThermal` | `tyre_thermal` | `radUpgradeTyreThermal` | Tyre Front/Rear `UpgradeTempFactor` ×0.85 |
+| 20 | `Brake Cooling` | `BrakeCooling` | `brake_cooling` | `radUpgradeBrakeCooling` | Brake Front/Rear `CoefHeatTransferConstant`, `CoefHeatTransferLinear` ×1.25 |
+| 21 | `Tyre Life` | `TyreLife` | `tyre_life` | `radUpgradeTyreLife` | Tyre Front/Rear `UpgradeWearFactor` ×0.90 |
+| 22 | `Power Unit Cooling` | `PowerUnitCooling` | `pu_cooling` | `radUpgradePUCooling` | Engine `RadiatorSurfaceArea` ×1.15 |
+
+How a type reaches the car (from the R&D effect report): `upgrade_type` string → id (name table
+0x14584f6b8, 19 entries, unknown → 0 = Engine Power) → per-type progress 0x143526260 → the vehicle
+fill 0x141238cb0 puts `map[type][0] = {progress, mass, bhp}` into the vehicle upgrade component
+(`comp+0x28`) → 0x14fa4deb0 calls 0x142f64860 → 0x14fa63050(comp, type) for keys < 11 and 11..17 →
+0x14fa63050 names the block (`type < 0x12`, relative table 0x145803ce4) and replays its ops with
+`perc` = clamp(Σ progress) as the lerp. Department is never read on this path.
+
+### Every place sized for 19 types (sweep)
+
+Found by RIP-xref of the order table 0x14566fd16 / its end 0x14566fd29 (9 functions), the name table
+0x14584f6b8 (2), the block-name table 0x145803ce4 (1, raw rel32 scan: it is in `.data1`), the
+type→department table 0x14584f848 (2), the camel-case table 0x14564a0d0 (3), the string "INVALID
+UPGRADE" 0x14587df9f (16 inlined switches), and a byte sweep for `movzx r,byte [x+0x70]` followed by a
+rip-relative table `lea` (26 tables, the two camel-case reads are the only type-indexed one).
+The 0.9.0 in-game test crashed on session entry at a site none of these find: the `std::bitset` throw
+thunks (13 of them, each loading "invalid bitset position" 0x14561370e) have 229 callers, and a sweep of the
+bound compare before each branch to them finds `0x13` only twice, both in 0x14295c0a0.
+
+| site | what it does with the type | v0.9.0 |
+|---|---|---|
+| 0x143539bc0 `Career_Load_UpgradeRows` loop 0x14353a3d0..0x14353a405, join **0x14353a408** `mov [rsp+0xc8],r15b` | 19-name compare, miss → 0 | `site_Career_UpgradeRowTypeJoin`: when `r14 == 0x13` (stock loop exhausted) and the decoded string `r13` is one of ours (case-insensitive), `r15` = 19..22 |
+| 0x14353c4f0 `upgrade_type_metadata` loader loop 0x14353c890..0x14353c8be, join **0x14353c8c1** `lea rsi,[rsp+0x248]` | same compare for the metadata rows | `site_Career_UpgradeMetaTypeJoin`: when `rsi == 0x13` and `r12` is ours, `r14` = 19..22 (stored to `rec[0]` at 0x14353c6f0; no write of r14 between) |
+| 0x14352cac0 copy into `U+0x1a38` | dynamic vector, grows | none needed |
+| 0x143526260 progress | generic (`inst.type == T`, metadata `rec[0] == T`; UAD bonus only for 11..17) | none needed |
+| 0x141238cb0 vehicle fill, 0x141238f0a `lea r15,[order]`, 0x141238f84 `lea rax,[order end]` | iterates the 19 order bytes (`k_Career_UpgradeTypeOrder`) | `site_Career_VehicleFillOrderStart` (**0x141238f11**, the `lea rbp` after the first lea) sets `r15` = the extended order table (0..18 from `k_Career_UpgradeTypeOrder`, then 19..22; a static array in the DLL); `site_Career_VehicleFillOrderEnd` (**0x141238f8b** `cmp r15,rax ; je`, after the per-iteration end lea) sets `rax` = its end while `r15` walks that table. The stock table is never written |
+| 0x14fa4deb0 apply, second filter **0x14fa4e01c** `lea eax,[rdx-0xb] ; cmp al,6` | keys 11..17 only | `site_Career_ApplyUpgradeKeyFilter` (`.data1`, 5-byte window): key 19..22 → `rip` = `site_Career_ApplyUpgradeKeyCall` (0x14fa4e023 `mov rcx,rsi ; call 0x142f64860`) |
+| 0x14fa57080 apply (flag-0 variant) | applies only keys 6 and 2, then erases them; mass/power only | nothing to extend: no type other than 2/6 is applied in this variant, stock or ours |
+| 0x14fa63050 block name, `cmp dl,0x11 ; ja` → **0x14fa6315f** `lea rdx,["?"]`, join 0x14fa63166 | names 0..17 (`k_Career_UpgradeBlockNameTable`), else "?" | `site_Career_ApplyUpgradeBlockNameDefault` (`.data1`, body without `.pdata`, `func_start` 0x14fa63050): type 19..22 → `rdx` = our block name, `rip` = `site_Career_ApplyUpgradeBlockNameJoin`. A car VTF without the block matches nothing in the replay loop (no op applied) |
+| 0x141c7b880 `Career_Build_RnDDeptPage` category loop, 0x141c7e4c8 `lea r14`, 0x141c7e4df `lea r15` | one category row per type (0x141c82470, returns on an empty list) | `site_Career_RnDDeptPageTypeLoop` (**0x141c7e4e6**, the loop-entry `jmp` after both leas; nothing between reads r14) sets `r14`/`r15` = the extended table; the list is already filtered by the page department (0x141c7d921), so the new rows appear only on the Tyres page |
+| 0x141c73b80 research category loop, 0x141c75733 `lea r12`, 0x141c7574a `lea r13` | one research row per type (0x141c76b60, empty list → return) | `site_Career_RnDResearchTypeLoop` (**0x141c75751**, the loop-entry `jmp`) sets `r12`/`r13`; list filtered by department at 0x141c74cc1 |
+| 16 inlined switches `cmp <type>,0x12 ; ja` → `lea r8\|r9,["INVALID UPGRADE"] ; jmp <join>` | `lng_rnd_%s` label (r8) and `<dept>_<type>` category frame (r9) | one site per switch, on the default `lea` (or on the `cmp` head where the default's bytes repeat in clone binders and have no unique signature); type 19..22 → dest register = suffix, `rip` = the switch's join binding (`<site>Join`). Sites (hook / type reg / join): `site_Career_UpgradeCardTypeLabel` 0x1417f831d r14b 0x1417f83d2 (upgrade card), `site_Career_Unk141814320TypeLabel` head 0x141814638 rax 0x14181470f, `site_Career_Unk1418169f0TypeLabel` head 0x141816def rax 0x141816ec6, `site_Career_RnDResultTypeLabel` 0x1418b0b11 rax 0x1418b0bc0, `site_Career_RnDResultTypeIcon` 0x1418b0d32 rcx 0x1418b0de0, `site_Career_TeamHqRnDPopupTypeIcon` 0x1419bf4ae rcx 0x1419bf563, `site_Career_RnDPurchaseScreenTypeLabel` head 0x141c514a4 rax 0x141c5157b, `site_Career_RnDUpgradeInfoTypeLabel` head 0x141c7005a rax 0x141c70131, `site_Career_RnDResearchRowTypeLabel` 0x141c76daf r9d 0x141c76e64, `site_Career_RnDResearchRowTypeIcon` 0x141c77df8 sil 0x141c77ea1, `site_Career_RnDTodoTypeLabel` head 0x141c80be4 rax 0x141c80cbb, `site_Career_RnDDeptRowTypeLabel` 0x141c826b6 esi 0x141c8276b, `site_Career_RnDDeptRowTypeIcon` 0x141c836f1 sil 0x141c8379a, `site_Career_RnDPurchasePanelTypeLabel` head 0x141c8e919 rax 0x141c8e9f0 (develop panel), `site_Career_RnDInProgressTypeLabel` 0x141f3d185 rax 0x141f3d1d0, `site_Career_RnDInProgressTypeIcon` 0x141f3d960 rcx 0x141f3d9b0. A head redirect leaves the registers as the default path does (only the jump-table dispatch writes rax/rcx) |
+| 0x14071e470 telemetry "upgrade fitted" (`UpgradeFittingChangedMessage` handler, subscribed at 0x1406db634 and 0x1406fdba0: logs "Player fitted upgraded part to driver", queues `rnd_upgrade_finished` through 0x140777ff0; the binding names keep the older "research" wording), **0x14071e6fa** `lea rcx,[0x14564a0d0] ; mov rdx,[rcx+rax*8]` | camel-case name, **no bound** | `site_Career_TeleResearchTypeName`: type ≥ 19 → `rdx` = camel name (or `"unknown"`), `rcx = rbx`, `rip` = `site_Career_TeleResearchTypeNameCall` (0x14071e708) |
+| 0x14071e810 telemetry "upgrade failed", **0x14071e98d** `mov rdx,[rbp+rax*8]` | same, no bound | `site_Career_TeleFailedTypeName`: type ≥ 19 → `rdx` = camel name, `rip` = `site_Career_TeleFailedTypeNameJoin` (0x14071e992) |
+| 0x140777d50 telemetry upgrade record, **0x140777eff** `lea rdx,[0x14564a0d0] ; mov rdx,[rdx+rax*8]` | same, no bound | `site_Career_TeleRecordTypeName`: type ≥ 19 → `rdx` = camel name, `rip` = `site_Career_TeleRecordTypeNameCall` (0x140777f0a) |
+| 0x14295c0a0 weekend objectives (Team HQ → session), **0x14295c6b3** `movzx edx,byte [rdx+0x70] ; cmp edx,0x13 ; jb 0x14295c690` | `std::bitset<19>` of the types with an Available upgrade (`bts r15d,edx`), the filter for the upgrade-discount rewards; type ≥ 19 → `jmp 0x14295cf89` → throw "invalid bitset position" | `site_Career_WeekendObjectiveType` (7-byte window, no relative operand): instance type 19..22 → `rip` = `site_Career_WeekendObjectiveNext` (0x14295c694, next instance, bit not set). The rewards name stock types only (camel-case resolver 0x1409ea830), so the second bitset at 0x14295cf42 never sees ours |
+| 0x14353d4f0 regulation-change loader (type→department 0x14584f848, `< 0x13` else 5) | picks stock types of an affected department | none: regulation changes never pick a Tyres type (department 4 is never "affected") |
+| 0x143527a70 regulation-change save reader (default `types_affected` = all 19) | same | none |
+| 0x14275f620 entrants lane, 0x1409b9aa0 (attribute-set / car lane) | uniform values per stock type | none: not on the career path |
+| 0x1409ea830 camel-case resolver (attribute sets) | `EnginePower` default | none: not on the career path |
+
+Without the three telemetry guards a Tyres purchase, failure or fit would read the string bytes after
+0x14564a0d0 ("EnginePo…") as a pointer. They are part of the all-or-nothing core.
+
+### Gate and order
+
+Every hook above is a KB binding (subsystem `career`); the mixin system resolves them by signature and installs
+all of them or none, so no per-site byte windows, scans or rollback remain. The `.data1` sites
+(`site_Career_ApplyUpgradeKeyFilter`/`KeyCall`, `site_Career_ApplyUpgradeBlockNameDefault`/`Join`) carry `.data1`
+signatures under the PROTOCOL §2 exception, so on the EA build (packed `.data1`) the addon does not register at all.
+
+There is no setting: the types are on whenever the addon is enabled. `install()` runs from the addon's
+`SWOFTY_ON_LOAD`, after every site is live. It fills the extended order table (0..18 from `k_Career_UpgradeTypeOrder`,
+then 19..22) and then turns the module live in one store, so every consumer and both resolvers switch together.
+Until then every handler returns at once. `live()` is that flag.
+
+Every hook window was checked against every direct branch target in its function (rel32 `E8/E9/0F 8x`, rel8
+`EB/7x`): none lands inside a window except at its first byte (the resolver joins and the switch defaults are
+branch targets at their start). Join and skip destinations are only jump targets, never patched.
+
+### Upgrade apply log (setting `log_upgrade_apply`, default on, read-only)
+
+The read-only apply log and its `log_upgrade_apply` setting are gone; `site_Career_UpgradeBlockReplayEntry`
+(0x144742c70, the block replay the per-type apply body tail-jumps to) and `k_Career_UpgradeBlockNameTable` stay in the KB
+but are no longer used. A Tyres type reaching the car shows as the block-name line below, and with the game's
+`VEHICLE_UPGRADES` channel on as the game's own `Applying <block> upgrade to vehicle N. (perc0to1: x)`. That perc is
+max(0, Σ progress) for Σ ≤ 1; above 1 the `.data1` clamp's `vblendvps` (0x14fa630c7) reads its 1.0 constant one byte
+low (0x14538250f) and yields ~-0.0, a stock quirk.
+
+### Other native changes
+
+- `rnd_departments.cpp`: our rows are `tyres_thermal_1..15` (hash `djb2("tyres_thermal_<n>_255")`, built in a
+  loop; rows 1-3 keep their v0.6 hashes), names `tt_*`/`bc_*`/`tl_*`/`pc_*` from the spec, plus the three
+  legacy names as a fallback. The vehicle performance comparison department comes from the instance type
+  (19-21 Chassis, 22 Powertrain), else from the row (13-15 Powertrain, others Chassis).
+- Card art and category icons: see "v0.9.0 — the card art" below.
+- The test price is gone; the tree carries real prices.
+
+### Data (`tools/build_vtf.py`)
+
+- `erp/rnd_upgrade_vtf.json` + `vtf/`: the four blocks, inserted after the stock `radUpgrade*` blocks in 44
+  handling VTFs (94 copies, 65 archives): 2026 team cars, `fom_car`, `fom_car_<team>`, `myteam_*`; 2025 team
+  cars, `fom_car`, `myteam_*`. Each op is emitted only where the car's base section has that parameter.
+  Every stock byte of each VTF is unchanged around the inserted run; the TSMD stats are rebuilt and checked.
+- `db/upgrade_types.json`: rows `upgrade_type_metadata_19..22` in the 46 `upgrades.2026.trees.<team>`
+  tables (count 19 → 23), cloned from Tyre Wear (19, 21), Brakes (20) and ICE Durability (22), department
+  `Fake`, mass/bhp 0, `percentage_worth` 1, `affect_on_vehicle` −15 / 25 / −10 / 15 percentage.
+- `--no-pu` builds ids 19-21 only; set `kShipPuCooling = false` in `rnd_upgrade_types.cpp` to match.
+
+### Power Unit Cooling (why id 22 ships)
+
+The Engine reader 0x144685680 stores `RadiatorSurfaceArea` at params +0x1128 (runtime +0x1140, params at
+engine+0x18). The engine temperature update 0x144689710 (runtime temperature +0x253c) cools by
+`h(v) × RadiatorSurfaceArea × (T − ambient) × dirty-air factor` (area read at 0x14468999b, 0x1446899db);
+temperature feeds the power factor 0x1446db280 through `TempEfficiencySpline` (1.0 at 388-398 K, 0.94 at 418 K,
+0.85 at 448 K). The upgrade replay reaches the Engine through its component vt+8 (0x14475ab50 → reader with
+the lerp global 0x145faa650), like the stock `radUpgradeWear*` blocks that already target `<Engine>`.
+Open: whether the per-vehicle temperature flag `[veh+0x131] & 2` is set in career races, and how hot the
+engine runs (the effect is zero on the 388-398 K plateau).
+
+Brake `CoefHeatTransferConstant/Linear` (brake params +0x20/+0x24, reader 0x1446aa090) has no static
+consumer found: brake temperature (wheel+0xe8) is read every tick (efficiency spline, overheat damage, the
+tyre heat update at 0x1446b7f86) but its only static writer is the reset at 0x1446b2221. The stock
+`very_high` setup block scales the same two values. Brake Cooling needs the in-game check.
+
+### Expected log (v0.9.0)
+
+Install:
+```
+[rnd-tyres] tyres art: part images OWN (2/2 arrays with the 45 Tyres slices in flow_team_hq.erp), part masks OWN (2/2 with 15), category icons OWN (2/2 with 4 in flow_career_hub.erp); a borrowed piece uses stock frames (SAFE)
+[rnd-tyres] upgrade types: 4 new types (Power Unit Cooling shipped)
+[rnd-tyres] upgrade types INSTALLED: 19 radUpgradeTyreThermal, 20 radUpgradeBrakeCooling, 21 radUpgradeTyreLife, 22 radUpgradePUCooling; 22 consumer hooks, 6 order-table leas -> extended order table 0x… (23 types, 4 sites), 2 resolver hooks
+```
+Career load:
+```
+[rnd-tyres] upgrade types: upgrade_type_metadata row "Tyre Thermal" -> type 19 (radUpgradeTyreThermal)
+[rnd-tyres] upgrade types: upgrade row "Brake Cooling" -> type 20 (radUpgradeBrakeCooling)
+```
+Tyres page / In Progress / cards: `[rnd-tyres] upgrade types: department category row 0x141c82470 label type 19 -> "tyre_thermal"`
+and `dept tag: department category row icon "error_department_tyre_thermal" -> "tyres_tyre_thermal"`
+(`chassis_tyre_wear` with `tyres_card_art` off).
+Team HQ → session (weekend objectives), once per Tyres upgrade that is Available:
+```
+[rnd-tyres] upgrade types: weekend objectives 0x14295c0a0 leaves Available type 19 (TyreThermal) out of the discount type bitset
+```
+Session load (vehicle build), for each Tyres type the car's upgrade map holds (first 8 lines):
+```
+[rnd-tyres] upgrade types: apply 0x14fa63050 type 19 names block radUpgradeTyreThermal
+```
+With the game's `VEHICLE_UPGRADES` channel on: `Applying radUpgradeTyreThermal upgrade to vehicle N. (perc0to1: x)`.
+The per-site lines are core's: `swofty/loader.log` lists each `site_Career_*` binding with its chain. A binding that
+does not resolve drops the whole addon (core names it); nothing is minted unless every consumer is live.
+
+## v0.9.0 — the card art (setting `tyres_card_art`, db, default on)
+
+### Where the game picks a card's frame
+The three upgrade card binders (0x14180fc60, 0x141814320 and 0x1418169f0) read the instance's last state byte
+(`[inst+0xc8] - 8`) at 0x141810065, 0x14181541a and 0x1418183a5: state ≤ 1 keeps `upgrade_name`,
+state 2 formats `"%s_in_progress"` (0x14587e11e), anything else `"%s_complete"` (0x14587e12d). The
+result goes to `Ne_Format_String("%s.%s.%s", pkg, "rnd_part_image", name)`; the mask call
+formats `pkg.rnd_part_mask.<upgrade_name>` with no suffix. `pkg` is `#overrides.career.rnd_om_xm`
+on the 2026 career. Those are the only references to `rnd_part_image`, `rnd_part_mask` and the
+two suffix strings in `.xtls`.
+
+The 2026 lists do not use those suffixes: `rnd_om_xm.rnd_part_image` names its frames
+`om_xm_<part>`, `om_xm_<part>_progress` and `om_xm_<part>_complete`, and `rnd_om_xm.rnd_part_mask`
+names its masks `om_xm_<part>_m`. The plain lists use `<part>`, `<part>_in_progress`,
+`<part>_complete` and the mask `<part>`.
+
+### The hook (`on_part_art`, `rnd_departments.cpp`, the six v0.6.1 art sites)
+For one of our upgrades the hook rewrites the frame name `[rsp+0x20]` to the list's own name for
+the state. `om_xm_` is added when the pkg contains it. A mask is a `site_Career_RnDCardArtMaskN` site: the
+`lea r9` each site sits on loads `rnd_part_mask` there, and `r9` itself is not loaded yet when the site runs.
+
+| card state | binder name | `rnd_om_xm` frame | plain frame |
+|---|---|---|---|
+| locked / available | `<name>` | `om_xm_<name>` | `<name>` |
+| in progress (research or development) | `<name>_in_progress` | `om_xm_<name>_progress` | `<name>_in_progress` |
+| fitted / complete | `<name>_complete` | `om_xm_<name>_complete` | `<name>_complete` |
+| mask | `<name>` | `om_xm_<name>_m` | `<name>` |
+
+`<name>` is the upgrade's own name when `rnd_tyres_icon::probe_art()` finds the grown arrays, else
+the borrowed stock part (`tyre_blankets`, `calipers`, `turbo_charger_wear_1`), which has the same
+four frames in both lists. Images and masks switch separately.
+
+### The probe (`rnd_tyres_icon::probe_art`)
+It reads the ERP index of the installed archives and needs fragment 1 of each array at exactly the
+stock size plus our slices (240×240 BC7 = 57600 bytes a slice, 32×32 = 1024):
+
+| array (`.texarray.image`) | archive | stock slices | ours | size |
+|---|---|---|---|---|
+| `rnd_part_image` | `flow_team_hq.erp` | 362 | 45 | 23443200 |
+| `rnd_om_xm.rnd_part_image` | `flow_team_hq.erp` | 337 | 45 | 22003200 |
+| `rnd_part_mask` | `flow_team_hq.erp` | 120 | 15 | 7776000 |
+| `rnd_om_xm.rnd_part_mask` | `flow_team_hq.erp` | 110 | 15 | 7200000 |
+| `rnd_category_icons` | `flow_career_hub.erp` | 21 | 4 | 25600 |
+| `rnd_om_xm.rnd_category_icons` | `flow_career_hub.erp` | 20 | 4 | 24576 |
+
+### Category icons (`rnd_dept_tags.cpp`)
+The category rows build `<department>_<type>` (`"%s_%s"`, 0x1456708d0), and department 4 gives
+`error_department`. With the arrays grown the four category sites (`site_Career_RnDDeptRowCategoryIcon`,
+`site_Career_RnDResearchRowCategoryIcon`, `site_Career_RnDPopupCategoryIcon`,
+`site_Career_RnDInProgressPartIcon`) ask for `tyres_tyre_thermal`,
+`tyres_brake_cooling`, `tyres_tyre_life` or `tyres_pu_cooling`; otherwise `chassis_tyre_wear`,
+`chassis_brakes`, `chassis_tyre_wear` and `maintenance_internal_combustion`. The icon site in
+0x1418b02b0 (`"%s_%s"` into a string, no `[rsp+0x20]` frame) is not hooked and shows no icon for
+department 4, as before.
+
+### Expected log (v0.9.0 card art)
+Install:
+```
+[rnd-tyres] tyres art: part images OWN (2/2 arrays with the 45 Tyres slices in flow_team_hq.erp), part masks OWN (2/2 with 15), category icons OWN (2/2 with 4 in flow_career_hub.erp); a borrowed piece uses stock frames (SAFE)
+```
+Tyres page and Develop Upgrade screen (first 32 rewrites):
+```
+[rnd-tyres] card art: site 2 image "tt_thermal_model" -> own "om_xm_tt_thermal_model"
+[rnd-tyres] card art: site 3 mask "tt_thermal_model" -> own "om_xm_tt_thermal_model_m"
+[rnd-tyres] card art: site 2 image "tt_thermal_model_in_progress" -> own "om_xm_tt_thermal_model_progress"
+[rnd-tyres] card art: site 2 image "tt_thermal_model_complete" -> own "om_xm_tt_thermal_model_complete"
+[rnd-tyres] dept tag: department category row icon "error_department_tyre_thermal" -> "tyres_tyre_thermal"
+```
+Without the grown arrays: `part images borrowed (0/2 …)` and `-> borrowed "om_xm_tyre_blankets_progress"`, and
+the category rows fall back to the stock icons.

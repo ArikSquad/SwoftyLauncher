@@ -3,16 +3,20 @@
 // R&D: Tyres & Thermal Management - the Tyres department's own icon frames (v0.8.0).
 //
 // A department icon is a slice of a BC7 texture array, named by the entry at the same index
-// in an overrides.uidb list. erp/rnd_tyres_icon.json (gated on the tyres_icon setting)
-// appends a slice and an entry to three arrays, in both the plain and the rnd_om_xm lists:
+// in an overrides.uidb list. erp/rnd_tyres_icon.json appends a slice and an entry to three arrays, in both the plain and the rnd_om_xm lists:
 //   rnd_dept_icons_small.tyres        48x48 white   (box card, R&D lists, Develop Upgrade card)
 //   rnd_wheel_icon.tyres              60x60 orange  (the Tyres tile on R&D > Performance)
 //   rnd_department_strips.rnd_tyres_strip  1112x4 orange (In Progress list colour strip)
 //
 // The DLL never names a frame the game lacks: probe() reads the index of the installed
 // flow_career_hub.erp and needs every one of the six arrays at its grown size. Anything
-// else (setting off, a launcher that delivered no ERP ops, a stock archive) keeps the
+// else (a launcher that delivered no ERP ops, a stock archive) keeps the
 // v0.7.2 borrowed frames.
+//
+// probe_art() does the same for the card art (v0.9.0): the
+// rnd_part_image arrays in flow_team_hq.erp must hold exactly the 45 Tyres slices more than
+// stock, the rnd_part_mask arrays 15 and the rnd_category_icons arrays in flow_career_hub.erp
+// 4 (tools/build_card_art.py). Each of the three switches on its own.
 
 #include <windows.h>
 
@@ -30,6 +34,9 @@ namespace rnd_tyres_icon {
 namespace {
 
 bool g_live = false;
+bool g_part_art = false;
+bool g_part_mask = false;
+bool g_category = false;
 
 struct Want {
     const char *name;
@@ -39,7 +46,7 @@ struct Want {
 
 constexpr const char kArrays[] = "eaid://ui_package/art/texture_arrays/overrides.uidb/overrides.career.";
 
-std::wstring archive_path()
+std::wstring archive_path(const wchar_t *file = L"flow_career_hub.erp")
 {
     wchar_t exe[MAX_PATH * 2];
     DWORD n = GetModuleFileNameW(nullptr, exe, MAX_PATH * 2);
@@ -49,7 +56,7 @@ std::wstring archive_path()
     size_t cut = p.find_last_of(L"\\/");
     if (cut == std::wstring::npos)
         return {};
-    return p.substr(0, cut + 1) + L"2025_asset_groups\\ui_package\\flow_career_hub.erp";
+    return p.substr(0, cut + 1) + L"2025_asset_groups\\ui_package\\" + file;
 }
 
 template <class T> bool take(const std::vector<uint8_t> &b, size_t &at, T &out)
@@ -61,9 +68,9 @@ template <class T> bool take(const std::vector<uint8_t> &b, size_t &at, T &out)
     return true;
 }
 
-int check(std::vector<Want> &want, char *why, size_t why_len)
+int check(std::vector<Want> &want, char *why, size_t why_len, const wchar_t *file = L"flow_career_hub.erp")
 {
-    std::wstring path = archive_path();
+    std::wstring path = archive_path(file);
     FILE *f = path.empty() ? nullptr : _wfopen(path.c_str(), L"rb");
     if (!f) {
         std::snprintf(why, why_len, "flow_career_hub.erp not readable");
@@ -156,9 +163,54 @@ void probe()
     if (found < 0)
         swofty::log("[rnd-tyres] tyres icon off: %s; Tyres keeps the borrowed stock frames (SAFE)", why);
     else
-        swofty::log("[rnd-tyres] tyres icon off: %d/%zu grown R&D icon arrays in flow_career_hub.erp (tyres_icon off "
-                    "or the icon ERP ops not installed); Tyres keeps the borrowed stock frames (SAFE)",
+        swofty::log("[rnd-tyres] tyres icon off: %d/%zu grown R&D icon arrays in flow_career_hub.erp (the icon ERP ops "
+                    "not installed); Tyres keeps the borrowed stock frames (SAFE)",
                     found, want.size());
+}
+
+void probe_art()
+{
+    constexpr uint64_t kPart = 240 * 240, kIcon = 32 * 32;
+    constexpr uint64_t kUpgrades = 15, kStates = 3, kTypes = 4;
+    std::string img = std::string(kArrays) + "rnd_part_image.texarray.image";
+    std::string img_om = std::string(kArrays) + "rnd_om_xm.rnd_part_image.texarray.image";
+    std::string msk = std::string(kArrays) + "rnd_part_mask.texarray.image";
+    std::string msk_om = std::string(kArrays) + "rnd_om_xm.rnd_part_mask.texarray.image";
+    std::string cat = std::string(kArrays) + "rnd_category_icons.texarray.image";
+    std::string cat_om = std::string(kArrays) + "rnd_om_xm.rnd_category_icons.texarray.image";
+    char why[96] = "";
+    std::vector<Want> art = {{img.c_str(), (362 + kUpgrades * kStates) * kPart, false},
+                             {img_om.c_str(), (337 + kUpgrades * kStates) * kPart, false}};
+    std::vector<Want> mask = {{msk.c_str(), (120 + kUpgrades) * kPart, false},
+                              {msk_om.c_str(), (110 + kUpgrades) * kPart, false}};
+    std::vector<Want> cats = {{cat.c_str(), (21 + kTypes) * kIcon, false},
+                              {cat_om.c_str(), (20 + kTypes) * kIcon, false}};
+    int a = check(art, why, sizeof why, L"flow_team_hq.erp");
+    int m = check(mask, why, sizeof why, L"flow_team_hq.erp");
+    int k = check(cats, why, sizeof why);
+    g_part_art = a == 2;
+    g_part_mask = m == 2;
+    g_category = k == 2;
+    swofty::log("[rnd-tyres] tyres art: part images %s (%d/2 arrays with the 45 Tyres slices in flow_team_hq.erp), "
+                "part masks %s (%d/2 with 15), category icons %s (%d/2 with 4 in flow_career_hub.erp); a borrowed "
+                "piece uses stock frames (SAFE)",
+                g_part_art ? "OWN" : "borrowed", a, g_part_mask ? "OWN" : "borrowed", m,
+                g_category ? "OWN" : "borrowed", k);
+}
+
+bool part_art_live()
+{
+    return g_part_art;
+}
+
+bool part_mask_live()
+{
+    return g_part_mask;
+}
+
+bool category_live()
+{
+    return g_category;
 }
 
 bool live()
