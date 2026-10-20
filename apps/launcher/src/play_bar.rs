@@ -123,9 +123,15 @@ impl Shell {
             PlayState::Launching => row
                 .child(dot(p.warning))
                 .child(format!(
-                    "Starting with profile {}{}… {}",
-                    self.library.profile.name,
-                    if self.launch_mode().is_vr() { " in VR" } else { "" },
+                    "{} {}",
+                    match self.launch.as_ref().and_then(|l| l.stage.as_deref()) {
+                        Some(stage) => stage.to_owned(),
+                        None => format!(
+                            "Starting with profile {}{}…",
+                            self.library.profile.name,
+                            if self.launch_mode().is_vr() { " in VR" } else { "" },
+                        ),
+                    },
                     self.launch
                         .as_ref()
                         .map(|l| duration(l.since.elapsed().as_secs()))
@@ -284,6 +290,7 @@ impl Shell {
     fn play_caret(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let shell = cx.entity().downgrade();
         let vr = self.launch_mode().is_vr();
+        let start_steam = self.start_steam;
         Button::new("play-menu")
             .h(px(52.))
             .w(px(34.))
@@ -306,7 +313,7 @@ impl Shell {
                                 .ok();
                         })
                 };
-                let shell = shell.clone();
+                let (console, steam) = (shell.clone(), shell.clone());
                 menu.min_w(px(220.))
                     .check_side(Side::Right)
                     .item(mode("Play", IconName::Play, LaunchMode::Normal))
@@ -316,11 +323,22 @@ impl Shell {
                         PopupMenuItem::new("Play with console")
                             .icon(IconName::SquareTerminal)
                             .on_click(move |_, window, cx| {
-                                shell
+                                console
                                     .update(cx, |s, cx| {
                                         s.set_console(true, window, cx);
                                         s.play(window, cx);
                                     })
+                                    .ok();
+                            }),
+                    )
+                    .separator()
+                    .item(
+                        PopupMenuItem::new("Start Steam automatically")
+                            .icon(IconName::CirclePower)
+                            .checked(start_steam)
+                            .on_click(move |_, window, cx| {
+                                steam
+                                    .update(cx, |s, cx| s.set_start_steam(!start_steam, window, cx))
                                     .ok();
                             }),
                     )

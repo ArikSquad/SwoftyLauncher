@@ -95,6 +95,23 @@ pub fn find_game_in(steam_root: &Path) -> Option<GameInstall> {
     })
 }
 
+/// True when `dir` is a Steam copy of the game: it sits in a library's
+/// `steamapps/common` next to the app's manifest.
+pub fn in_steam_library(dir: &Path) -> bool {
+    let shaped = |dir: &Path| {
+        let named = |p: Option<&Path>, name: &str| {
+            p.and_then(Path::file_name)
+                .is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case(name))
+        };
+        let common = dir.parent();
+        let steamapps = common.and_then(Path::parent);
+        named(common, "common")
+            && named(steamapps, "steamapps")
+            && steamapps.is_some_and(|s| s.join(format!("appmanifest_{STEAM_APP_ID}.acf")).is_file())
+    };
+    shaped(dir) || dir.canonicalize().is_ok_and(|real| shaped(&real))
+}
+
 pub const STEAMVR_APP_ID: u32 = 250_820;
 
 pub fn steamvr_installed(steam_root: &Path) -> bool {
@@ -223,6 +240,9 @@ mod tests {
         assert_eq!(g.dir, lib.join("steamapps/common/F1 25"));
         assert_eq!(g.build_id, Some(25_251_167));
         assert!(g.prefix().unwrap().ends_with("compatdata/3059520/pfx"));
+        assert!(in_steam_library(&g.dir));
+        assert!(!in_steam_library(&root.join("steamapps/common/F1 25")));
+        assert!(!in_steam_library(&lib));
         assert!(!steamvr_installed(&root));
         std::fs::write(
             lib.join("steamapps/appmanifest_250820.acf"),

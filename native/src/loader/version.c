@@ -7,6 +7,8 @@
 #include <wchar.h>
 #include <math.h>
 #include "swofty_api.h"
+#include "pattern_scan.h"
+#include "alog.h"
 
 #define HOST_EXE L"F1_25.exe"
 #define EXPECTED_SIZE 408063872ULL
@@ -75,23 +77,31 @@ static int ea_diag;
 static LPTOP_LEVEL_EXCEPTION_FILTER prev_filter;
 static volatile LONG diag_crash_reports, activation_logged;
 
+static int log_async;
+
 static void emit(HANDLE h, const char *body)
 {
     if (h == INVALID_HANDLE_VALUE)
         return;
-    char buf[2048];
-    SYSTEMTIME t;
-    GetLocalTime(&t);
-    int n = snprintf(buf, sizeof buf, "%04u-%02u-%02u %02u:%02u:%02u.%03u [%5lu] ", t.wYear, t.wMonth, t.wDay,
-                     t.wHour, t.wMinute, t.wSecond, t.wMilliseconds, GetCurrentThreadId());
-    int m = (int)strlen(body);
-    if (m > (int)sizeof buf - n - 3)
-        m = (int)sizeof buf - n - 3;
-    memcpy(buf + n, body, m);
-    n += m;
-    buf[n++] = '\r';
-    buf[n++] = '\n';
-    DWORD w;
+    FILETIME now;
+    GetSystemTimePreciseAsFileTime(&now);
+    DWORD tid = GetCurrentThreadId(), w;
+    unsigned int m = (unsigned int)strlen(body);
+    char buf[ALOG_LINE];
+    if (h == log_file && log_async) {
+        if (alog_push(body, m, &now, tid)) {
+            if (!strncmp(body, "[crash]", 7))
+                alog_flush();
+            return;
+        }
+        if (alog_lock_bounded(&alog_state, ALOG_FLUSH_WAIT_MS)) {
+            alog_drain_locked(&alog_state);
+            WriteFile(h, buf, (DWORD)alog_format_line(buf, body, m, &now, tid), &w, NULL);
+            LeaveCriticalSection(&alog_state.drain_lock);
+            return;
+        }
+    }
+    int n = alog_format_line(buf, body, m, &now, tid);
     EnterCriticalSection(&log_lock);
     WriteFile(h, buf, n, &w, NULL);
     LeaveCriticalSection(&log_lock);
@@ -123,6 +133,7 @@ static void ediag(const char *fmt, ...)
     va_end(ap);
     emit(log_file, body);
     emit(diag_file, body);
+    alog_flush();
 }
 
 static uintptr_t module_base(void)
@@ -156,26 +167,6 @@ static int parse_pattern(const char *p, int *out, int max)
     return n;
 }
 
-static int scan_range(const uint8_t *lo, const uint8_t *hi, const int *pat, int n, int anchor, uintptr_t *first)
-{
-    int hits = 0;
-    if (hi - lo < n)
-        return 0;
-    const uint8_t *last = hi - n + anchor;
-    for (const uint8_t *p = lo + anchor; p <= last; p++) {
-        p = memchr(p, pat[anchor], last - p + 1);
-        if (!p)
-            break;
-        const uint8_t *c = p - anchor;
-        int i = 0;
-        while (i < n && (pat[i] < 0 || c[i] == pat[i]))
-            i++;
-        if (i == n && hits++ == 0)
-            *first = (uintptr_t)c;
-    }
-    return hits;
-}
-
 static int is_readable(const MEMORY_BASIC_INFORMATION *m)
 {
     return m->State == MEM_COMMIT && (m->Protect & 0xEE) && !(m->Protect & (PAGE_GUARD | PAGE_NOACCESS));
@@ -183,14 +174,12 @@ static int is_readable(const MEMORY_BASIC_INFORMATION *m)
 
 static int scan(const char *section, const char *pattern, uintptr_t *out)
 {
-    int pat[256], n = parse_pattern(pattern, pat, 256), anchor = 0;
+    int pat[256], n = parse_pattern(pattern, pat, 256), a1 = -1, a2 = -1;
     uintptr_t first = 0;
     int hits = 0, searched = 0;
     if (out)
         *out = 0;
-    while (anchor < n && pat[anchor] < 0)
-        anchor++;
-    if (n <= 0 || anchor == n) {
+    if (n <= 0 || !pick_anchors(pat, n, &a1, &a2)) {
         slog("scan: invalid pattern '%s'", pattern);
         return 0;
     }
@@ -212,7 +201,7 @@ static int scan(const char *section, const char *pattern, uintptr_t *out)
                     run = a;
             } else if (run) {
                 uintptr_t f = 0;
-                int h = scan_range((const uint8_t *)run, (const uint8_t *)a, pat, n, anchor, &f);
+                int h = scan_range((const uint8_t *)run, (const uint8_t *)a, pat, n, a1, a2, &f);
                 if (h && !hits)
                     first = f;
                 hits += h;
@@ -222,7 +211,7 @@ static int scan(const char *section, const char *pattern, uintptr_t *out)
         }
         if (run) {
             uintptr_t f = 0;
-            int h = scan_range((const uint8_t *)run, (const uint8_t *)a, pat, n, anchor, &f);
+            int h = scan_range((const uint8_t *)run, (const uint8_t *)a, pat, n, a1, a2, &f);
             if (h && !hits)
                 first = f;
             hits += h;
@@ -1217,6 +1206,8 @@ static void log_build(void)
 BOOL WINAPI DllMain(HINSTANCE self, DWORD reason, LPVOID reserved)
 {
     (void)reserved;
+    if (reason == DLL_PROCESS_DETACH)
+        alog_flush_at_exit();
     if (reason != DLL_PROCESS_ATTACH)
         return TRUE;
     DisableThreadLibraryCalls(self);
@@ -1246,6 +1237,11 @@ BOOL WINAPI DllMain(HINSTANCE self, DWORD reason, LPVOID reserved)
     game_dir[slash ? slash - exe_path : 0] = 0;
     InitializeCriticalSection(&log_lock);
     open_log();
+    {
+        char sync[8] = {0};
+        DWORD n = GetEnvironmentVariableA("SWOFTY_LOG_SYNC", sync, sizeof sync);
+        log_async = !(n && n < sizeof sync && sync[0] && sync[0] != '0') && alog_start(log_file);
+    }
     capture_sections();
 
     wchar_t self_path[MAX_PATH] = L"?", real_path[MAX_PATH] = L"(not loaded)";
@@ -1253,6 +1249,8 @@ BOOL WINAPI DllMain(HINSTANCE self, DWORD reason, LPVOID reserved)
     if (real)
         GetModuleFileNameW(real, real_path, MAX_PATH);
     slog("swofty loader (version.dll proxy) attached, pid %lu", GetCurrentProcessId());
+    slog("log: %s", log_async ? "asynchronous writer (batched, crash lines flush at once; SWOFTY_LOG_SYNC=1 writes each line synchronously)"
+                              : "synchronous, one write per line");
     slog("host: %ls", exe_path);
     slog("proxy: %ls", self_path);
     slog("real version.dll: %ls (requested %ls)", real_path, sys);

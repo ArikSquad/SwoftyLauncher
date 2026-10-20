@@ -95,6 +95,16 @@ enum Command {
     },
     #[command(about = "Report what was discovered: Steam, the game, Proton, the launch option and the store")]
     Doctor,
+    #[command(
+        about = "Show whether Steam is running and signed in; --start starts it and waits, as Play does"
+    )]
+    Steam {
+        #[arg(
+            long,
+            help = "Start Steam if it's closed and wait up to 90 s for it to sign in"
+        )]
+        start: bool,
+    },
     #[command(about = "Check for a new release and install it into this copy")]
     Update {
         #[arg(long, help = "Only report whether a new release is available")]
@@ -367,6 +377,7 @@ fn dispatch(store: &Store, cli: Cli) -> Result<ExitCode> {
         } => send_logs::send(&store, args),
         Command::Logs { dir, exe, .. } => run::logs(&store, dir, exe),
         Command::Doctor => doctor::doctor(&store),
+        Command::Steam { start } => run::steam_check(&store, start),
         Command::Update { check } => update::update(check),
     }
 }

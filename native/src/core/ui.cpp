@@ -71,7 +71,7 @@ using Table_t = uint8_t *(void *self);
 
 
 std::vector<Screen> screens;
-bool strict = false, do_register = true, recover = true;
+bool strict = false, do_register = true, recover = true, diagnostics = false, perf = false;
 SRWLOCK lock = SRWLOCK_INIT;
 uintptr_t base, a_handler, a_parser, a_pkgopen, a_resolve, a_openexec, a_open;
 void **screen_sys;
@@ -302,7 +302,9 @@ void read_site(safetyhook::Context &c)
 {
     auto *job = reinterpret_cast<uint8_t *>(c.rbx), *rec = reinterpret_cast<uint8_t *>(c.r13);
     int rc = int(c.rax);
-    uint32_t cls = readable(rec + 0x70, 4) ? *reinterpret_cast<uint32_t *>(rec + 0x70) : 0;
+    uint32_t cls = *reinterpret_cast<const volatile uint32_t *>(rec + 0x70);
+    if (!rc && cls != 0x43534955)
+        return;
     Screen *s = job_owner(job);
     if (cls == 0x43534955) {
         const char *p = readable(rec + 0x68, 8) ? *reinterpret_cast<const char **>(rec + 0x68) : nullptr;
@@ -342,6 +344,8 @@ void screen_site(safetyhook::Context &c)
     auto *job = reinterpret_cast<uint8_t *>(c.rbx);
     int rc = int(c.rbp);
     Screen *s = job_owner(job);
+    if (!m_read)
+        snprintf(cur_screen, sizeof cur_screen, "%s", s ? s->name.c_str() : "?");
     if (s) {
         s->result = rc;
         s->result_seen = true;
@@ -424,8 +428,17 @@ void handler_hook(void *self, int64_t *resid, void *a3, uint8_t *frags, int64_t 
             continue;
         auto *data = *reinterpret_cast<uint8_t **>(e);
         size_t size = *reinterpret_cast<uint64_t *>(e + 8);
+        std::vector<std::pair<const std::string *, bool>> seen;
+        auto has_anchor = [&](const std::string &anchor) {
+            for (auto &[a, hit] : seen)
+                if (*a == anchor)
+                    return hit;
+            bool hit = contains(data, size, anchor);
+            seen.push_back({&anchor, hit});
+            return hit;
+        };
         for (auto &s : screens) {
-            if (!copy || !contains(data, size, s.anchor))
+            if (!copy || !has_anchor(s.anchor))
                 continue;
             void *rid = static_cast<uint8_t *>(copy) + 8;
             bool ok = false;
@@ -469,12 +482,54 @@ void handler_hook(void *self, int64_t *resid, void *a3, uint8_t *frags, int64_t 
     ReleaseSRWLockExclusive(&lock);
 }
 
+double perf_ms(const LARGE_INTEGER &a, const LARGE_INTEGER &b)
+{
+    static LARGE_INTEGER f = [] {
+        LARGE_INTEGER q;
+        QueryPerformanceFrequency(&q);
+        return q;
+    }();
+    return double(b.QuadPart - a.QuadPart) * 1000.0 / double(f.QuadPart);
+}
+
+void perf_probe(const char *what, const void *p)
+{
+    MEMORY_BASIC_INFORMATION m{};
+    if (!p || !VirtualQuery(p, &m, sizeof m))
+        return;
+    LARGE_INTEGER a, b;
+    QueryPerformanceCounter(&a);
+    for (int i = 0; i < 100; i++)
+        VirtualQuery(p, &m, sizeof m);
+    QueryPerformanceCounter(&b);
+    swofty::log("[perf] VirtualQuery on %s %p: allocation base %p, region %p + %llu MB, %.2f us per call", what, p,
+                m.AllocationBase, m.BaseAddress, (unsigned long long)(m.RegionSize >> 20), perf_ms(a, b) * 10.0);
+}
+
 uint64_t open_hook(void *scene, void *screen, void *a3, void *a4)
 {
+    LARGE_INTEGER t0, t1, t2;
+    QueryPerformanceCounter(&t0);
     AcquireSRWLockExclusive(&lock);
     register_pending("screen open");
     ReleaseSRWLockExclusive(&lock);
+    QueryPerformanceCounter(&t1);
     uint64_t r = h_open.call<uint64_t>(scene, screen, a3, a4);
+    QueryPerformanceCounter(&t2);
+    double total = perf_ms(t0, t2);
+    if (perf || total >= 50.0) {
+        const char *name = readable(screen, 0x70) && readable(*reinterpret_cast<void **>(static_cast<uint8_t *>(screen) + 0x68), 10)
+                               ? chars(*reinterpret_cast<void **>(static_cast<uint8_t *>(screen) + 0x68))
+                               : "?";
+        swofty::log("[perf] screen open '%.64s': %.2f ms (addon screen registration %.2f ms, engine open %.2f ms)", name,
+                    total, perf_ms(t0, t1), perf_ms(t1, t2));
+        static bool probed;
+        if (perf && !probed) {
+            probed = true;
+            perf_probe("the screen object", screen);
+            perf_probe("the scene object", scene);
+        }
+    }
     if (screen != last_screen) {
         prev_scene = last_scene;
         prev_screen = last_screen;
@@ -561,8 +616,17 @@ NeStrHdr **openexec_hook(void *self, NeStrHdr **err, void *cmd)
     return cancel_missing(h_openexec.call<NeStrHdr **>(self, err, cmd), "open-screen");
 }
 
+bool env_on(const char *name)
+{
+    char v[16] = {};
+    DWORD n = GetEnvironmentVariableA(name, v, sizeof v);
+    return n && n < sizeof v && v[0] && v[0] != '0';
+}
+
 void load_config()
 {
+    diagnostics = env_on("SWOFTY_UI_DIAG");
+    perf = env_on("SWOFTY_PERF");
     std::wstring root = self_dir() + L"..\\..\\";
     json::Value doc;
     std::wstring src = L"settings.json";
@@ -578,6 +642,7 @@ void load_config()
         }
     }
     const json::Value &ui = doc["ui"];
+    diagnostics = diagnostics || (ui["diagnostics"].type == json::Value::Bool && ui["diagnostics"].b);
     strict = ui["strict"].type == json::Value::Bool && ui["strict"].b;
     do_register = !(ui["register"].type == json::Value::Bool && !ui["register"].b);
     recover = !(ui["recover"].type == json::Value::Bool && !ui["recover"].b);
@@ -659,9 +724,14 @@ SWOFTY_ON_LOAD
         install(h_openexec, a_openexec, openexec_hook, "route guard (open-screen step)");
     if (a_open)
         install(h_open, a_open, open_hook, "screen open");
-    mid(m_read, T_SITE_READ, read_site, "screen build diagnostics (node read)");
-    mid(m_init, T_SITE_INIT, init_site, "screen build diagnostics (node init)");
-    mid(m_factory, T_SITE_FACTORY, factory_site, "screen build diagnostics (node class)");
+    if (diagnostics) {
+        mid(m_read, T_SITE_READ, read_site, "screen build diagnostics (node read)");
+        mid(m_init, T_SITE_INIT, init_site, "screen build diagnostics (node init)");
+        mid(m_factory, T_SITE_FACTORY, factory_site, "screen build diagnostics (node class)");
+    } else {
+        swofty::log("[ui] per-node screen build diagnostics off (set SWOFTY_UI_DIAG=1 or \"diagnostics\": true in the "
+                    "\"ui\" block to turn them on); the screen result hook stays on");
+    }
     mid(m_screen, T_SITE_SCREEN, screen_site, "screen build diagnostics (screen result)");
     if (screens.empty() || !do_register)
         return;

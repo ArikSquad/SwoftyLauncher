@@ -142,6 +142,22 @@ fn checked(rel: &str) -> Result<&str> {
     }
 }
 
+pub fn reads(op: &ErpOp) -> Vec<&str> {
+    match op {
+        ErpOp::PatchPkg { erp, edits, .. } => std::iter::once(erp.as_str())
+            .chain(sources(edits).map(|t| t.erp.as_str()))
+            .collect(),
+        ErpOp::CopyResource { from_erp, erp, .. } => {
+            std::iter::once(erp.as_str()).chain(from_erp.as_deref()).collect()
+        }
+        ErpOp::PutResource { erp, .. }
+        | ErpOp::ReplaceResource { erp, .. }
+        | ErpOp::AddResource { erp, .. }
+        | ErpOp::RemoveResource { erp, .. } => vec![erp.as_str()],
+        ErpOp::AddMipmaps { .. } => Vec::new(),
+    }
+}
+
 pub fn unsupported(op: &ErpOp) -> Option<&'static str> {
     match op {
         ErpOp::PatchPkg { edits, .. } => edits.iter().find(|e| !supported(e)).map(edit_name),

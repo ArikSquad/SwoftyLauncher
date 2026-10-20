@@ -10,7 +10,7 @@ use swofty_core::process::{GameProcess, game_processes};
 use swofty_core::recovery::{self, Notice, Scope, SessionLock};
 use swofty_core::session::{LaunchMode, SessionRecord};
 use swofty_core::store::Store;
-use swofty_core::{GAME_EXE, steam};
+use swofty_core::{GAME_EXE, steam, steam_client};
 
 const KB: &str = include_str!("../../../re/db/functions.tsv");
 
@@ -31,6 +31,7 @@ pub struct Probe {
     pub requests: Option<SystemTime>,
     pub merged: bool,
     pub recovered: Option<Notice>,
+    pub launch_stage: Option<String>,
 }
 
 pub fn probe(store: &Store, rediscover: bool, seen: Option<SystemTime>) -> Probe {
@@ -43,6 +44,10 @@ pub fn probe(store: &Store, rediscover: bool, seen: Option<SystemTime>) -> Probe
         requests,
         merged,
         recovered: Notice::read(&store.root),
+        launch_stage: std::fs::read_to_string(store.root.join(steam_client::STAGE_FILE))
+            .ok()
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty()),
     }
 }
 
@@ -145,6 +150,7 @@ pub struct Launch {
     pub since: Instant,
     pub log: PathBuf,
     pub saw_game: bool,
+    pub stage: Option<String>,
 }
 
 impl Launch {
@@ -155,6 +161,7 @@ impl Launch {
             .and_then(|_| File::create(&log))
             .map_err(|e| format!("{}: {e}", log.display()))?;
         let err = out.try_clone().map_err(|e| e.to_string())?;
+        std::fs::remove_file(store.root.join(steam_client::STAGE_FILE)).ok();
         let mut c = Command::new(cli);
         c.arg("--data-dir")
             .arg(&store.root)
@@ -181,6 +188,7 @@ impl Launch {
             since: Instant::now(),
             log,
             saw_game: false,
+            stage: None,
         })
     }
 

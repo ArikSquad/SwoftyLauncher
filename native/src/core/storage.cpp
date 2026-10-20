@@ -3,6 +3,7 @@
 #include <swofty/mixin.hpp>
 
 #include <cstdio>
+#include <unordered_map>
 
 std::string settings_addon(const void *from, std::string &dll);
 
@@ -21,10 +22,38 @@ Caller caller(const void *from)
     return c;
 }
 
+constexpr uint32_t QUIET_AFTER = 3;
+SRWLOCK seen_lock = SRWLOCK_INIT;
+std::unordered_map<std::string, uint32_t> seen;
+
+bool log_every_call()
+{
+    static const bool all = [] {
+        char v[8] = {};
+        DWORD n = GetEnvironmentVariableA("SWOFTY_STORAGE_LOG", v, sizeof v);
+        return n && n < sizeof v && !_stricmp(v, "all");
+    }();
+    return all;
+}
+
 int done(const Caller &c, const std::string &call, int r, const std::string &why = {})
 {
-    swofty::log("[storage] api: %s (%s) %s -> %s%s%s", c.id.empty() ? "no addon" : c.id.c_str(), c.dll.c_str(),
-                call.c_str(), RESULTS[r], why.empty() ? "" : ": ", why.c_str());
+    const char *id = c.id.empty() ? "no addon" : c.id.c_str();
+    if (r == SWOFTY_ASSET_OK && !log_every_call()) {
+        std::string key = std::string(id) + '\n' + call.substr(0, call.find(" ("));
+        AcquireSRWLockExclusive(&seen_lock);
+        uint32_t n = ++seen[key];
+        ReleaseSRWLockExclusive(&seen_lock);
+        if (n > QUIET_AFTER) {
+            if (n == QUIET_AFTER + 1)
+                swofty::log("[storage] api: %s (%s) %s -> ok; further successful calls like this are not logged "
+                            "(failures still are; SWOFTY_STORAGE_LOG=all logs every call)",
+                            id, c.dll.c_str(), call.c_str());
+            return r;
+        }
+    }
+    swofty::log("[storage] api: %s (%s) %s -> %s%s%s", id, c.dll.c_str(), call.c_str(), RESULTS[r],
+                why.empty() ? "" : ": ", why.c_str());
     return r;
 }
 

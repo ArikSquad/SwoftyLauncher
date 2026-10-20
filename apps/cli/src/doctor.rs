@@ -56,6 +56,9 @@ pub fn report(store: &Store, session: Option<&Game>) -> (Vec<String>, bool) {
             row("  library", lib.display().to_string());
         }
     }
+    if session.is_none() {
+        row("steam client", swofty_core::steam_client::status().to_string());
+    }
     let Some(game) = roots.iter().find_map(|r| steam::find_game_in(r)) else {
         row(
             "F1 25",

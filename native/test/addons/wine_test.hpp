@@ -20,6 +20,7 @@ inline constexpr fn<"wine-test:Fake_Stage_Wrap", Fake_Stage_t> Fake_Stage_Wrap{}
 inline constexpr fn<"wine-test:Fake_Stage_Wrong", Fake_Stage_t> Fake_Stage_Wrong{};
 inline constexpr fn<"wine-test:Fake_Stage_Site_Wrong", Fake_Stage_t> Fake_Stage_Site_Wrong{};
 inline constexpr fn<"wine-test:Fake_Stage_Ambiguous", Fake_Stage_t> Fake_Stage_Ambiguous{};
+inline constexpr fn<"wine-test:Fake_Stage_Plain", Fake_Stage_t> Fake_Stage_Plain{};
 }
 
 using namespace swofty::game;

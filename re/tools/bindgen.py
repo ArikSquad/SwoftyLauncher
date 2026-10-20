@@ -172,7 +172,8 @@ def load():
             b = {'id': r['name'], 'kind': kind, 'status': status, 'level': r['level'], 'evidence': why,
                  'subsystem': r['subsystem'], 'build': build['sha256'], 'sig': s['id'], 'section': s['section'],
                  'pattern': s['pattern'], 'anchor': int(str(s['anchor']), 0), 'resolve': res, 'expect': s.get('expect'),
-                 'rva': hex(int(str(s['target']), 0) - int(build['image_base'], 16))}
+                 'rva': hex(int(str(s['target']), 0) - int(build['image_base'], 16)),
+                 'match': hex(int(str(s['match']), 0) - int(build['image_base'], 16))}
             if kind == 'func':
                 b['proto'] = r['proto'] if r['proto'] != '-' and parse_proto(r['proto'], r['name']) else None
             elif kind == 'vtable':

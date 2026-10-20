@@ -535,6 +535,48 @@ pub struct Probe {
     pub report: String,
 }
 
+pub fn probe_path(data: &Path) -> PathBuf {
+    data.join("state/offline/probe.json")
+}
+
+fn probe_key(exe: &Path) -> Option<String> {
+    let meta = std::fs::metadata(exe).ok()?;
+    let modified = meta
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_nanos();
+    Some(format!(
+        "{EXTENSION_VERSION}|{}|{}|{modified}",
+        exe.display(),
+        meta.len()
+    ))
+}
+
+/// [`probe`], skipped when the same extension release already found this
+/// exact game executable supported.
+pub fn probe_cached(data: &Path, game: &Path, a: &Artifacts) -> Result<Probe> {
+    let key = probe_key(&game.join(crate::GAME_EXE));
+    let path = probe_path(data);
+    if let Some(key) = &key
+        && let Ok((seen, report)) = crate::read_json::<(String, String)>(&path)
+        && seen == *key
+    {
+        return Ok(Probe {
+            supported: true,
+            report,
+        });
+    }
+    let found = probe(game, a)?;
+    if found.supported
+        && let Some(key) = key
+    {
+        crate::write_json(&path, &(key, &found.report)).ok();
+    }
+    Ok(found)
+}
+
 /// Ask the extension whether this game build is supported (fail closed).
 pub fn probe(game: &Path, a: &Artifacts) -> Result<Probe> {
     let out = command(&a.probe)?
@@ -767,6 +809,45 @@ mod tests {
         std::fs::remove_dir_all(&d).ok();
         std::fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_supported_build_is_probed_once_until_the_exe_changes() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = temp("probe-cache");
+        let (data, game) = (d.join("data"), d.join("game"));
+        std::fs::create_dir_all(&game).unwrap();
+        std::fs::write(game.join(crate::GAME_EXE), "exe").unwrap();
+        let runs = d.join("runs");
+        let probe = d.join("probe.sh");
+        std::fs::write(
+            &probe,
+            format!(
+                "#!/bin/sh\necho run >> '{}'\necho supported build\n",
+                runs.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&probe, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let a = Artifacts {
+            dir: d.clone(),
+            hook: d.join("hook"),
+            stub: d.join("stub"),
+            prelaunch: d.join("prelaunch"),
+            probe,
+        };
+        let count = || std::fs::read_to_string(&runs).unwrap_or_default().lines().count();
+        for _ in 0..2 {
+            let p = probe_cached(&data, &game, &a).unwrap();
+            assert!(p.supported);
+            assert_eq!(p.report, "supported build");
+        }
+        assert_eq!(count(), 1);
+        std::fs::write(game.join(crate::GAME_EXE), "updated exe").unwrap();
+        assert!(probe_cached(&data, &game, &a).unwrap().supported);
+        assert_eq!(count(), 2);
+        std::fs::remove_dir_all(&d).ok();
     }
 
     #[test]

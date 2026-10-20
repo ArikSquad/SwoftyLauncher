@@ -38,6 +38,115 @@ pub fn sha256_opt(path: &Path) -> Result<Option<String>> {
     }
 }
 
+pub const HASHES_FILE: &str = "state/hashes.json";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+struct Stamp {
+    len: u64,
+    modified: u128,
+    changed: i128,
+    ino: u64,
+}
+
+impl Stamp {
+    fn of(path: &Path) -> Option<Self> {
+        let meta = std::fs::metadata(path).ok().filter(std::fs::Metadata::is_file)?;
+        let modified = meta
+            .modified()
+            .ok()?
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()?
+            .as_nanos();
+        #[cfg(unix)]
+        let (changed, ino) = {
+            use std::os::unix::fs::MetadataExt;
+            (
+                i128::from(meta.ctime()) * 1_000_000_000 + i128::from(meta.ctime_nsec()),
+                meta.ino(),
+            )
+        };
+        #[cfg(not(unix))]
+        let (changed, ino) = (
+            meta.created()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map_or(0, |d| d.as_nanos() as i128),
+            0,
+        );
+        Some(Self {
+            len: meta.len(),
+            modified,
+            changed,
+            ino,
+        })
+    }
+}
+
+/// SHA-256 digests of files the launcher reads on every launch, kept with the
+/// size, times and inode they had when hashed. A file whose metadata still
+/// matches is not read again; any write, rename or copy over it changes the
+/// metadata, so its next lookup hashes it afresh.
+#[derive(Debug, Default)]
+pub struct Hashes {
+    path: PathBuf,
+    files: BTreeMap<PathBuf, (Stamp, String)>,
+    dirty: bool,
+}
+
+impl Hashes {
+    pub fn load(data: &Path) -> Self {
+        let path = data.join(HASHES_FILE);
+        let files = crate::read_json(&path).unwrap_or_default();
+        Self {
+            path,
+            files,
+            dirty: false,
+        }
+    }
+
+    pub fn sha256(&mut self, path: &Path) -> Result<String> {
+        let before = Stamp::of(path);
+        if let (Some(now), Some((was, sha))) = (before, self.files.get(path))
+            && now == *was
+        {
+            return Ok(sha.clone());
+        }
+        let sha = sha256_file(path)?;
+        if let Some(stamp) = before.filter(|b| Stamp::of(path) == Some(*b)) {
+            self.files.insert(path.to_path_buf(), (stamp, sha.clone()));
+            self.dirty = true;
+        }
+        Ok(sha)
+    }
+
+    pub fn sha256_opt(&mut self, path: &Path) -> Result<Option<String>> {
+        if path.is_file() {
+            self.sha256(path).map(Some)
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Record the digest of bytes the caller just wrote to `path`.
+    pub fn wrote(&mut self, path: &Path, sha: &str) {
+        match Stamp::of(path) {
+            Some(stamp) => self.files.insert(path.to_path_buf(), (stamp, sha.to_owned())),
+            None => self.files.remove(path),
+        };
+        self.dirty = true;
+    }
+
+    pub fn save(&mut self) {
+        if !self.dirty {
+            return;
+        }
+        self.files.retain(|p, (stamp, _)| Stamp::of(p) == Some(*stamp));
+        if crate::write_json(&self.path, &self.files).is_ok() {
+            self.dirty = false;
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Objects {
     pub root: PathBuf,
@@ -394,4 +503,40 @@ pub fn exe_version(game: &Path) -> Result<Option<String>> {
     let path = game.join(crate::GAME_EXE);
     let mut exe = std::fs::File::open(&path).map_err(io_err(&path))?;
     Ok(swofty_formats::pe::file_version(&mut exe)?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_cached_digest_holds_until_the_file_is_written_again() {
+        let data = std::env::temp_dir().join(format!("swofty-hashes-{}", std::process::id()));
+        std::fs::remove_dir_all(&data).ok();
+        std::fs::create_dir_all(&data).unwrap();
+        let file = data.join("f.bin");
+        std::fs::write(&file, "one").unwrap();
+        let mut hashes = Hashes::load(&data);
+        assert_eq!(hashes.sha256(&file).unwrap(), sha256_bytes(b"one"));
+        hashes.save();
+
+        let mut hashes = Hashes::load(&data);
+        let (stamp, _) = hashes.files[&file];
+        hashes.files.insert(file.clone(), (stamp, "remembered".into()));
+        assert_eq!(hashes.sha256(&file).unwrap(), "remembered");
+
+        std::fs::write(&file, "two").unwrap();
+        assert_eq!(hashes.sha256(&file).unwrap(), sha256_bytes(b"two"));
+        let moved = data.join("moved.bin");
+        std::fs::write(&moved, "one").unwrap();
+        std::fs::rename(&moved, &file).unwrap();
+        assert_eq!(hashes.sha256(&file).unwrap(), sha256_bytes(b"one"));
+
+        hashes.wrote(&file, &sha256_bytes(b"one"));
+        std::fs::remove_file(&file).unwrap();
+        assert_eq!(hashes.sha256_opt(&file).unwrap(), None);
+        hashes.save();
+        assert!(Hashes::load(&data).files.is_empty());
+        std::fs::remove_dir_all(&data).ok();
+    }
 }

@@ -147,11 +147,55 @@ pub fn compress(data: &[u8]) -> Result<Vec<u8>> {
 }
 
 pub fn compress_at(data: &[u8], level: i32) -> Result<Vec<u8>> {
+    let dir = PACKED.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    match dir.filter(|_| data.len() >= PACKED_MIN) {
+        Some(dir) => compress_cached(&dir, data, level),
+        None => encode(data, level),
+    }
+}
+
+static PACKED: std::sync::Mutex<Option<std::path::PathBuf>> = std::sync::Mutex::new(None);
+const PACKED_MIN: usize = 16 << 10;
+
+pub fn cache_compressed(dir: Option<std::path::PathBuf>) {
+    *PACKED.lock().unwrap_or_else(|e| e.into_inner()) = dir;
+}
+
+fn encode(data: &[u8], level: i32) -> Result<Vec<u8>> {
     let mut enc = zstd::Encoder::new(Vec::new(), level)?;
     enc.include_checksum(true)?;
     enc.multithread(1)?;
     std::io::Write::write_all(&mut enc, data)?;
     Ok(enc.finish()?)
+}
+
+fn compress_cached(dir: &Path, data: &[u8], level: i32) -> Result<Vec<u8>> {
+    let digest: String = Md5::digest(data).iter().map(|b| format!("{b:02x}")).collect();
+    let name = format!(
+        "{digest}-{}-{level}-{}",
+        data.len(),
+        zstd::zstd_safe::version_number()
+    );
+    let path = dir.join(&name[..2]).join(&name);
+    if let Ok(raw) = std::fs::read(&path)
+        && zstd::decode_all(raw.as_slice()).is_ok_and(|back| back == data)
+    {
+        if let Ok(f) = std::fs::File::options().write(true).open(&path) {
+            f.set_modified(std::time::SystemTime::now()).ok();
+        }
+        return Ok(raw);
+    }
+    let raw = encode(data, level)?;
+    let tmp = path.with_extension(format!("{}.tmp", std::process::id()));
+    let stored = path
+        .parent()
+        .map_or(Ok(()), std::fs::create_dir_all)
+        .and_then(|()| std::fs::write(&tmp, &raw))
+        .and_then(|()| std::fs::rename(&tmp, &path));
+    if stored.is_err() {
+        std::fs::remove_file(&tmp).ok();
+    }
+    Ok(raw)
 }
 
 #[derive(Debug, Clone)]
@@ -463,6 +507,28 @@ mod tests {
         let res = back.find("eaid://ui_package/screens/sample.ui").unwrap();
         assert_eq!(res.fragments[0].data().unwrap(), b"!pkg sample payload");
         assert_eq!(res.kind(), "UI");
+    }
+
+    #[test]
+    fn a_cached_compression_matches_a_fresh_one_and_a_damaged_entry_is_redone() {
+        let dir = std::env::temp_dir().join(format!("swofty-packed-{}", std::process::id()));
+        std::fs::remove_dir_all(&dir).ok();
+        let data: Vec<u8> = (0..PACKED_MIN as u32 * 2).map(|i| (i % 251) as u8).collect();
+        let fresh = encode(&data, ZSTD_LEVEL).unwrap();
+        assert_eq!(compress_cached(&dir, &data, ZSTD_LEVEL).unwrap(), fresh);
+        let entries: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .flat_map(|d| std::fs::read_dir(d.path()).unwrap().flatten())
+            .map(|e| e.path())
+            .collect();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(std::fs::read(&entries[0]).unwrap(), fresh);
+        assert_eq!(compress_cached(&dir, &data, ZSTD_LEVEL).unwrap(), fresh);
+        std::fs::write(&entries[0], &fresh[..fresh.len() / 2]).unwrap();
+        assert_eq!(compress_cached(&dir, &data, ZSTD_LEVEL).unwrap(), fresh);
+        assert_eq!(std::fs::read(&entries[0]).unwrap(), fresh);
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

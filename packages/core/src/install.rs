@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use crate::baseline::{Baseline, DepotHashes, Identity, Objects, sha256_bytes, sha256_file, sha256_opt};
+use crate::baseline::{
+    Baseline, DepotHashes, Hashes, Identity, Objects, sha256_bytes, sha256_file, sha256_opt,
+};
 use crate::journal::{Journal, Op, State};
 use crate::placed::{self, Placed};
 use crate::profile::VANILLA;
@@ -198,6 +200,13 @@ impl<'a> Installer<'a> {
     /// Roll back every open journal, or only the ones a `swofty run` session
     /// opened, oldest first.
     pub fn roll_back(&self, sessions_only: bool) -> Result<Vec<RolledBack>> {
+        let mut hashes = Hashes::load(self.data);
+        let out = self.roll_back_with(sessions_only, &mut hashes);
+        hashes.save();
+        out
+    }
+
+    fn roll_back_with(&self, sessions_only: bool, hashes: &mut Hashes) -> Result<Vec<RolledBack>> {
         let mut out = Vec::new();
         for j in Journal::open(self.data)? {
             if sessions_only && !j.session {
@@ -205,7 +214,7 @@ impl<'a> Installer<'a> {
             }
             let (id, profile, session) = (j.id.clone(), j.profile.clone(), j.session);
             let changes = j.entries.len();
-            let drift = self.rollback(j)?;
+            let drift = self.rollback(j, hashes)?;
             out.push(RolledBack {
                 id,
                 profile,
@@ -217,14 +226,14 @@ impl<'a> Installer<'a> {
         Ok(out)
     }
 
-    fn rollback(&self, j: Journal) -> Result<Vec<Drift>> {
+    fn rollback(&self, j: Journal, hashes: &mut Hashes) -> Result<Vec<Drift>> {
         let mut report = Vec::new();
         let same_build = j.build_id == self.game.identity.build_id;
         for e in j.entries.iter().rev() {
             match e.op {
                 Op::ReplaceFile => {
                     let path = self.path(&e.path);
-                    let now = sha256_opt(&path)?;
+                    let now = hashes.sha256_opt(&path)?;
                     let before = e.before.as_deref().expect("replace-file has before");
                     if now.as_deref() == Some(before) {
                         continue;
@@ -232,13 +241,14 @@ impl<'a> Installer<'a> {
                     let ours = now == e.after || e.state == State::Pending;
                     if ours && same_build {
                         self.restore_original(before, &path)?;
+                        hashes.wrote(&path, before);
                     } else {
                         report.push(Drift::LeftInPlace(e.path.clone()));
                     }
                 }
                 Op::CreateFile => {
                     let path = self.path(&e.path);
-                    match sha256_opt(&path)? {
+                    match hashes.sha256_opt(&path)? {
                         None => {}
                         Some(now) if e.state == State::Pending || Some(&now) == e.after.as_ref() => {
                             with_retry(&path, || std::fs::remove_file(&path))?;
@@ -448,7 +458,14 @@ impl<'a> Installer<'a> {
     }
 
     pub fn apply(&self, plan: &Plan) -> Result<()> {
-        self.recover()?;
+        let mut hashes = Hashes::load(self.data);
+        let out = self.apply_with(plan, &mut hashes);
+        hashes.save();
+        out
+    }
+
+    fn apply_with(&self, plan: &Plan, hashes: &mut Hashes) -> Result<()> {
+        self.roll_back_with(false, hashes)?;
         if plan.is_vanilla() {
             return Ok(());
         }
@@ -458,7 +475,7 @@ impl<'a> Installer<'a> {
         let mut placed = Placed::load(self.data)?;
         let mut after = BTreeMap::new();
         for (rel, src) in plan.data.iter().chain(&plan.added).chain(&plan.loader) {
-            after.insert(rel.as_str(), sha256_file(src)?);
+            after.insert(rel.as_str(), hashes.sha256(src)?);
         }
         let mut conflicts = Vec::new();
         let mut unproven = Vec::new();
@@ -466,7 +483,7 @@ impl<'a> Installer<'a> {
             let path = self.path(rel);
             if !baseline.files.contains_key(rel)
                 && let Some(left) = placed.get(rel).filter(|p| !p.replaced)
-                && sha256_opt(&path)?.as_deref() == Some(left.sha256.as_str())
+                && hashes.sha256_opt(&path)?.as_deref() == Some(left.sha256.as_str())
             {
                 conflicts.push(Conflict {
                     path: rel.clone(),
@@ -483,7 +500,7 @@ impl<'a> Installer<'a> {
             let rec = baseline
                 .record(&objects, &self.game.dir, rel, self.depot)?
                 .clone();
-            let now = sha256_file(&path)?;
+            let now = hashes.sha256(&path)?;
             if now != rec.sha256 {
                 conflicts.push(Conflict {
                     owned: placed.wrote(rel, &now) || after[rel.as_str()] == now,
@@ -524,7 +541,7 @@ impl<'a> Installer<'a> {
             if std::fs::symlink_metadata(&path).is_err() {
                 continue;
             }
-            let now = sha256_opt(&path)?;
+            let now = hashes.sha256_opt(&path)?;
             let stock = baseline.files.contains_key(rel);
             conflicts.push(Conflict {
                 owned: now
@@ -574,6 +591,7 @@ impl<'a> Installer<'a> {
             )?;
             self.step(&mut n)?;
             std::fs::copy(src, &path).map_err(io_err(&path))?;
+            hashes.wrote(&path, &after[rel.as_str()]);
             j.done(i)?;
         }
         for (rel, src) in plan.added.iter().chain(&plan.loader) {
@@ -590,6 +608,7 @@ impl<'a> Installer<'a> {
             let i = j.begin(Op::CreateFile, rel, None, Some(after[rel.as_str()].clone()))?;
             self.step(&mut n)?;
             std::fs::copy(src, &path).map_err(io_err(&path))?;
+            hashes.wrote(&path, &after[rel.as_str()]);
             j.done(i)?;
         }
         if let Some((reg, name, text)) = registry {

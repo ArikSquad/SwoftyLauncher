@@ -11,7 +11,7 @@ Follow [Installation](/guide/installation) to install the launcher with the inst
 
 ## 2. Open it and find the game
 
-1. Make sure you have F1 25 installed, then start Steam.
+1. Make sure you have F1 25 installed with Steam.
 2. Open **Swofty Launcher** from the Start menu, or `bin\swofty-launcher.exe` in the install folder.
 
 Watch the status line next to **Play**: you'll see **Detecting F1 25…** while the launcher looks for the game, then **Ready** when it finds it.
@@ -30,7 +30,7 @@ If the launcher can't find the game, you'll see **Install it with Steam or locat
 2. Press **Play**.
 3. On your first launch, select **Accept and launch** in the **Modded play runs offline** dialog. For why modded play runs offline, see [Offline play](/reference/safety).
 
-You'll see **Launching…** on the button, then **Stop** while the game runs. When you want to play vanilla, launch through Steam as usual.
+You'll see **Launching…** on the button, then **Stop** while the game runs. If Steam is closed, the launcher starts it and waits for it to sign in first; see [Steam](/reference/launch#steam). When you want to play vanilla, launch through Steam as usual.
 
 To follow the logs as you play, select the arrow next to **Play** and choose **Play with console**, or run `swofty run` from a terminal.
 

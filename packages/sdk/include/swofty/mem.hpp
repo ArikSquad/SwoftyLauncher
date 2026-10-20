@@ -20,7 +20,10 @@
 // Guarded reads of game memory. Every read checks that the bytes are committed and readable
 // before touching them, so a stale or wrong pointer yields false instead of a crash. The
 // VirtualQuery answers are cached per thread for a short time (ttl_ms) in a small per-page table,
-// which makes the checks cheap enough for per-frame use; invalidate() drops every thread's cache
+// and regions of at least big_region bytes also in a small per-region table, so every page of the
+// game's large heap views shares one answer. VirtualQuery under Wine/Proton costs time linear in
+// the rest of the region (about 7 us per GB), so the region table is what makes the checks cheap
+// enough for per-frame use on large heaps; invalidate() drops every thread's cache
 // at once (call it after the game frees or remaps memory you were reading, or never: entries
 // expire on their own). in_image() and object_like() tell game objects from garbage: a C++ object
 // of the game starts with a vtable inside the exe image. c_string() reads a NUL-terminated string
@@ -29,6 +32,7 @@
 namespace swofty::mem {
 
 inline constexpr uint32_t ttl_ms = 250;
+inline constexpr size_t big_region = size_t(1) << 20;
 
 namespace detail {
 
@@ -107,8 +111,10 @@ inline Image image()
 
 inline bool query(uintptr_t at, uintptr_t &hi)
 {
-    constexpr size_t slots = 64;
+    constexpr size_t slots = 64, region_slots = 8;
     thread_local Page cache[slots];
+    thread_local Page regions[region_slots];
+    thread_local size_t region_next;
     uintptr_t page = at >> 12;
     Page &e = cache[page % slots];
     uint64_t now = GetTickCount64();
@@ -117,6 +123,12 @@ inline bool query(uintptr_t at, uintptr_t &hi)
         hi = e.hi;
         return e.ok;
     }
+    for (Page &r : regions)
+        if (r.generation == gen && now - r.stamp < ttl_ms && at >= r.lo && at < r.hi) {
+            e = {page, r.lo, r.hi, r.stamp, gen, r.ok};
+            hi = r.hi;
+            return r.ok;
+        }
     MEMORY_BASIC_INFORMATION m{};
     if (VirtualQuery(reinterpret_cast<const void *>(at), &m, sizeof m) != sizeof m)
         return false;
@@ -125,6 +137,8 @@ inline bool query(uintptr_t at, uintptr_t &hi)
         return false;
     bool ok = m.State == MEM_COMMIT && (m.Protect & 0xEE) && !(m.Protect & (PAGE_GUARD | PAGE_NOACCESS));
     e = {page, lo, end, now, gen, ok};
+    if (end - lo >= big_region)
+        regions[region_next++ % region_slots] = e;
     hi = end;
     return ok;
 }

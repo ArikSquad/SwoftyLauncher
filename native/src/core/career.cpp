@@ -66,6 +66,37 @@ std::unordered_map<uint32_t, std::string> names;
 std::mutex bind_lock;
 std::unordered_map<std::string, uintptr_t> bound;
 
+std::mutex perf_lock;
+std::unordered_map<uint32_t, LARGE_INTEGER> entering_at;
+
+bool perf_on()
+{
+    static const bool on = [] {
+        char v[8] = {};
+        DWORD n = GetEnvironmentVariableA("SWOFTY_PERF", v, sizeof v);
+        return n && n < sizeof v && v[0] && v[0] != '0';
+    }();
+    return on;
+}
+
+void perf_flow(uint32_t hash, uint32_t from, uint32_t to, const std::string &name)
+{
+    LARGE_INTEGER now, f;
+    QueryPerformanceCounter(&now);
+    QueryPerformanceFrequency(&f);
+    std::lock_guard<std::mutex> g(perf_lock);
+    if (to == 1) {
+        entering_at[hash] = now;
+        return;
+    }
+    auto it = entering_at.find(hash);
+    if (from != 1 || it == entering_at.end())
+        return;
+    double ms = double(now.QuadPart - it->second.QuadPart) * 1000.0 / double(f.QuadPart);
+    entering_at.erase(it);
+    swofty::log("[perf] flow \"%s\" Entering -> %s took %.1f ms", name.c_str(), STATUS[to & 3], ms);
+}
+
 uint64_t now_ms()
 {
     return GetTickCount64();
@@ -198,6 +229,8 @@ void on_flow(SwoftyContext *c)
     if (known || first)
         swofty::log("[career] flow \"%s\" %s -> %s%s", name.c_str(), STATUS[from & 3], STATUS[to & 3],
                     known ? "" : " (first sighting)");
+    if (perf_on())
+        perf_flow(hash, uint32_t(from), to, name);
     fire(SWOFTY_EVENT_FLOW_STATE, to, from, &f);
     settle_and_publish();
 }

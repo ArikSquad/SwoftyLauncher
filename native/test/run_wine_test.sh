@@ -63,11 +63,14 @@ doc = json.load(open(core + 'bindings.json'))
 for x in doc['bindings']:
     if 'kb_tag' in x:
         x['rva'] = kb(x.pop('kb_tag'))
+        if not x.pop('kb_no_match', False):
+            x['match'] = kb(x.pop('kb_match_tag')) if 'kb_match_tag' in x else hex(int(x['rva'], 16) - x['anchor'])
     else:
         x.pop('rva', None)
+        x.pop('match', None)
         if isinstance(x.get('string_anchor'), dict):
             x['string_anchor'].pop('func_rva', None)
-doc['build'] = {'exe': 'F1_25.exe', 'sha256': 'wine-test', 'pe_timestamp': stamp}
+doc['build'] = {'exe': 'F1_25.exe', 'sha256': 'wine-test', 'pe_timestamp': stamp, 'size': len(b)}
 json.dump(doc, open(core + 'bindings.wine-test.json', 'w'), indent=1)
 json.dump({'schema': 1, 'profile': 'wine-test', 'addons': [], 'early_plugins': ['t_stage_early.dll']},
           open(root + '/settings.json', 'w'))
@@ -88,8 +91,24 @@ count() {
     n=$(grep -cE "$3" "$LOG" || true)
     if [[ $n == "$2" ]]; then echo "ok  : $1"; else echo "FAIL: $1 (logged $n times, want $2)"; status=1; fi
 }
+CACHE=$OUT/game/swofty/cache/scan-cache.tsv
 for mode in trigger fallback vm settings settings_local session gamelog_off assets; do
     echo "==== $mode"
+    stale=
+    [[ $mode == vm ]] && stale=$(python3 - "$CACHE" <<'EOF'
+import sys
+path = sys.argv[1]
+lines = open(path).read().split('\n')
+i = next(i for i, l in enumerate(lines) if l.endswith('\t48 81 EC 88 02 00 00 C5 F8 29 B4 24 70 02 00 00 4C 89 8C 24') or l.endswith('C5 F8 29 B4 24 70 02 00 00 4C 89 8C 24'))
+rva, section, pattern = lines[i].split('\t')
+lines[i] = '\t'.join([format(int(rva, 16) + 1, 'x'), section, pattern])
+open(path, 'w').write('\n'.join(lines))
+print(pattern)
+EOF
+)
+    [[ $mode == settings ]] && sed -i '1s/\t[0-9a-f]*$/\t0123456789abcdef/' "$CACHE"
+    resolve=
+    [[ $mode == gamelog_off ]] && resolve=scan
     [[ $mode == session ]] && cp session.test.json "$OUT/game/swofty/session.json"
     req=
     [[ $mode == settings ]] && req=$OUT/state/requests/wine-test.json
@@ -123,8 +142,10 @@ json.dump({'features': ['file', 'telemetry']}, open(os.path.join(root, 'assets.j
 EOF
     gl_level=; gl_rate=
     [[ $mode == gamelog_off ]] && gl_level=off
+    gl_channels=
     [[ $mode == trigger ]] && gl_rate=0
-    SWOFTY_TEST_ASSETS=$([[ $mode == assets ]] && echo 1) SWOFTY_GAME_LOG=$gl_level SWOFTY_GAME_LOG_RATE=$gl_rate SWOFTY_TEST_REQUESTS=${req:+Z:${req//\//\\}} SWOFTY_TEST_ITEMS=$ITEMS \
+    [[ $mode == trigger || $mode == vm ]] && gl_channels=default,verbose
+    SWOFTY_RESOLVE=$resolve SWOFTY_TEST_ASSETS=$([[ $mode == assets ]] && echo 1) SWOFTY_GAME_LOG=$gl_level SWOFTY_GAME_LOG_RATE=$gl_rate SWOFTY_GAME_LOG_CHANNELS=$gl_channels SWOFTY_TEST_REQUESTS=${req:+Z:${req//\//\\}} SWOFTY_TEST_ITEMS=$ITEMS \
         "${PIN[@]}" xvfb-run -a wine "$OUT/game/F1_25.exe" $mode || status=1
     rm -rf "$OUT/game/swofty/session.json" "$OUT/game/swofty/settings.json" "$OUT/game/swofty/assets.json" \
         "$OUT/game/swofty/addons/example.sample-mod"
@@ -158,6 +179,36 @@ EOF
     fi
     case $mode in
     trigger)
+        once "scan cache: the first run starts without one" '\[core\] scan cache: none yet for this exe \(key [0-9a-f]{16}\)'
+        check "scan cache: the addresses the scans found are saved" '\[core\] scan cache: [1-9][0-9]* address\(es\) saved to swofty[\]cache[\]scan-cache\.tsv'
+        count "resolve: an exe other than the KB build never uses the KB addresses" 0 'at the KB address'
+        count "scan cache: nothing is cached yet on the first run" 0 'the address cached for this exe'
+        ;;
+    fallback)
+        check "scan cache: the second run reads the saved addresses" '\[core\] scan cache: [1-9][0-9]* address\(es\) for this exe \(key [0-9a-f]{16}\), each checked'
+        check "scan cache: a cached address is checked against the pattern and used without a scan" 'scan \.xtls \[.*\] -> 1 hit at 0x[0-9a-f]+ \(base\+0x[0-9a-f]+\), the address cached for this exe'
+        count "scan cache: with every address cached, no pattern needs a full scan" 0 'scan \.xtls \[.*\] -> 1 hit at 0x[0-9a-f]+ \(base\+0x[0-9a-f]+\)[[:space:]]*$'
+        count "scan cache: an unchanged cache is not rewritten" 0 'scan cache: .* saved to'
+        ;;
+    settings)
+        once "scan cache: a cache written for another exe is dropped" '\[core\] scan cache: swofty[\]cache[\]scan-cache\.tsv belongs to another exe; starting over'
+        check "scan cache: the rebuilt cache is saved" '\[core\] scan cache: [1-9][0-9]* address\(es\) saved'
+        ;;
+    gamelog_off)
+        once "resolve: SWOFTY_RESOLVE=scan turns the KB addresses and the scan cache off" '\[core\] binding resolution: SWOFTY_RESOLVE=scan, every pattern is scanned and the scan cache is off'
+        count "resolve: SWOFTY_RESOLVE=scan uses no cached address" 0 'the address cached for this exe'
+        ;;
+    esac
+    if [[ $stale ]]; then
+        python3 - "$LOG" "$stale" <<'EOF' && echo "ok  : scan cache: a stale address fails the pattern check, is scanned again and saved" || { echo "FAIL: scan cache: a stale address fails the pattern check, is scanned again and saved"; status=1; }
+import sys
+log, pattern = open(sys.argv[1], errors='replace').read(), sys.argv[2]
+full = [l for l in log.split('\n') if f'[{pattern}] -> 1 hit at' in l and 'cached' not in l]
+sys.exit(not (len(full) == 1 and 'address(es) saved to' in log))
+EOF
+    fi
+    case $mode in
+    trigger)
         check "events: flow-tick hook installed" '\[events\] Vm_Update_FlowStateMachine hooked at base\+0x4423ce0'
         check "events: setup reports the onFrame tick live" '\[events\] setup: live; onFrame armed'
         once "events: first flow tick fires with dt 0" '\[events\] flow tick 1 observed, dt 0\.0'
@@ -171,10 +222,10 @@ EOF
              END {exit !(a && a < b && b < c && c < d && d < e)}' "$LOG" &&
             echo "ok  : events: career setup, then ON_LOAD, then the events setup arms the queue, then the first tick" ||
             { echo "FAIL: events: career setup, then ON_LOAD, then the events setup arms the queue, then the first tick"; status=1; }
-        check "gamelog: on with the defaults" '\[gamelog\] game log to loader\.log: on \(level warn, from defaults\)'
+        check "gamelog: on with the verbose UI channels from the environment" '\[gamelog\] game log to loader\.log: on \(level warn, from environment\), channels .default,verbose.'
         check "gamelog: overwrite on Ne_Log_Thunk installed" 'wrap Ne_Log_Thunk at .* installed: swofty_gamelog\.dll\(0, overwrite\)'
         check "gamelog: site on Ne_Format_String installed" 'site site_Ne_Format_String_Entry at .* installed: swofty_gamelog\.dll\(0\)'
-        check "gamelog: default channels open TEST_WARN and UI_FLOW only" '\[gamelog\] gate g_Ne_LogGate at .*: opened 2 channel hash\(es\): TEST_WARN, UI_FLOW[[:space:]]*$'
+        check "gamelog: default,verbose opens TEST_WARN and UI_FLOW only" '\[gamelog\] gate g_Ne_LogGate at .*: opened 2 channel hash\(es\): TEST_WARN, UI_FLOW[[:space:]]*$'
         count "gamelog: gated warning logged 100 times, then the repeat cap" 100 '\[game\] TEST_WARN \(warn\): fake gate message from site_a[[:space:]]*$'
         once "gamelog: repeat cap note for the warning" '\[game\] \(format "fake gate message from %s" logged 100 times; further repeats are suppressed\)'
         count "gamelog: info on a UI channel from five threads, intact lines, capped at 100" 100 '\[game\] UI_FLOW: fake ui info from site_c[[:space:]]*$'
@@ -184,6 +235,11 @@ EOF
         once "gamelog: later route error" '\[game\] UI_ROUTE \(error\): No screen called late_screen exists[[:space:]]*$'
         count "gamelog: ordinary formats are not logged" 0 'button_7'
         count "gamelog: rate limit off (SWOFTY_GAME_LOG_RATE=0)" 0 'dropped by the rate limit'
+        ;;
+    fallback)
+        check "gamelog: on with the defaults" '\[gamelog\] game log to loader\.log: on \(level warn, from defaults\)'
+        check "gamelog: default channels open TEST_WARN and UI_FLOW (UI channels at warn level)" '\[gamelog\] gate g_Ne_LogGate at .*: opened 2 channel hash\(es\): TEST_WARN, UI_FLOW[[:space:]]*$'
+        count "gamelog: info messages on a UI channel are not logged by default" 0 'UI_FLOW: fake ui info'
         ;;
     vm)
         check "gamelog: default rate limit drops the burst and reports it" '\[game\] \([0-9]+ message\(s\) dropped by the rate limit of 100 per second\)'
@@ -351,8 +407,18 @@ check "stages: core's own wrap still installs with the Steam rvas left out of th
 once "stages: the early site on the entry of Fake_Stage_Site installs" '\[core\] site wine-test:site_Stage_Entry at 0x[0-9a-f]+ \(base\+0x[0-9a-f]+\) installed: t_stage_early\.dll\(0\)[[:space:]]*$'
 once "stages: the early wrap on the entry of Fake_Stage_Wrap installs" '\[core\] wrap wine-test:Fake_Stage_Wrap_Early at 0x[0-9a-f]+ \(base\+0x[0-9a-f]+\) installed: t_stage_early\.dll\(0\)[[:space:]]*$'
 check "stages: window stage after the early load" 'stage: window \(USER32!RegisterClassExW .*\), addons were loaded at the early stage'
-once "stages: the live bytes of Fake_Stage_Site no longer match its pattern" 'scan \.xtls \[48 B8 53 57 46 54 53 49 54 45 B8 07 00 00 00 C3\] -> 0 hits'
-once "stages: the live bytes of Fake_Stage_Wrap no longer match its pattern" 'scan \.xtls \[48 B8 53 57 46 54 57 52 41 50 B8 09 00 00 00 C3\] -> 0 hits'
+once "stages: the early site binds at its KB address" '\[core\] bind wine-test:site_Stage_Entry -> 0x[0-9a-f]+ \(base\+0x[0-9a-f]+\), site experimental via pattern at the KB address'
+once "stages: the early wrap binds at its KB address" '\[core\] bind wine-test:Fake_Stage_Wrap_Early -> 0x[0-9a-f]+ \(base\+0x[0-9a-f]+\), func experimental via pattern at the KB address'
+count "stages: the hooked Fake_Stage_Site is matched under its hook without a scan" 0 'scan \.xtls \[48 B8 53 57 46 54 53 49 54 45 B8 07 00 00 00 C3\]'
+count "stages: the hooked Fake_Stage_Wrap is matched under its hook without a scan" 0 'scan \.xtls \[48 B8 53 57 46 54 57 52 41 50 B8 09 00 00 00 C3\]'
+count "stages: the early patterns that check out at their KB address are never scanned" 0 'scan \.xtls \[48 B8 53 57 46 54 (53 49 54 45|57 52 41 50)\]'
+once "stages: Fake_Stage_Plain's KB address holds other bytes" '\[core\] binding wine-test:Fake_Stage_Plain: the pattern does not match at the KB address 0x[0-9a-f]+; scanning \.xtls'
+once "stages: Fake_Stage_Plain is then scanned" 'scan \.xtls \[48 B8 53 57 46 54 50 4C 41 4E B8 05 00 00 00 C3\] -> 1 hit at'
+once "stages: Fake_Stage_Plain binds by the scan" '\[core\] bind wine-test:Fake_Stage_Plain -> 0x[0-9a-f]+ \(base\+0x[0-9a-f]+\), func experimental via pattern[[:space:]]*$'
+for id in Fake_Stage_Wrong Fake_Stage_Site_Wrong; do
+    once "stages: wine-test:$id does not match at its KB address" "\[core\] binding wine-test:$id: the pattern does not match at the KB address"
+done
+count "stages: the ambiguous pattern carries no KB address" 0 'binding wine-test:Fake_Stage_Ambiguous: the pattern does not match at the KB address'
 for id in Fake_Stage_Site Fake_Stage_Wrap; do
     rva=$(python3 -c 'import json, sys; print(next(b["rva"] for b in json.load(open(sys.argv[1]))["bindings"] if b["id"] == sys.argv[2]))' \
         "$SG/swofty/addons/core/bindings.wine-test.json" "wine-test:$id" || true)
@@ -372,4 +438,17 @@ done
 check "stages: the ambiguous pattern hits more than once" 'scan \.xtls \[48 B8 53 57 46 54\] -> ([2-9]|[1-9][0-9]+) hits'
 count "stages: only the two bindings under early hooks take the fallback" 2 'its bytes carry an installed hook'
 once "stages: the plugin with wrong or ambiguous patterns fails its init" 'addon t_stage_refused\.dll: SwoftyAddonInit returned 0 \(FAILED\)'
+once "stages: the exe matches the KB build's timestamp and size, so the KB addresses are used" '\[core\] binding resolution: [0-9]+ of [0-9]+ pattern\(s\) carry their KB address'
+echo "==== stages, exe size differs from the KB build"
+python3 - "$SG/swofty/addons/core/bindings.wine-test.json" <<'EOF'
+import json, sys
+doc = json.load(open(sys.argv[1]))
+doc['build']['size'] += 1
+json.dump(doc, open(sys.argv[1], 'w'), indent=1)
+EOF
+rm -rf "$SG/swofty/cache"
+SWOFTY_EARLY_STAGE=1 "${PIN[@]}" xvfb-run -a wine "$SG/F1_25.exe" stages || status=1
+once "stages: an exe of another size than the KB build never uses the KB addresses" '\[core\] binding resolution: the exe is [0-9]+ bytes and the KB build [0-9]+; the KB addresses are not used, every pattern is scanned'
+count "stages: with another size, nothing binds at a KB address" 0 'via pattern at the KB address|does not match at the KB address'
+once "stages: with another size, the early site is found by a scan" '\[core\] bind wine-test:site_Stage_Entry -> 0x[0-9a-f]+ \(base\+0x[0-9a-f]+\), site experimental via pattern[[:space:]]*$'
 exit $status

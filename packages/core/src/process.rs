@@ -52,7 +52,7 @@ pub fn steamvr_running() -> bool {
 }
 
 #[cfg(target_os = "linux")]
-fn named(name: &str) -> Vec<GameProcess> {
+pub(crate) fn named(name: &str) -> Vec<GameProcess> {
     let Ok(entries) = std::fs::read_dir("/proc") else {
         return Vec::new();
     };
@@ -88,7 +88,7 @@ fn parent(pid: u32) -> Option<u32> {
 }
 
 #[cfg(target_os = "linux")]
-fn started(pid: u32) -> Option<SystemTime> {
+pub(crate) fn started(pid: u32) -> Option<SystemTime> {
     const TICKS_PER_SEC: f64 = 100.0;
     let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
     let ticks: f64 = stat
@@ -109,7 +109,7 @@ fn started(pid: u32) -> Option<SystemTime> {
 }
 
 #[cfg(windows)]
-fn named(name: &str) -> Vec<GameProcess> {
+pub(crate) fn named(name: &str) -> Vec<GameProcess> {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let filter = format!("IMAGENAME eq {name}");
@@ -124,7 +124,7 @@ fn named(name: &str) -> Vec<GameProcess> {
         .lines()
         .filter_map(|line| {
             let mut cols = line.split("\",\"").map(|c| c.trim_matches('"'));
-            (cols.next()? == name).then_some(())?;
+            cols.next()?.eq_ignore_ascii_case(name).then_some(())?;
             Some(GameProcess {
                 pid: cols.next()?.parse().ok()?,
                 started: None,
@@ -134,7 +134,7 @@ fn named(name: &str) -> Vec<GameProcess> {
 }
 
 #[cfg(not(any(target_os = "linux", windows)))]
-fn named(_: &str) -> Vec<GameProcess> {
+pub(crate) fn named(_: &str) -> Vec<GameProcess> {
     Vec::new()
 }
 

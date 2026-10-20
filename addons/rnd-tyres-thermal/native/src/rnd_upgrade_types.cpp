@@ -42,6 +42,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include <swofty/mem.hpp>
 #include <swofty/game.hpp>
 #include <swofty/mixin.hpp>
 
@@ -103,13 +104,7 @@ const NewType *find_id(uint64_t t)
 
 bool region_readable(const void *p, size_t n)
 {
-    MEMORY_BASIC_INFORMATION mbi{};
-    if (VirtualQuery(p, &mbi, sizeof mbi) != sizeof mbi)
-        return false;
-    if (mbi.State != MEM_COMMIT || (mbi.Protect & PAGE_GUARD) || (mbi.Protect & PAGE_NOACCESS))
-        return false;
-    uintptr_t end = reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
-    return reinterpret_cast<uintptr_t>(p) + n <= end;
+    return swofty::mem::readable(p, n);
 }
 
 template <class T> T rd(uintptr_t a)

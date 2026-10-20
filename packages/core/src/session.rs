@@ -161,6 +161,9 @@ pub struct LaunchConfig {
     pub env: BTreeMap<String, String>,
     #[serde(default = "default_winedebug")]
     pub winedebug: String,
+    /// Start Steam when Play finds it closed (a Steam copy of the game).
+    #[serde(default = "yes", skip_serializing_if = "is_yes")]
+    pub start_steam: bool,
 }
 
 impl Default for LaunchConfig {
@@ -169,8 +172,17 @@ impl Default for LaunchConfig {
             cpu_affinity: None,
             env: BTreeMap::new(),
             winedebug: default_winedebug(),
+            start_steam: true,
         }
     }
+}
+
+fn yes() -> bool {
+    true
+}
+
+fn is_yes(on: &bool) -> bool {
+    *on
 }
 
 /// The Windows environment block cannot exceed 32767 characters, and
@@ -414,6 +426,19 @@ mod tests {
         config.console = true;
         let json = serde_json::to_string(&config).unwrap();
         assert!(serde_json::from_str::<Config>(&json).unwrap().console);
+    }
+
+    #[test]
+    fn starting_steam_is_on_unless_turned_off() {
+        assert!(Config::default().launch.start_steam);
+        let old: Config = serde_json::from_str(r#"{ "launch": { "winedebug": "-all" } }"#).unwrap();
+        assert!(old.launch.start_steam);
+        assert!(!serde_json::to_string(&old).unwrap().contains("start_steam"));
+        let off: Config = serde_json::from_str(r#"{ "launch": { "start_steam": false } }"#).unwrap();
+        assert!(!off.launch.start_steam);
+        let json = serde_json::to_string(&off).unwrap();
+        assert!(json.contains(r#""start_steam":false"#), "{json}");
+        assert!(!serde_json::from_str::<Config>(&json).unwrap().launch.start_steam);
     }
 
     #[test]

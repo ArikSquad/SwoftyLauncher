@@ -59,12 +59,14 @@ impl App {
             .ok()
             .filter(|v| v.is_object());
         let known = self.store.mailbox.is_some();
+        self.store.touch_viewer();
         let snap = self.store.snapshot().clone();
         Live::new(status, &snap, known, self.store.snap_error.clone())
     }
 
     fn tick(&mut self, host: &mut Host) {
         self.locate(host);
+        self.store.touch_viewer();
         let mut changed = self.store.snapshot_changed();
         if self.store.outbox_changed() && self.store.collect_acks() > 0 {
             changed = true;

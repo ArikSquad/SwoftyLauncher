@@ -59,6 +59,16 @@ pub fn parse_reg_query(out: &str) -> Vec<(String, String)> {
         .collect()
 }
 
+/// A REG_DWORD value `reg query <key>` lists, by name.
+pub fn reg_dword(out: &str, name: &str) -> Option<u32> {
+    out.lines().find_map(|line| {
+        let rest = line.trim_end_matches('\r').strip_prefix("    ")?;
+        let (value, data) = rest.split_once("    REG_DWORD    ")?;
+        value.eq_ignore_ascii_case(name).then_some(())?;
+        u32::from_str_radix(data.trim().strip_prefix("0x")?, 16).ok()
+    })
+}
+
 /// The setting keeps the path as Explorer saw it, which need not be the
 /// spelling the launcher found (case, separators, a linked library folder).
 fn same_file(a: &Path, b: &Path) -> bool {
@@ -203,6 +213,17 @@ mod tests {
             parse_reg_query("ERROR: The system was unable to find the specified registry key or value.\r\n")
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn reads_dword_values() {
+        let listing = "\r\nHKEY_CURRENT_USER\\Software\\Valve\\Steam\\ActiveProcess\r\n    \
+                       pid    REG_DWORD    0x4c8\r\n    ActiveUser    REG_DWORD    0x0\r\n    \
+                       Universe    REG_SZ    Public\r\n";
+        assert_eq!(reg_dword(listing, "pid"), Some(0x4c8));
+        assert_eq!(reg_dword(listing, "activeuser"), Some(0));
+        assert_eq!(reg_dword(listing, "Universe"), None);
+        assert_eq!(reg_dword(listing, "SteamPID"), None);
     }
 
     #[test]

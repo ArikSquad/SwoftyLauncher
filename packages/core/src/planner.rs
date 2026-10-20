@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use swofty_formats::gvdb::Gvdb;
 
 use crate::asset::{AssetOp, FileKind, FileOp, GroupOp, LangOp, Op, OpFile, Origin};
@@ -57,7 +57,7 @@ pub fn load_features(loader: &Path) -> Result<Features> {
     Ok(out)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Target {
     Group(String),
     Resource { erp: String, uri: String },
@@ -78,7 +78,7 @@ impl std::fmt::Display for Target {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Conflict {
     pub target: Target,
     pub winner: Origin,
@@ -345,6 +345,10 @@ impl<'a> Planner<'a> {
             added.extend(owned::added(db, &origin.addon, &before));
         }
         Ok(added)
+    }
+
+    pub fn erp_ops(&self) -> &[Op] {
+        &self.erp
     }
 
     pub fn take_erp(&mut self) -> Vec<Op> {

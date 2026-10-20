@@ -14,7 +14,7 @@ typedef struct { const char *name; uint32_t index; } AdderCall;
 
 void *g_registry = (void *)0x5157;
 uint64_t out_r12, out_r15;
-__declspec(dllexport) volatile int64_t probe[40];
+__declspec(dllexport) volatile int64_t probe[48];
 void *fake_cmd_global;
 const char fake_cmd_name[] = "select_pressed";
 static uint8_t list[0x100];
@@ -582,6 +582,7 @@ static int stage_window(HWND w)
            "stages: fn<Fake_Stage_Wrap> bound at the window stage resolves to the function under the early wrap");
     expect(probe[36] == 91, "stages: the call through fn<Fake_Stage_Wrap> returns the early wrap's 91");
     expect(probe[37] == 0, "stages: the plugin whose patterns fail without a hook to explain it is refused and runs nothing");
+    expect(probe[40] == 5, "stages: fn<Fake_Stage_Plain>, whose KB address holds other bytes, is found by a scan and runs");
     expect(fake_stage_site() == 7 && probe[32] == 3 && fake_stage_wrap() == 91 && fake_stage_plain() == 5,
            "stages: the game's own calls still go through the early hooks, the unhooked target is vanilla");
     printf("%s (%d failure(s))\n", fails ? "FAILED" : "ALL PASSED", fails);

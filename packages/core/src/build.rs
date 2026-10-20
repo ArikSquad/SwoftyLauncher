@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use swofty_formats::gvdb::Gvdb;
 
@@ -16,7 +17,7 @@ use crate::asset::{
 };
 use crate::baseline::{Baseline, Objects, hex, sha256_file, sha256_opt};
 use crate::builtin::{CORE_ID, LOADER_ENV, loader_dir, loader_files};
-use crate::erpbuild::{ErpBuild, Resized, unsupported};
+use crate::erpbuild::{ErpBuild, Resized, reads, unsupported};
 use crate::install::{Game, LOADER_DIR, Plan};
 use crate::launcher::BuildCx;
 use crate::manifest::{AddonManifest, relative_inside};
@@ -35,6 +36,9 @@ use crate::{Error, Result, io_err};
 
 pub const GVDB: &str = "game_package/gamedatabases/gamedatabases.2025.bin";
 pub const PLAN_FILE: &str = "plan.json";
+pub const SAVED_FILE: &str = "built.json";
+const SAVED_VERSION: u32 = 1;
+const PACKED_AGE: std::time::Duration = std::time::Duration::from_secs(30 * 24 * 3600);
 pub const ADDONS_DIR: &str = "addons";
 
 #[derive(Debug, Clone, Default)]
@@ -195,6 +199,150 @@ fn hash_sources(hasher: &mut Sha256, store: &Store, addon: &str, ops: &[AssetOp]
     Ok(())
 }
 
+fn stamp(hasher: &mut Sha256, label: &str, path: &Path) {
+    match std::fs::metadata(path) {
+        Ok(meta) => hasher.update(format!("{label}|{}|{:?};", meta.len(), meta.modified().ok())),
+        Err(_) => hasher.update(format!("{label}|missing;")),
+    }
+}
+
+fn stamp_tree(hasher: &mut Sha256, label: &str, path: &Path) -> Result<()> {
+    if path.is_dir() {
+        for (rel, p) in loader_files(path)? {
+            stamp(hasher, &format!("{label}/{rel}"), &p);
+        }
+    } else {
+        stamp(hasher, label, path);
+    }
+    Ok(())
+}
+
+fn hash_unread(
+    hasher: &mut Sha256,
+    store: &Store,
+    game: &Game,
+    order: &[&AddonManifest],
+    erp_ops: &[Op],
+    resolve: &dyn Fn(&str) -> PathBuf,
+) -> Result<()> {
+    hasher.update(format!("game {};", game.identity.key()));
+    if let Ok(exe) = std::env::current_exe() {
+        stamp(hasher, env!("CARGO_PKG_VERSION"), &exe);
+    }
+    if let Some(dir) = loader_dir() {
+        stamp_tree(hasher, "loader", &dir)?;
+    }
+    for m in order.iter().filter(|m| !store.is_builtin(&m.id)) {
+        let dir = store.addons_dir().join(&m.id);
+        for n in &m.operations.native {
+            for rel in std::iter::once(&n.dll).chain(&n.files) {
+                let rel = rel.trim_end_matches('/');
+                stamp_tree(hasher, &format!("{}/{rel}", m.id), &dir.join(rel))?;
+            }
+        }
+    }
+    let read: std::collections::BTreeSet<&str> = erp_ops
+        .iter()
+        .filter_map(|op| match &op.op {
+            AssetOp::Erp(e) => Some(reads(e)),
+            _ => None,
+        })
+        .flatten()
+        .collect();
+    for rel in read {
+        stamp(hasher, rel, &resolve(rel));
+    }
+    Ok(())
+}
+
+#[derive(Serialize, Deserialize)]
+struct Saved {
+    version: u32,
+    buildhash: String,
+    data: BTreeMap<String, PathBuf>,
+    added: BTreeMap<String, PathBuf>,
+    loader: BTreeMap<String, PathBuf>,
+    registry_override: bool,
+    sizes: BTreeMap<PathBuf, u64>,
+    settings: Option<SessionSettings>,
+    lines: Vec<String>,
+    warnings: Vec<String>,
+    conflicts: Vec<Conflict>,
+    waiting: Vec<Op>,
+}
+
+impl Saved {
+    fn of(built: &Built, lines: usize, warnings: usize) -> Result<Self> {
+        let mut sizes = BTreeMap::new();
+        for src in [&built.plan.data, &built.plan.added, &built.plan.loader]
+            .into_iter()
+            .flat_map(|m| m.values())
+        {
+            let meta = std::fs::metadata(src).map_err(io_err(src))?;
+            sizes.insert(src.clone(), meta.len());
+        }
+        Ok(Self {
+            version: SAVED_VERSION,
+            buildhash: built.buildhash.clone(),
+            data: built.plan.data.clone(),
+            added: built.plan.added.clone(),
+            loader: built.plan.loader.clone(),
+            registry_override: built.plan.registry_override,
+            sizes,
+            settings: built.settings.clone(),
+            lines: built.lines[lines..].to_vec(),
+            warnings: built.warnings[warnings..].to_vec(),
+            conflicts: built.conflicts.clone(),
+            waiting: built.waiting.clone(),
+        })
+    }
+
+    fn load(overlay: &Path, buildhash: &str) -> Option<Self> {
+        let saved: Self = crate::read_json(&overlay.join(SAVED_FILE)).ok()?;
+        (saved.version == SAVED_VERSION && saved.buildhash == buildhash).then_some(saved)
+    }
+
+    // The game folder decides whether a file is replaced or added, so a saved
+    // plan only holds while each file it adds is still absent and each file it
+    // replaces is still a game file.
+    fn usable(&self, store: &Store, game: &Game) -> bool {
+        let sources = self
+            .sizes
+            .iter()
+            .all(|(p, len)| std::fs::metadata(p).is_ok_and(|m| m.is_file() && m.len() == *len));
+        if !sources
+            || self
+                .added
+                .keys()
+                .any(|rel| std::fs::symlink_metadata(game.dir.join(rel)).is_ok())
+        {
+            return false;
+        }
+        let Ok(baseline) = Baseline::load_or_new(&store.root, &game.identity) else {
+            return false;
+        };
+        self.data
+            .keys()
+            .all(|rel| baseline.files.contains_key(rel) || game.dir.join(rel).is_file())
+    }
+
+    fn restore(self, built: &mut Built) {
+        built.plan.data = self.data;
+        built.plan.added = self.added;
+        built.plan.loader = self.loader;
+        built.plan.registry_override = self.registry_override;
+        built.settings = self.settings;
+        built.lines.push(format!(
+            "build: nothing changed since overlay {} was built; reusing it",
+            built.buildhash
+        ));
+        built.lines.extend(self.lines);
+        built.warnings.extend(self.warnings);
+        built.conflicts = self.conflicts;
+        built.waiting = self.waiting;
+    }
+}
+
 pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
     let registry = store.registry()?;
     let addons = registry.manifests();
@@ -214,6 +362,8 @@ pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
         return Ok(built);
     }
     let mut hasher = Sha256::new();
+    let packed = store.root.join("cache").join(crate::cache::PACKED_DIR);
+    swofty_formats::erp::cache_compressed(Some(packed.clone()));
     let features = loader_dir()
         .map(|d| load_features(&d))
         .transpose()?
@@ -366,9 +516,9 @@ pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
     let mut session = store.session_settings(profile)?;
     session.set_maps(maps.iter().map(|(_, pkg)| pkg));
     session.set_mods(mods.into_iter());
+    hasher.update(serde_json::to_vec(&session).expect("serialisable"));
     let menus = loader_dir().is_some();
     if menus {
-        hasher.update(serde_json::to_vec(&session).expect("serialisable"));
         for rel in MENU_ERPS.iter().chain(MENU_READS) {
             let p = resolve(&ui_file(rel));
             let meta = std::fs::metadata(&p).map_err(io_err(&p))?;
@@ -377,8 +527,15 @@ pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
     }
     let db_src = original(&store.root, game, GVDB);
     hasher.update(sha256_file(&db_src)?);
+    let order: Vec<&AddonManifest> = resolved.order.iter().map(|id| &addons[id]).collect();
+    hash_unread(&mut hasher, store, game, &order, planner.erp_ops(), &resolve)?;
     built.buildhash = hex(&hasher.finalize())[..16].to_owned();
     built.overlay = store.overlay_dir(profile, &built.buildhash);
+    let (lines_at, warnings_at) = (built.lines.len(), built.warnings.len());
+    if let Some(saved) = Saved::load(&built.overlay, &built.buildhash).filter(|s| s.usable(store, game)) {
+        saved.restore(&mut built);
+        return Ok(built);
+    }
     let (ui_lists, ui_notes) = if ui_maps.is_empty() {
         Default::default()
     } else {
@@ -615,7 +772,6 @@ pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
                 built.plan.loader.len(),
                 dir.display()
             ));
-            let order: Vec<&AddonManifest> = resolved.order.iter().map(|id| &addons[id]).collect();
             if menus {
                 let lang = planner.route(Kind::Lang) == Route::Runtime;
                 for (key, value) in build_menus(&mut built, &mut session, &resolve, lang)? {
@@ -708,6 +864,9 @@ pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
         });
         crate::write_json(&built.overlay.join(PLAN_FILE), &listing)?;
     }
+    let saved = (!built.plan.is_vanilla())
+        .then(|| Saved::of(&built, lines_at, warnings_at))
+        .transpose()?;
     caches.push(built.overlay.clone());
     caches.extend(
         [&built.plan.data, &built.plan.added, &built.plan.loader]
@@ -719,6 +878,10 @@ pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
         built
             .lines
             .push(format!("cache: {removed} stale build folder(s) removed"));
+    }
+    crate::cache::prune_packed(&packed, PACKED_AGE);
+    if let Some(saved) = saved {
+        crate::write_json(&built.overlay.join(SAVED_FILE), &saved)?;
     }
     Ok(built)
 }
@@ -935,6 +1098,7 @@ mod tests {
 
     use super::*;
     use crate::asset::{AssetBatch, Op, Origin};
+    use crate::asset::{FileOp, Root, Source};
     use crate::baseline::Identity;
     use crate::launcher::{Addon, Builtin};
 
@@ -1172,6 +1336,104 @@ mod tests {
             db.get_text("entrants.teams.team_2.stat_id").as_deref(),
             Some("100")
         );
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    const PUT: &str = "environment_package/tracks/t/mipmaps/a.mipmaps";
+
+    struct Putter(AddonManifest);
+
+    impl Addon for Putter {
+        fn manifest(&self) -> &AddonManifest {
+            &self.0
+        }
+
+        fn build(&self, cx: &BuildCx) -> swofty_addon::Result<AssetBatch> {
+            let mut batch = Rows(self.0.clone()).build(cx)?;
+            batch.ops.push(Op {
+                op: AssetOp::File(FileOp::Put {
+                    source: Source {
+                        root: Root::Data,
+                        path: "mip".into(),
+                    },
+                    target: PUT.into(),
+                }),
+                origin: Origin {
+                    addon: cx.cx.addon.into(),
+                    item: None,
+                },
+            });
+            Ok(batch)
+        }
+    }
+
+    #[test]
+    fn reuses_an_unchanged_build_until_an_input_or_the_game_folder_changes() {
+        use swofty_formats::gvdb::Record;
+        if loader_dir().is_some() {
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("swofty-build-reuse-{}", std::process::id()));
+        std::fs::remove_dir_all(&root).ok();
+        let dir = root.join("game");
+        std::fs::create_dir_all(dir.join("game_package/gamedatabases")).unwrap();
+        std::fs::write(dir.join(crate::GAME_EXE), "exe").unwrap();
+        let db = |label: &str| {
+            let mut records = vec![Record::new("entrants.teams._team_instancecount_", 0, "1")];
+            records.push(Record::new("entrants.teams.team_0._metadata_", 4, "mclaren_26"));
+            records.push(Record::new("entrants.teams.team_0.stat_id", 0, label));
+            Gvdb { records }.to_bytes()
+        };
+        std::fs::write(dir.join(GVDB), db("100")).unwrap();
+        let game = Game {
+            identity: Identity::detect(&dir, Some(1)).unwrap(),
+            dir: dir.clone(),
+            user_reg: None,
+        };
+        let manifest = AddonManifest::parse(
+            r#"{ "schema_version": 1, "id": "t.put", "name": "Put", "version": "1.0.0", "author": "t",
+                 "compat": { "game": "f1_25" } }"#,
+        )
+        .unwrap();
+        let store = Store::new(root.join("data")).with_builtins(vec![Builtin {
+            addon: Arc::new(Putter(manifest)),
+            locked: false,
+            default_on: true,
+        }]);
+        std::fs::create_dir_all(store.addon_data_dir("t.put")).unwrap();
+        std::fs::write(store.addon_data_dir("t.put").join("mip"), "mip").unwrap();
+        let reused = |b: &Built| b.lines.iter().any(|l| l.starts_with("build: nothing changed"));
+
+        let first = build(&store, "default", &game).unwrap();
+        assert!(!reused(&first));
+        assert_eq!(first.plan.added[PUT], store.addon_data_dir("t.put").join("mip"));
+        let again = build(&store, "default", &game).unwrap();
+        assert!(reused(&again), "{:?}", again.lines);
+        assert_eq!(again.buildhash, first.buildhash);
+        assert_eq!(
+            (&again.plan.data, &again.plan.added, &again.plan.loader),
+            (&first.plan.data, &first.plan.added, &first.plan.loader)
+        );
+        assert_eq!(again.settings, first.settings);
+        assert_eq!(again.warnings, first.warnings);
+
+        // A file copied in by hand where the plan adds one makes the build
+        // decide again, and it is now a game file to replace.
+        std::fs::create_dir_all(dir.join(PUT).parent().unwrap()).unwrap();
+        std::fs::write(dir.join(PUT), "by hand").unwrap();
+        let by_hand = build(&store, "default", &game).unwrap();
+        assert!(!reused(&by_hand));
+        assert!(by_hand.plan.data.contains_key(PUT) && !by_hand.plan.added.contains_key(PUT));
+        std::fs::remove_dir_all(dir.join("environment_package")).unwrap();
+
+        let built = build(&store, "default", &game).unwrap();
+        std::fs::write(&built.plan.data[GVDB], b"torn").unwrap();
+        assert!(!reused(&build(&store, "default", &game).unwrap()));
+
+        std::fs::write(dir.join(GVDB), db("101")).unwrap();
+        let changed = build(&store, "default", &game).unwrap();
+        assert!(!reused(&changed));
+        assert_ne!(changed.buildhash, first.buildhash);
         std::fs::remove_dir_all(&root).ok();
     }
 

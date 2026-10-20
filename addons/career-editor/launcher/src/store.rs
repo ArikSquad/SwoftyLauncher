@@ -98,7 +98,10 @@ pub struct Store {
     last_seq: u64,
     pub prefs: Value,
     outbox_key: Option<SystemTime>,
+    viewer_at: u64,
 }
+
+const VIEWER_EVERY_MS: u64 = 3_000;
 
 fn write_atomic(path: &Path, text: &str) -> Result<(), String> {
     if let Some(dir) = path.parent() {
@@ -167,6 +170,7 @@ impl Store {
             sent: HashMap::new(),
             last_seq: 0,
             outbox_key: None,
+            viewer_at: 0,
         };
         for v in read_lines(&s.data_dir.join("history.jsonl")) {
             if let Some(e) = Entry::from_json(&v) {
@@ -236,6 +240,17 @@ impl Store {
             self.snap_key = key;
         }
         &self.snap
+    }
+
+    pub fn touch_viewer(&mut self) {
+        let Some(dir) = &self.mailbox else { return };
+        let now = now_ms();
+        if now.saturating_sub(self.viewer_at) < VIEWER_EVERY_MS {
+            return;
+        }
+        if write_atomic(&dir.join("viewer.json"), &now.to_string()).is_ok() {
+            self.viewer_at = now;
+        }
     }
 
     pub fn snapshot_changed(&mut self) -> bool {

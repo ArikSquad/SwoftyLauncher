@@ -74,7 +74,9 @@ CE_SECTION("broken", broken_section);
 static std::string slurp(const fs::path &p) { std::ifstream f(p); std::stringstream ss; ss << f.rdbuf(); return ss.str(); }
 static void put(uint64_t seq, const std::string &body) {
     auto tmp = root / "inbox" / (std::to_string(seq) + ".json.tmp"); { std::ofstream f(tmp); f << body; } fs::rename(tmp, root / "inbox" / (std::to_string(seq) + ".json")); }
-static void pump(int n) { for (int i = 0; i < n; ++i) { ce::bridge::frame(); usleep(30000); } }
+static bool viewer_on = false;
+static void touch_viewer() { std::ofstream f(root / "viewer.json"); f << ce::wall_ms(); }
+static void pump(int n) { for (int i = 0; i < n; ++i) { if (viewer_on) touch_viewer(); ce::bridge::frame(); usleep(30000); } ce::bridge::flush_writes(); }
 static ce::Json parse(const std::string &s) { ce::Json v; bool ok = json::parse(s, v); if (!ok) std::printf("PARSE FAIL: %s\n", s.c_str()); CHECK(ok); return v; }
 
 int main() {
@@ -97,14 +99,22 @@ int main() {
     snap = parse(slurp(root / "snapshot.json"));
     CHECK(snap["bridge"]["blocked"]["seq"].n == 100);
     CHECK(snap["bridge"]["blocked"]["why"].str() == "no career is loaded");
-    // 2: career but not safe: still blocked
+    // 2a: career, launcher page not open: sections are not rendered, the status still is
     f_career = true; pump(40);
+    snap = parse(slurp(root / "snapshot.json"));
+    CHECK(snap["sections"].type == ce::Json::Obj && snap["sections"].o.empty());
+    CHECK(snap["bridge"]["renders"].n == 0 && snap["bridge"]["renders_skipped"].n > 0);
+    CHECK(!snap["bridge"]["viewer"].b);
+    CHECK(slurp(root / "viewer.json") == "0");
+    // 2: career but not safe: still blocked; the page is open, so sections render one per frame
+    viewer_on = true; pump(40);
     CHECK(fs::exists(root / "inbox/100.json"));
     snap = parse(slurp(root / "snapshot.json"));
     CHECK(snap["bridge"]["blocked"]["why"].str() == "not in Team HQ");
     CHECK(snap["sections"]["economy"]["cash"].n == 1000);
     CHECK(snap["sections"]["broken"]["error"].str() == "the section wrote invalid JSON");
     CHECK(snap["status"]["season"].n == 2);
+    CHECK(snap["bridge"]["viewer"].b && snap["bridge"]["renders"].n >= 1);
     CHECK(snap["sections"]["economy"]["name"].str() == "Team \"Q\"\n");
     CHECK(snap["sections"]["economy"]["ratio"].n == 0.1);
     // 3: safe -> runs. expect is an object here -> op sees expect object -> not number -> no stale check

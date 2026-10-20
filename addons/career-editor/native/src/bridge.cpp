@@ -17,9 +17,13 @@
 
 #include <algorithm>
 #include <cmath>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
 #include <cstdarg>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <set>
@@ -485,6 +489,8 @@ constexpr uint64_t kInboxPollMs = 500;
 constexpr uint64_t kInboxRelistMs = 10000;
 constexpr uint64_t kSnapshotMs = 1000;
 constexpr uint64_t kHeartbeatMs = 5000;
+constexpr uint64_t kViewerPollMs = 1000;
+constexpr uint64_t kViewerFreshMs = 15000;
 constexpr size_t kMaxOps = 256;
 
 struct Batch {
@@ -509,6 +515,17 @@ struct Bridge {
     std::string sections_text;
     bool sections_live = false;
     bool force_render = false;
+    bool pass_active = false;
+    size_t pass_index = 0;
+    uint64_t last_viewer_poll = 0;
+    uint64_t viewer_at = 0;
+    bool viewer_seeded = false;
+    uint64_t renders = 0;
+    uint64_t skipped = 0;
+    uint64_t pass_ms = 0;
+    uint64_t pass_max = 0;
+    std::string pass_slowest;
+    uint64_t perf_logged = 0;
     std::map<uint64_t, Batch> pending;
     std::set<uint64_t> done;
     uint64_t blocked_seq = 0;
@@ -910,23 +927,28 @@ void drain_one()
 
 // ---- snapshot -----------------------------------------------------------------------------------
 
-void render_sections(uint64_t now)
+void render_section(SectionEntry &s, uint64_t now)
 {
-    for (auto &s : section_table()) {
+    {
         if (!s.quarantined.empty())
-            continue;
+            return;
         SectionCall call{s.fn, {}, {}};
         uint64_t t0 = now_ms();
         unsigned long code = 0;
         bool ok = guarded(run_section_body, &call, &code);
         uint64_t took = now_ms() - t0;
+        g.pass_ms += took;
+        if (took >= g.pass_max) {
+            g.pass_max = took;
+            g.pass_slowest = s.name;
+        }
         if (!ok) {
             char b[96];
             std::snprintf(b, sizeof b, "fault 0x%08lx while rendering", code);
             s.quarantined = b;
             s.rendered = false;
             log("section %s FAULTED (0x%08lx); it is switched off until the game restarts", s.name.c_str(), code);
-            continue;
+            return;
         }
         if (took > 25 && now - s.slow_logged > 60000) {
             s.slow_logged = now;
@@ -961,6 +983,28 @@ void render_sections(uint64_t now)
                 s.text.size() / 1024);
         }
     }
+}
+
+bool perf_on()
+{
+    static const bool on = [] {
+        const char *v = std::getenv("SWOFTY_PERF");
+        return v && *v && *v != '0';
+    }();
+    return on;
+}
+
+void finish_render()
+{
+    g.renders++;
+    uint64_t now = now_ms();
+    if (perf_on() && now - g.perf_logged >= 10000) {
+        g.perf_logged = now;
+        log("[perf] sections pass %llu: %llu ms in total, slowest %s %llu ms (one section per frame)",
+            (unsigned long long)g.renders, (unsigned long long)g.pass_ms, g.pass_slowest.c_str(),
+            (unsigned long long)g.pass_max);
+    }
+    g.pass_ms = g.pass_max = 0;
     std::string all;
     for (auto &s : section_table())
         if (s.rendered)
@@ -1019,6 +1063,12 @@ std::string snapshot_body(uint64_t now)
     w.integer(int64_t(g.applied));
     w.key("failed");
     w.integer(int64_t(g.failed));
+    w.key("viewer");
+    w.boolean(g.viewer_at && wall_ms() - g.viewer_at < kViewerFreshMs);
+    w.key("renders");
+    w.integer(int64_t(g.renders));
+    w.key("renders_skipped");
+    w.integer(int64_t(g.skipped));
     w.key("ops");
     w.begin_array();
     for (auto &e : op_table()) {
@@ -1076,21 +1126,126 @@ std::string snapshot_body(uint64_t now)
     return w.text();
 }
 
-void snapshot(uint64_t now)
+struct SnapshotWriter {
+    std::mutex lock;
+    std::condition_variable wake, idle;
+    std::string pending;
+    bool has = false, busy = false, started = false;
+    std::thread worker;
+
+    void run()
+    {
+        std::unique_lock<std::mutex> l(lock);
+        for (;;) {
+            wake.wait(l, [this] { return has; });
+            std::string out = std::move(pending);
+            has = false;
+            busy = true;
+            l.unlock();
+            st::write("snapshot.json", out);
+            l.lock();
+            busy = false;
+            idle.notify_all();
+        }
+    }
+
+    void post(std::string out)
+    {
+        std::lock_guard<std::mutex> l(lock);
+        if (!started) {
+            started = true;
+            worker = std::thread([this] { run(); });
+            worker.detach();
+        }
+        pending = std::move(out);
+        has = true;
+        wake.notify_one();
+    }
+
+    void drain()
+    {
+        std::unique_lock<std::mutex> l(lock);
+        idle.wait(l, [this] { return !has && !busy; });
+    }
+};
+
+SnapshotWriter &writer()
 {
-    g.sections_live = state::sections_ok();
-    if (g.sections_live)
-        render_sections(now);
-    else if (!in_career())
-        for (auto &s : section_table())
-            s.rendered = false;
+    static SnapshotWriter *w = new SnapshotWriter;
+    return *w;
+}
+
+bool viewer_fresh(uint64_t now)
+{
+    if (now - g.last_viewer_poll >= kViewerPollMs || !g.last_viewer_poll) {
+        g.last_viewer_poll = now;
+        std::string text;
+        uint64_t at = 0;
+        if (st::read("viewer.json", text) == st::Result::ok)
+            for (char c : text) {
+                if (c < '0' || c > '9')
+                    break;
+                at = at * 10 + uint64_t(c - '0');
+            }
+        else if (!g.viewer_seeded)
+            g.viewer_seeded = true, st::write("viewer.json", "0");
+        g.viewer_at = at;
+    }
+    uint64_t wall = wall_ms();
+    bool fresh = g.viewer_at && wall >= g.viewer_at && wall - g.viewer_at < kViewerFreshMs;
+    static int was = -1;
+    if (was != int(fresh)) {
+        was = int(fresh);
+        log(fresh ? "launcher page is open: sections render, one per frame, every %llu ms"
+                  : "launcher page is not open: sections are not rendered (%llu ms cadence paused; status heartbeat only)",
+            (unsigned long long)kSnapshotMs);
+    }
+    return fresh;
+}
+
+void write_snapshot(uint64_t now)
+{
     std::string body = snapshot_body(now);
     if (body == g.last_body && now - g.last_write < kHeartbeatMs)
         return;
     std::string out = "{\"v\":1,\"written\":" + std::to_string(wall_ms()) + "," + body.substr(1);
-    if (st::write("snapshot.json", out) == st::Result::ok) {
-        g.last_body = std::move(body);
-        g.last_write = now;
+    g.last_body = std::move(body);
+    g.last_write = now;
+    writer().post(std::move(out));
+}
+
+void snapshot(uint64_t now, bool force)
+{
+    g.sections_live = state::sections_ok();
+    if (!g.sections_live && !in_career())
+        for (auto &s : section_table())
+            s.rendered = false;
+    if (!g.sections_live || !viewer_fresh(now)) {
+        if (g.sections_live)
+            g.skipped++;
+        write_snapshot(now);
+        return;
+    }
+    if (force) {
+        for (auto &s : section_table())
+            render_section(s, now);
+        finish_render();
+        write_snapshot(now);
+        return;
+    }
+    g.pass_active = true;
+    g.pass_index = 0;
+}
+
+void continue_pass(uint64_t now)
+{
+    auto &t = section_table();
+    if (g.pass_index < t.size())
+        render_section(t[g.pass_index++], now);
+    if (g.pass_index >= t.size()) {
+        g.pass_active = false;
+        finish_render();
+        write_snapshot(now);
     }
 }
 
@@ -1162,11 +1317,24 @@ void frame()
         }
     }
     drain_one();
-    if (g.force_render || now - g.last_snapshot >= kSnapshotMs) {
+    if (g.force_render) {
         g.force_render = false;
+        g.pass_active = false;
         g.last_snapshot = now;
-        snapshot(now);
+        snapshot(now, true);
+    } else if (g.pass_active) {
+        continue_pass(now);
+    } else if (now - g.last_snapshot >= kSnapshotMs) {
+        g.last_snapshot = now;
+        snapshot(now, false);
+        if (g.pass_active)
+            continue_pass(now);
     }
+}
+
+void flush_writes()
+{
+    writer().drain();
 }
 
 } // namespace bridge

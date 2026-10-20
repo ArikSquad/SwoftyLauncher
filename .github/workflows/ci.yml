@@ -313,6 +313,8 @@ jobs:
         run: native/test/run_events_test.sh
       - name: Overlay draw-list unit test
         run: native/test/run_hud_test.sh
+      - name: Pattern scan and scan cache unit test
+        run: native/test/run_scan_test.sh
       - name: Telemetry feed unit test
         env:
           ZIG_GLOBAL_CACHE_DIR: ${{ github.workspace }}/native/build/zig-cache

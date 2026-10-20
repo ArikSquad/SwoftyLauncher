@@ -13,6 +13,7 @@
 #include "Zydis.h"
 #include "json.hpp"
 #include "safetyhook.hpp"
+#include "scan_cache.hpp"
 #include "swofty_api.h"
 
 void crash_attach(SwoftyApi *a, const std::wstring &dir);
@@ -49,7 +50,7 @@ static_assert(offsetof(SwoftyContext, rip) == offsetof(safetyhook::Context64, ri
 struct Binding {
     std::string id, kind, status, section, pattern, rkind;
     std::vector<uint8_t> expect;
-    long long anchor = 0, insn = 0, len = 0, rva = -1, slots = 0;
+    long long anchor = 0, insn = 0, len = 0, rva = -1, slots = 0, match = -1;
     bool resolved = false;
     uintptr_t addr = 0;
     std::string sa_string = {};
@@ -104,6 +105,12 @@ std::unordered_map<std::string, size_t> binding_index;
 std::string bindings_file = "bindings.json";
 std::unordered_map<std::string, uintptr_t> scans;
 std::unordered_map<std::string, uintptr_t> anchor_funcs;
+bool kb_first = true;
+int (*loader_scan)(const char *, const char *, uintptr_t *);
+scancache::Cache scan_cache;
+std::wstring scan_cache_path;
+bool scan_cache_on;
+SRWLOCK scan_lock = SRWLOCK_INIT;
 json::Value session;
 bool have_session;
 std::vector<Addon> addons;
@@ -453,38 +460,65 @@ const std::vector<uint8_t> *hooked_range(uintptr_t a, uintptr_t &start)
     return nullptr;
 }
 
-uintptr_t match_under_hooks(const Binding &b)
+bool section_named(uintptr_t a, const std::string &name)
 {
-    if (!same_build || b.rva < 0 || b.rkind != "addr")
-        return 0;
-    uintptr_t at = base + b.rva - b.anchor;
-    std::vector<int> pat;
-    for (size_t p = 0; p < b.pattern.size();) {
-        size_t e = b.pattern.find(' ', p);
-        std::string tok = b.pattern.substr(p, e == std::string::npos ? std::string::npos : e - p);
-        if (!tok.empty())
-            pat.push_back(tok[0] == '?' ? -1 : (int)strtoul(tok.c_str(), nullptr, 16));
-        p = e == std::string::npos ? b.pattern.size() : e + 1;
-    }
+    auto s = section_of(a);
+    return s && name.size() <= 8 && !strncmp(reinterpret_cast<const char *>(s->Name), name.c_str(), 8);
+}
+
+bool bytes_at(const Binding &b, uintptr_t at, bool &under)
+{
+    auto pat = scancache::tokens(b.pattern);
+    under = false;
     if (pat.empty() || !page_readable(at, pat.size()))
-        return 0;
-    bool under = false;
+        return false;
     for (size_t k = 0; k < pat.size(); k++) {
         uintptr_t start = 0;
         auto orig = hooked_range(at + k, start);
         under |= orig != nullptr;
         uint8_t v = orig ? (*orig)[at + k - start] : byte_at(at + k);
         if (pat[k] >= 0 && v != pat[k])
-            return 0;
+            return false;
     }
-    return under ? at : 0;
+    return true;
 }
 
-uintptr_t resolve_by_pattern(const Binding &b, const char **why)
+uintptr_t match_under_hooks(const Binding &b)
 {
+    if (!same_build || b.rva < 0 || b.rkind != "addr")
+        return 0;
+    uintptr_t at = base + b.rva - b.anchor;
+    bool under = false;
+    return bytes_at(b, at, under) && under ? at : 0;
+}
+
+uintptr_t kb_match(const Binding &b)
+{
+    if (!kb_first || !same_build || b.match < 0 || b.pattern.empty())
+        return 0;
+    uintptr_t at = base + b.match;
+    bool under = false;
+    if (!section_named(at, b.section) || !bytes_at(b, at, under)) {
+        api->log("[core] binding %s: the pattern does not match at the KB address 0x%llx; scanning %s", b.id.c_str(),
+                 (unsigned long long)at, b.section.c_str());
+        return 0;
+    }
+    if (under && b.rkind != "addr")
+        return 0;
+    if (under)
+        api->log("[core] binding %s: its bytes carry an installed hook; the pattern matches the bytes under it at the KB "
+                 "address 0x%llx", b.id.c_str(), (unsigned long long)at);
+    return at;
+}
+
+uintptr_t resolve_by_pattern(const Binding &b, const char **why, bool *at_kb)
+{
+    uintptr_t match = kb_match(b);
+    *at_kb = match != 0;
+    if (match)
+        return apply_match(b, match, why);
     auto key = b.section + '|' + b.pattern;
     auto hit = scans.find(key);
-    uintptr_t match = 0;
     if (hit == scans.end())
         api->scan(b.section.c_str(), b.pattern.c_str(), &match), scans[key] = match;
     else
@@ -522,6 +556,7 @@ uintptr_t resolve_binding(const Binding &b)
     const char *pw = "signature did not match exactly once", *aw = "no string anchor";
     uintptr_t target = 0;
     const char *method = "";
+    bool kb = false;
     /* Resolver primary whenever the baked pattern cannot apply: a different exe than the KB build, or a
        per-build set (e.g. bindings.ea.json) that ships no pattern for this entry. Pattern-first only on
        the native build whose bytes the pattern was derived from. */
@@ -529,11 +564,11 @@ uintptr_t resolve_binding(const Binding &b)
     if (anchor_first) {
         if ((target = resolve_by_anchor(b, &aw)))
             method = "string anchor";
-        else if ((target = resolve_by_pattern(b, &pw)))
-            method = "pattern";
+        else if ((target = resolve_by_pattern(b, &pw, &kb)))
+            method = kb ? "pattern at the KB address" : "pattern";
     } else {
-        if ((target = resolve_by_pattern(b, &pw)))
-            method = "pattern";
+        if ((target = resolve_by_pattern(b, &pw, &kb)))
+            method = kb ? "pattern at the KB address" : "pattern";
         else if (!b.sa_string.empty() && (target = resolve_by_anchor(b, &aw)))
             method = "string anchor (pattern fell back)";
     }
@@ -721,6 +756,94 @@ void ea_stage_handler(int stage)
            "the menu builds)");
     ea_sample_entropy("window");
     ea_binding_report("window");
+}
+
+int core_scan(const char *section, const char *pattern, uintptr_t *out)
+{
+    if (out)
+        *out = 0;
+    if (!scan_cache_on || !section || !pattern)
+        return loader_scan(section, pattern, out);
+    uint64_t known = 0;
+    AcquireSRWLockShared(&scan_lock);
+    bool have = scan_cache.find(section, pattern, known);
+    ReleaseSRWLockShared(&scan_lock);
+    if (have) {
+        auto pat = scancache::tokens(pattern);
+        uintptr_t at = base + known;
+        if (section_named(at, section) && page_readable(at, pat.size()) &&
+            scancache::matches(reinterpret_cast<const uint8_t *>(at), pat)) {
+            api->log("scan %s [%s] -> 1 hit at 0x%llx (base+0x%llx), the address cached for this exe", section, pattern,
+                     (unsigned long long)at, (unsigned long long)known);
+            if (out)
+                *out = at;
+            return 1;
+        }
+    }
+    uintptr_t at = 0;
+    int hits = loader_scan(section, pattern, &at);
+    AcquireSRWLockExclusive(&scan_lock);
+    scan_cache.found(section, pattern, hits, hits == 1 ? rva(at) : 0);
+    ReleaseSRWLockExclusive(&scan_lock);
+    if (out && hits == 1)
+        *out = at;
+    return hits;
+}
+
+void open_scan_cache(SwoftyApi *a, const std::wstring &dir)
+{
+    char v[16] = {0};
+    if (GetEnvironmentVariableA("SWOFTY_RESOLVE", v, sizeof v) && !_stricmp(v, "scan")) {
+        kb_first = false;
+        api->log("[core] binding resolution: SWOFTY_RESOLVE=scan, every pattern is scanned and the scan cache is off");
+        return;
+    }
+    auto dos = reinterpret_cast<const IMAGE_DOS_HEADER *>(base);
+    auto nt = nt_headers();
+    size_t span = offsetof(IMAGE_NT_HEADERS, OptionalHeader) + nt->FileHeader.SizeOfOptionalHeader +
+                  nt->FileHeader.NumberOfSections * sizeof(IMAGE_SECTION_HEADER);
+    uint64_t key = scancache::fnv64(reinterpret_cast<const uint8_t *>(base) + dos->e_lfanew, span);
+    CreateDirectoryW((dir + L"..\\..\\cache").c_str(), nullptr);
+    scan_cache_path = dir + L"..\\..\\cache\\scan-cache.tsv";
+    std::string text = read_file(scan_cache_path);
+    if (text.empty()) {
+        scan_cache.parse("", key);
+        api->log("[core] scan cache: none yet for this exe (key %016llx); patterns found by a scan are kept in "
+                 "swofty\\cache\\scan-cache.tsv", (unsigned long long)key);
+    } else if (!scan_cache.parse(text, key)) {
+        api->log("[core] scan cache: swofty\\cache\\scan-cache.tsv belongs to another exe; starting over (key %016llx)",
+                 (unsigned long long)key);
+    } else {
+        api->log("[core] scan cache: %zu address(es) for this exe (key %016llx), each checked against the pattern before use",
+                 scan_cache.rva.size(), (unsigned long long)key);
+    }
+    loader_scan = a->scan;
+    a->scan = core_scan;
+    scan_cache_on = true;
+}
+
+void save_scan_cache()
+{
+    AcquireSRWLockExclusive(&scan_lock);
+    std::string text;
+    size_t n = scan_cache.rva.size();
+    if (scan_cache_on && scan_cache.dirty)
+        text = scan_cache.serialize(), scan_cache.dirty = false;
+    ReleaseSRWLockExclusive(&scan_lock);
+    if (text.empty())
+        return;
+    std::wstring tmp = scan_cache_path + L".tmp";
+    HANDLE f = CreateFileW(tmp.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    DWORD w = 0;
+    bool ok = f != INVALID_HANDLE_VALUE && WriteFile(f, text.data(), DWORD(text.size()), &w, nullptr) && w == text.size();
+    if (f != INVALID_HANDLE_VALUE)
+        CloseHandle(f);
+    ok = ok && MoveFileExW(tmp.c_str(), scan_cache_path.c_str(), MOVEFILE_REPLACE_EXISTING);
+    if (!ok)
+        DeleteFileW(tmp.c_str());
+    api->log(ok ? "[core] scan cache: %zu address(es) saved to swofty\\cache\\scan-cache.tsv"
+                : "[core] scan cache: writing swofty\\cache\\scan-cache.tsv failed (%zu address(es) kept for this session)",
+             n);
 }
 
 Binding *find_binding(const std::string &id)
@@ -1126,7 +1249,8 @@ extern "C" __declspec(dllexport) int SwoftyCoreAttach(SwoftyApi *a)
     for (auto &j : doc["bindings"].a) {
         Binding b{j["id"].str(), j["kind"].str(), j["status"].str(), j["section"].str(), j["pattern"].str(),
                   j["resolve"]["kind"].str("addr"), hex_bytes(j["expect"].str()), j["anchor"].num(),
-                  j["resolve"]["insn"].num(), j["resolve"]["len"].num(), j["rva"].num(-1), j["slots"].num()};
+                  j["resolve"]["insn"].num(), j["resolve"]["len"].num(), j["rva"].num(-1), j["slots"].num(),
+                  j["match"].num(-1)};
         const auto &sa = j["string_anchor"];
         if (sa.type == json::Value::Obj) {
             b.sa_string = sa["string"].str();
@@ -1138,14 +1262,30 @@ extern "C" __declspec(dllexport) int SwoftyCoreAttach(SwoftyApi *a)
         bindings.push_back(std::move(b));
     }
     same_build = doc["build"]["pe_timestamp"].num() == running_stamp;
-    size_t anchored = 0, durable = 0;
-    for (auto &b : bindings)
+    size_t anchored = 0, durable = 0, placed = 0;
+    for (auto &b : bindings) {
         if (!b.sa_string.empty())
             anchored++, durable += b.sa_durable;
+        placed += b.match >= 0 && !b.pattern.empty();
+    }
     api->log("[core] %s: %zu binding(s) for build %.16s, %s; %zu string-anchored (%zu build-agnostic), %s first",
              chosen.c_str(), bindings.size(), doc["build"]["sha256"].str("?").c_str(),
              same_build ? "this exe (rva checked)" : "a different exe (string anchors decide)", anchored, durable,
              same_build ? "pattern" : "string anchor");
+    open_scan_cache(a, dir);
+    long long kb_size = doc["build"]["size"].num(-1), exe_size = -1;
+    wchar_t exe[MAX_PATH] = {};
+    WIN32_FILE_ATTRIBUTE_DATA fa{};
+    if (GetModuleFileNameW(nullptr, exe, MAX_PATH) && GetFileAttributesExW(exe, GetFileExInfoStandard, &fa))
+        exe_size = (long long)(((unsigned long long)fa.nFileSizeHigh << 32) | fa.nFileSizeLow);
+    if (kb_first && same_build && kb_size > 0 && exe_size != kb_size) {
+        kb_first = false;
+        api->log("[core] binding resolution: the exe is %lld bytes and the KB build %lld; the KB addresses are not used, "
+                 "every pattern is scanned", exe_size, kb_size);
+    }
+    if (kb_first && same_build)
+        api->log("[core] binding resolution: %zu of %zu pattern(s) carry their KB address; each is checked there first and "
+                 "scanned only when the bytes differ", placed, bindings.size());
     std::wstring session_path = dir + L"..\\..\\session.json";
     std::string text = read_file(session_path);
     have_session = !text.empty();
@@ -1238,5 +1378,6 @@ extern "C" __declspec(dllexport) int SwoftyCoreCommit(void)
              "redirect(s), %zu patch(es)",
              active, addons.size() - from, count[SWOFTY_MIXIN_WRAP], count[SWOFTY_MIXIN_SITE], count[SWOFTY_MIXIN_VTABLE],
              count[SWOFTY_MIXIN_REDIRECT], count[SWOFTY_MIXIN_PATCH]);
+    save_scan_cache();
     return (int)active;
 }

@@ -42,6 +42,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include <swofty/mem.hpp>
 #include <swofty/game.hpp>
 #include <swofty/mixin.hpp>
 
@@ -59,15 +60,7 @@ constexpr uint32_t kColWhite = 0xffffffff;
 
 bool region_readable(const void *p, size_t n)
 {
-    MEMORY_BASIC_INFORMATION mbi{};
-    if (VirtualQuery(p, &mbi, sizeof mbi) != sizeof mbi)
-        return false;
-    if (mbi.State != MEM_COMMIT)
-        return false;
-    if ((mbi.Protect & PAGE_GUARD) || (mbi.Protect & PAGE_NOACCESS))
-        return false;
-    uintptr_t end = reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
-    return reinterpret_cast<uintptr_t>(p) + n <= end;
+    return swofty::mem::readable(p, n);
 }
 
 bool starts_with(const char *s, const char *lit, size_t &len)

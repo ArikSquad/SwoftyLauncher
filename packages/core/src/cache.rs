@@ -64,6 +64,27 @@ pub fn prune(cache: &Path, profile: &str, used: &[PathBuf]) -> usize {
     removed
 }
 
+pub const PACKED_DIR: &str = "zstd";
+
+pub fn prune_packed(dir: &Path, max_age: std::time::Duration) -> usize {
+    let mut removed = 0;
+    for sub in children(dir) {
+        for e in std::fs::read_dir(&sub).into_iter().flatten().flatten() {
+            let stale = e
+                .metadata()
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| t.elapsed().ok())
+                .is_some_and(|age| age > max_age);
+            if stale && std::fs::remove_file(e.path()).is_ok() {
+                removed += 1;
+            }
+        }
+        std::fs::remove_dir(&sub).ok();
+    }
+    removed
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

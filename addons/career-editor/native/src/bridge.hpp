@@ -42,6 +42,9 @@ namespace bridge {
 void start();
 void frame();
 
+// Blocks until the background snapshot writer has written the newest snapshot (tests).
+void flush_writes();
+
 // The last rendered value of a section, or nullptr when it has not rendered (the status block
 // copies season fields from the "season" section and the team from "economy").
 const Json *section(const char *name);

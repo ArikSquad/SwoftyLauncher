@@ -33,6 +33,7 @@ pub mod send_logs;
 pub mod session;
 pub mod settings;
 pub mod steam;
+pub mod steam_client;
 pub mod store;
 pub mod tracks;
 pub mod ui;

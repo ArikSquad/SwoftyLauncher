@@ -16,6 +16,7 @@ use swofty_core::session::{
     Config, DEFAULT_WINEDEBUG, LOADER_LOG, LOADER_MARK, LaunchMode, LaunchRequest, LogMark, game_args,
     parse_cpu_list, parse_steam_command,
 };
+use swofty_core::steam_client::{self, Ready, Report, State, Wait};
 use swofty_core::store::Store;
 use swofty_core::{GAME_EXE, STEAM_APP_ID, steam};
 
@@ -31,6 +32,11 @@ pub struct RunArgs {
     restart: bool,
     #[arg(long, help = "Launch through Proton directly instead of asking Steam")]
     direct: bool,
+    #[arg(
+        long,
+        help = "Don't start Steam when it's closed (the launch.start_steam setting does the same)"
+    )]
+    no_start_steam: bool,
     #[arg(
         long,
         help = "Start F1 25 in VR, like Steam's VR launch option (passes -vr; on Linux, starts SteamVR first)"
@@ -86,6 +92,7 @@ pub fn run(store: &Store, profile: &str, args: RunArgs) -> Result<ExitCode> {
     // Modded sessions run without EA AntiCheat: the terms are accepted once,
     // and declining means the game is not launched.
     crate::offline::gate(store, std::io::stdin().is_terminal())?;
+    ensure_steam(store, &game, args.no_start_steam)?;
     let id = format!("{:x}{:x}", std::process::id(), (now_secs() * 1e6) as u64);
     let request = LaunchRequest {
         id: id.clone(),
@@ -320,7 +327,7 @@ fn wrapper(store: &Store, profile: &str, args: &RunArgs, g: &Game) -> Result<Exi
     if let Some(note) = crate::offline::loader_note(&artifacts) {
         say("info", &format!("offline play: {note}"));
     }
-    let probe = swofty_core::offline::probe(&game, &artifacts)?;
+    let probe = swofty_core::offline::probe_cached(&store.root, &game, &artifacts)?;
     if !probe.supported {
         bail!(
             "this F1 25 build is not supported by the offline play extension yet ({}); \
@@ -690,8 +697,7 @@ fn ensure_steamvr() {
         "info",
         "VR: starting SteamVR first, as Steam does for its VR launch",
     );
-    let asked = Command::new("steam")
-        .args(["-applaunch", &steam::STEAMVR_APP_ID.to_string()])
+    let asked = steam_command(&["-applaunch".to_owned(), steam::STEAMVR_APP_ID.to_string()])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn();
@@ -714,6 +720,143 @@ fn ensure_steamvr() {
         std::thread::sleep(Duration::from_millis(500));
     }
     say("info", "VR: SteamVR is running");
+}
+
+#[derive(Debug, PartialEq)]
+enum SteamPolicy {
+    Start,
+    Off,
+    NotSteam,
+    SteamSession,
+}
+
+fn steam_policy(on: bool, game: &Path, steam_session: bool) -> SteamPolicy {
+    if !steam::in_steam_library(game) {
+        SteamPolicy::NotSteam
+    } else if steam_session {
+        SteamPolicy::SteamSession
+    } else if on {
+        SteamPolicy::Start
+    } else {
+        SteamPolicy::Off
+    }
+}
+
+/// The launcher's status line while the launch waits on Steam; gone once
+/// the wait ends.
+struct StageFile(PathBuf);
+
+impl StageFile {
+    fn set(&self, text: &str) {
+        if let Some(dir) = self.0.parent() {
+            std::fs::create_dir_all(dir).ok();
+        }
+        std::fs::write(&self.0, text).ok();
+    }
+}
+
+impl Drop for StageFile {
+    fn drop(&mut self) {
+        std::fs::remove_file(&self.0).ok();
+    }
+}
+
+fn steam_starter(game: Option<&Path>) -> Option<steam_client::Starter> {
+    let root = steam::find_game().map(|g| g.steam_root);
+    let hints: Vec<&Path> = root.as_deref().into_iter().chain(game).collect();
+    steam_client::starter(&hints)
+}
+
+fn steam_command(args: &[String]) -> Command {
+    steam_starter(None)
+        .and_then(|s| s.command(args))
+        .unwrap_or_else(|| {
+            let mut c = Command::new("steam");
+            c.args(args);
+            c
+        })
+}
+
+/// A Steam copy of the game needs the Steam client up and signed in; start
+/// it when it is closed, as Steam's own Play button would.
+fn ensure_steam(store: &Store, game: &Path, opted_out: bool) -> Result<()> {
+    let on = store.config().launch.start_steam && !opted_out;
+    match steam_policy(on, game, steam_client::steam_session()) {
+        SteamPolicy::NotSteam => say(
+            "steam",
+            "the game folder isn't in a Steam library; not checking Steam",
+        ),
+        SteamPolicy::SteamSession => say("steam", "Steam runs this session; not checking it"),
+        SteamPolicy::Off => {
+            let status = steam_client::status();
+            say("steam", &format!("detected: {status}"));
+            if !status.state.usable() {
+                say(
+                    "steam",
+                    "starting Steam is turned off (launch.start_steam or --no-start-steam); \
+                     open Steam if F1 25 doesn't start",
+                );
+            }
+        }
+        SteamPolicy::Start => bring_up_steam(store, Some(game))?,
+    }
+    Ok(())
+}
+
+fn bring_up_steam(store: &Store, game: Option<&Path>) -> Result<()> {
+    let starter = steam_starter(game);
+    let stage = StageFile(store.root.join(steam_client::STAGE_FILE));
+    let ready = steam_client::ensure(
+        steam_client::status,
+        || {
+            let starter = starter.as_ref().ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "Steam was not found on this computer",
+                )
+            })?;
+            say("steam", &format!("starting Steam: {starter}"));
+            starter.start()
+        },
+        Wait::default(),
+        |report| match report {
+            Report::Detected(status) => say("steam", &format!("detected: {status}")),
+            Report::Changed(status, after) if status.state == State::Ready => say(
+                "steam",
+                &format!("ready after {:.1} s ({})", after.as_secs_f64(), status.detail()),
+            ),
+            Report::Changed(status, after) => {
+                say("steam", &format!("{status} at {:.1} s", after.as_secs_f64()))
+            }
+            Report::Stage(s) => stage.set(s.text()),
+        },
+    )?;
+    if ready == Ready::Unconfirmed {
+        say(
+            "steam",
+            &format!(
+                "no sign-in seen after {} s; launching anyway",
+                steam_client::READY_TIMEOUT.as_secs()
+            ),
+        );
+    }
+    Ok(())
+}
+
+/// `swofty steam`: what the launch sees, and with `start`, the same start
+/// and wait as Play, without launching the game.
+pub fn steam_check(store: &Store, start: bool) -> Result<ExitCode> {
+    if start {
+        bring_up_steam(store, None)?;
+        return Ok(ExitCode::SUCCESS);
+    }
+    let status = steam_client::status();
+    say("steam", &format!("detected: {status}"));
+    Ok(if status.state.usable() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    })
 }
 
 fn steam_launch_args(mode: LaunchMode) -> Vec<String> {
@@ -796,7 +939,7 @@ fn launch(store: &Store, game: &Path, direct: bool, mode: LaunchMode) -> Result<
         say(
             "info",
             &format!(
-                "launching F1 25 directly (Steam must be running); waiting for the wrapper, output in {}",
+                "launching F1 25 directly; waiting for the wrapper, output in {}",
                 log.display()
             ),
         );
@@ -806,11 +949,10 @@ fn launch(store: &Store, game: &Path, direct: bool, mode: LaunchMode) -> Result<
             timeout: DIRECT_START_TIMEOUT,
         })
     } else {
-        Command::new("steam")
-            .args(steam_launch_args(mode))
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()?;
+        let mut ask = steam_command(&steam_launch_args(mode));
+        #[cfg(unix)]
+        std::os::unix::process::CommandExt::process_group(&mut ask, 0);
+        ask.stdout(Stdio::null()).stderr(Stdio::null()).spawn()?;
         say(
             "info",
             if mode.is_vr() {
@@ -1310,6 +1452,47 @@ mod tests {
             steam_launch_args(LaunchMode::Vr),
             ["-applaunch", "3059520", "-vr"]
         );
+    }
+
+    #[test]
+    fn starts_steam_only_for_a_steam_copy_with_the_setting_on() {
+        let root = std::env::temp_dir().join(format!("swofty-run-{}-policy", std::process::id()));
+        let game = root.join("lib/steamapps/common/F1 25");
+        let other = root.join("Games/F1 25");
+        std::fs::create_dir_all(&game).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+        std::fs::write(
+            root.join(format!("lib/steamapps/appmanifest_{STEAM_APP_ID}.acf")),
+            r#""AppState" { "installdir" "F1 25" }"#,
+        )
+        .unwrap();
+        assert_eq!(steam_policy(true, &game, false), SteamPolicy::Start);
+        assert_eq!(steam_policy(false, &game, false), SteamPolicy::Off);
+        assert_eq!(steam_policy(true, &game, true), SteamPolicy::SteamSession);
+        assert_eq!(steam_policy(true, &other, false), SteamPolicy::NotSteam);
+        assert_eq!(steam_policy(false, &other, true), SteamPolicy::NotSteam);
+        let stage = StageFile(root.join("data").join(steam_client::STAGE_FILE));
+        stage.set(steam_client::Stage::SigningIn.text());
+        assert_eq!(
+            std::fs::read_to_string(&stage.0).unwrap(),
+            "Waiting for Steam to sign in…"
+        );
+        let path = stage.0.clone();
+        drop(stage);
+        assert!(!path.exists());
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn opting_out_is_a_flag() {
+        use clap::Parser;
+        #[derive(Parser)]
+        struct Cli {
+            #[command(flatten)]
+            run: RunArgs,
+        }
+        assert!(!Cli::parse_from(["swofty"]).run.no_start_steam);
+        assert!(Cli::parse_from(["swofty", "--no-start-steam"]).run.no_start_steam);
     }
 
     #[test]

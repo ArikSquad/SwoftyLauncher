@@ -23,6 +23,8 @@ Version 0.9.0 adds:
 
 Version 0.10.0 moves every engine hook onto the SDK's mixin bindings and needs Swofty Launcher 1.0.9 or later, whose core ships those bindings.
 
+Version 0.10.1 checks game memory through the SDK's region cache. It still runs on Swofty Launcher 1.0.9 or later.
+
 `TESTING.md` lists what to check in game.
 
 ![Stock department icons and the Tyres icon](preview/tyres_icon_compare.png)

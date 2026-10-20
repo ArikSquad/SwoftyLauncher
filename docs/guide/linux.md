@@ -32,7 +32,9 @@ You can now start the modded game with either Steam's **Play** button or the lau
 3. Press **Play**.
 4. On your first launch, you'll see the **Modded play runs offline** dialog. Select **Accept and launch**. For details, see [Offline play](/reference/safety).
 
-To see live logs as you play, select the arrow next to **Play** and choose **Play with console**, or keep Steam running and run `swofty run` from a terminal.
+If Steam is closed, the launcher starts it and waits for it to sign in first; see [Steam](/reference/launch#steam).
+
+To see live logs as you play, select the arrow next to **Play** and choose **Play with console**, or run `swofty run` from a terminal.
 
 If the status line reads **Install it with Steam or locate its folder**, select **Locate game**, choose the folder with `F1_25.exe`, usually `.../steamapps/common/F1 25`, and select **Use this folder**.
 
@@ -48,7 +50,7 @@ To read a summary of your last session, run `swofty logs`.
 
 ## Advanced launch settings
 
-If your setup needs CPU affinity or environment variables, set them in `$DATA/config.json`:
+If your setup needs CPU affinity or environment variables, set them in `$DATA/config.json`. To stop the launcher from starting Steam, add `"start_steam": false` under `"launch"`.
 
 ```json
 {

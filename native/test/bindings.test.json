@@ -20,5 +20,7 @@
  {"id": "wine-test:Fake_Stage_Site_Wrong", "kind": "func", "status": "experimental", "section": ".xtls", "kb_tag": "SWFTSITE",
   "pattern": "48 B8 53 57 46 54 53 49 54 45 B8 08 00 00 00 C3", "anchor": 0, "resolve": {"kind": "addr"}},
  {"id": "wine-test:Fake_Stage_Ambiguous", "kind": "func", "status": "experimental", "section": ".xtls", "kb_tag": "SWFTPLAN",
-  "pattern": "48 B8 53 57 46 54", "anchor": 0, "resolve": {"kind": "addr"}}
+  "kb_no_match": true, "pattern": "48 B8 53 57 46 54", "anchor": 0, "resolve": {"kind": "addr"}},
+ {"id": "wine-test:Fake_Stage_Plain", "kind": "func", "status": "experimental", "section": ".xtls", "kb_tag": "SWFTPLAN",
+  "kb_match_tag": "SWFTWRAP", "pattern": "48 B8 53 57 46 54 50 4C 41 4E B8 05 00 00 00 C3", "anchor": 0, "resolve": {"kind": "addr"}}
 ]

@@ -8,7 +8,7 @@ From your terminal, `swofty` lets you manage addons and mods, build and run prof
 swofty run
 ```
 
-Start Steam first, then run this to launch F1 25 and follow its logs. Modded play is [offline](/reference/safety) only.
+Run this to launch F1 25 and follow its logs. Modded play is [offline](/reference/safety) only. When Steam is closed, `swofty run` starts it and waits up to 90 seconds for it to sign in; see [Steam](/reference/launch#steam).
 
 When you leave the game, you'll get a summary with the exit code and any crash details. `swofty run` exits once the session's game files are rolled back.
 
@@ -20,6 +20,7 @@ To stop following the logs while keeping the game running, press **Ctrl-C**. Whe
 | `--game <dir>` | Set the game folder if it wasn't found |
 | `--restart` | Close a running F1 25 first |
 | `--direct` | Launch directly instead of asking Steam |
+| `--no-start-steam` | Don't start Steam when it's closed. The launcher's **Start Steam automatically** setting does the same for every launch |
 | `--vr` | Start the game in VR, like Steam's **Launch in SteamVR mode**: passes `-vr` to the game and, on Linux, starts SteamVR first. See [Playing in VR](/using/vr) |
 | `--winedebug <channels>` | Choose Wine log channels |
 | `--exe <file>` | Use a copy of `F1_25.exe` to identify crash locations |
@@ -171,6 +172,14 @@ The launcher reads the latest release tag from the `releases/latest` redirect on
 
 To test an update, set `SWOFTY_UPDATE_PRETEND_VERSION=0.1.0`. The launcher and `swofty update` will treat the running version as `0.1.0`.
 
+## `swofty steam`
+
+```sh
+swofty steam [--start]
+```
+
+Shows whether Steam is running and signed in, with what the launcher read it from, and exits with an error when it isn't. With `--start`, it starts Steam when it's closed and waits up to 90 seconds for it to sign in, as **Play** does, without launching the game. See [Steam](/reference/launch#steam).
+
 ## `swofty doctor`
 
-Use `swofty doctor` to check Steam, your game install, Proton, launch options and the data folder. You'll also see any changes from the backed-up originals. On Windows, the `run as admin` row shows whether `F1_25.exe` is set to run as administrator, which stops modded sessions from starting (see [Launching the game](/reference/launch#windows)).
+Use `swofty doctor` to check Steam, your game install, Proton, launch options and the data folder. You'll also see any changes from the backed-up originals. The `steam client` row shows whether Steam is running and signed in. On Windows, the `run as admin` row shows whether `F1_25.exe` is set to run as administrator, which stops modded sessions from starting (see [Launching the game](/reference/launch#windows)).

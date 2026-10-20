@@ -69,7 +69,7 @@ for b in steam["bindings"]:
     nb = dict(b); nb["status"] = "pending-dump"; nb["section"] = ".rdata"
     nb["steam_rva"] = b.get("rva"); nb["steam_pattern"] = b["pattern"]; nb["pattern"] = ""
     if nb.get("expect") is not None: nb["expect"] = ""
-    nb.pop("rva", None); nb["build"] = EA["sha256"]
+    nb.pop("rva", None); nb.pop("match", None); nb["build"] = EA["sha256"]
     sa = nb.get("string_anchor")
     if isinstance(sa, dict):
         sa = dict(sa)

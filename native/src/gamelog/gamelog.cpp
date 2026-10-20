@@ -21,9 +21,12 @@ enum Level : uint8_t { L_NONE, L_INFO, L_WARN, L_ERROR, L_OFF };
 
 constexpr size_t GATE_SLOTS = 373, GATE_MAX_OPEN = 300, LINE = 1024;
 constexpr const char *DEFAULT_CHANNELS =
-    "*WARN*,*ERR*,*FAIL*,*ASSERT*,*FATAL*,UI:info,UI_*:info,*_UI*:info,*-UI*:info,UIRef:info,UICom:info,"
-    "UINodeTreeMessages:info,VM:info,FLOW:info,FLOW/*:info,UI_FLOW:info,NeUI*:info,EGO_ERP_LOADER:info,"
-    "NeAssetGroupLoader*:info";
+    "*WARN*,*ERR*,*FAIL*,*ASSERT*,*FATAL*,UI:warn,UI_*:warn,*_UI*:warn,*-UI*:warn,UIRef:warn,UICom:warn,"
+    "UINodeTreeMessages:warn,VM:warn,FLOW:warn,FLOW/*:warn,UI_FLOW:warn,NeUI*:warn,EGO_ERP_LOADER:warn,"
+    "NeAssetGroupLoader*:warn";
+constexpr const char *VERBOSE_CHANNELS =
+    "UI:info,UI_*:info,*_UI*:info,*-UI*:info,UIRef:info,UICom:info,UINodeTreeMessages:info,VM:info,FLOW:info,"
+    "FLOW/*:info,UI_FLOW:info,NeUI*:info,EGO_ERP_LOADER:info,NeAssetGroupLoader*:info";
 
 const char *const ROUTE_ERRORS[] = {
     "Screen %hs failed to ",
@@ -92,6 +95,8 @@ Cache<4096> log_formats, route_formats;
 Cache<2048> channel_levels;
 std::atomic<uint64_t> window;
 std::atomic<uint32_t> dropped, lines;
+std::atomic<uint64_t> perf_calls, perf_written, perf_repeat, perf_rate;
+bool perf;
 std::atomic<bool> capped;
 std::vector<uint32_t> opened;
 HMODULE self;
@@ -147,9 +152,9 @@ void parse_rules(const std::string &spec)
             item.erase(item.begin());
         while (!item.empty() && item.back() == ' ')
             item.pop_back();
-        if (item == "default") {
+        if (item == "default" || item == "verbose") {
             std::vector<Rule> mine = rules;
-            parse_rules(DEFAULT_CHANNELS);
+            parse_rules(item == "default" ? DEFAULT_CHANNELS : VERBOSE_CHANNELS);
             mine.insert(mine.end(), rules.begin(), rules.end());
             rules = mine;
         } else if (item == "all") {
@@ -218,6 +223,7 @@ bool admit(Slot *fmt_slot, const char *fmt)
     if (fmt_slot && cfg.repeat) {
         uint32_t c = fmt_slot->count.fetch_add(1, std::memory_order_relaxed) + 1;
         if (c > cfg.repeat) {
+            perf_repeat.fetch_add(1, std::memory_order_relaxed);
             if (c == cfg.repeat + 1)
                 swofty::log("[game] (format \"%.80s\" logged %u times; further repeats are suppressed)", fmt, cfg.repeat);
             return false;
@@ -231,6 +237,7 @@ bool admit(Slot *fmt_slot, const char *fmt)
             next = now << 32 | 1;
         else if (cfg.rate && count >= cfg.rate) {
             dropped.fetch_add(1, std::memory_order_relaxed);
+            perf_rate.fetch_add(1, std::memory_order_relaxed);
             return false;
         } else
             next = w + 1;
@@ -311,6 +318,7 @@ void load_config(const std::wstring &dir)
         cfg.repeat = (uint32_t)strtoul(v.c_str(), nullptr, 0);
     if (!(v = env("SWOFTY_GAME_LOG_MAX")).empty())
         cfg.max_lines = (uint32_t)strtoul(v.c_str(), nullptr, 0);
+    perf = !(v = env("SWOFTY_PERF")).empty() && v != "0";
     parse_rules(cfg.channels);
 }
 
@@ -414,11 +422,27 @@ void open_gates(const std::wstring &dir)
                 opened.size(), skipped ? " (some skipped: table full)" : "", list.c_str(), list.size() >= 900 ? ", ..." : "");
 }
 
+void perf_report()
+{
+    static uint64_t calls0, written0, repeat0, rate0;
+    uint64_t calls = perf_calls.load(std::memory_order_relaxed), written = perf_written.load(std::memory_order_relaxed),
+             repeat = perf_repeat.load(std::memory_order_relaxed), rate = perf_rate.load(std::memory_order_relaxed);
+    if (calls != calls0)
+        swofty::log("[perf] gamelog: %llu call(s) on open channels in the last 10 s (%.0f/s): %llu written, %llu over the "
+                    "repeat cap, %llu over the rate limit",
+                    (unsigned long long)(calls - calls0), double(calls - calls0) / 10.0,
+                    (unsigned long long)(written - written0), (unsigned long long)(repeat - repeat0),
+                    (unsigned long long)(rate - rate0));
+    calls0 = calls, written0 = written, repeat0 = repeat, rate0 = rate;
+}
+
 DWORD WINAPI keep_gates(LPVOID)
 {
     bool warned = false;
-    for (;;) {
+    for (unsigned tick = 1;; tick++) {
         Sleep(2000);
+        if (perf && tick % 5 == 0)
+            perf_report();
         auto *gate = g_Ne_LogGate.get();
         bool lost = gate->enabled != 1;
         for (size_t i = 0; i < opened.size() && !lost; i += 16)
@@ -464,6 +488,7 @@ SWOFTY_OVERWRITE(0, Ne_Log_Thunk, void, const char *channel, const char *fmt, ..
     }
     if (threshold == L_OFF)
         return;
+    perf_calls.fetch_add(1, std::memory_order_relaxed);
     Slot *fs = log_formats.find(reinterpret_cast<uintptr_t>(fmt));
     uint8_t level = fs ? fs->value.load(std::memory_order_acquire) : 0;
     if (!level) {
@@ -478,6 +503,7 @@ SWOFTY_OVERWRITE(0, Ne_Log_Thunk, void, const char *channel, const char *fmt, ..
     va_start(ap, fmt);
     format(text, sizeof text, fmt, ap);
     va_end(ap);
+    perf_written.fetch_add(1, std::memory_order_relaxed);
     swofty::log("[game] %s%s: %s", channel, level == L_ERROR ? " (error)" : level == L_WARN ? " (warn)" : "",
                 text);
 }
