@@ -146,8 +146,10 @@ export default defineConfigWithTheme<DocsThemeConfig>({
               { text: "In-game addon settings", link: "/using/swofty-mod" },
               { text: "Playing in VR", link: "/using/vr" },
               { text: "Career Mode Editor", link: "/using/career-editor" },
+              { text: "Driver Manager", link: "/using/driver-manager" },
               { text: "Restoring the game", link: "/using/profiles-and-restoring" },
               { text: "Updating", link: "/using/updating" },
+              { text: "Sending your logs", link: "/using/send-logs" },
               { text: "Uninstalling", link: "/guide/uninstall" },
             ],
           },
@@ -162,6 +164,7 @@ export default defineConfigWithTheme<DocsThemeConfig>({
           {
             text: "Releases",
             items: [
+              { text: "1.0.12", link: "/releases/1.0.12" },
               { text: "1.0.11", link: "/releases/1.0.11" },
               { text: "1.0.10", link: "/releases/1.0.10" },
               { text: "1.0.9", link: "/releases/1.0.9" },

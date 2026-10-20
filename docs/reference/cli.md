@@ -37,6 +37,22 @@ If the wrapper receives a stop signal (Steam's **Stop**, `kill`, a closed termin
 
 To read a finished session's summary, use `swofty logs [<session dir>]`. Leave out the folder to see the latest session.
 
+### `swofty logs send`
+
+```sh
+swofty logs send --name <username> [--message <text>] [--dry-run [<zip>]]
+```
+
+Sends your logs to the developers on Discord, like **Send Logs to Developers** in the launcher. [Send your logs to the developers](/using/send-logs) lists what the zip holds.
+
+| Flag | Purpose |
+|---|---|
+| `--name <username>` | Your Discord username, 2 to 32 characters. Without it, the command uses the last username sent, from `config.json` `"discord_username"` |
+| `--message <text>` | What went wrong, up to 1000 characters |
+| `--dry-run [<zip>]` | Write the zip to `<zip>` (a file or a folder; the current folder when left out), list its files, and send nothing |
+
+The command prints its progress and exits with an error when Discord can't be reached or refuses the upload, naming the HTTP status. A zip over 9 MB goes in several messages, labelled `part 1/3` and so on. Builds from source can't send; there, only `--dry-run` works.
+
 ## `swofty build`
 
 Use `swofty build [--profile <name>]` when you want to prepare your profile's database and track files without starting the game. You'll find the output in `$DATA/cache/overlay/<profile>/<buildhash>/`: `swofty/settings.json` holds the session settings, and `plan.json` lists the game files to replace and add, along with their sources. Track archives, menu archives and car handling files are built in `$DATA/cache/maps`, `$DATA/cache/menus` and `$DATA/cache/ers`. Once the build succeeds, it removes older builds from those folders and your profile's overlay folder, keeping any that another profile's latest build uses.
@@ -70,7 +86,10 @@ See [Restoring the game](/using/profiles-and-restoring).
 | `swofty addons list` | List installed addons and whether they are enabled |
 | `swofty addons install <path>` | Install an addon folder, a `.swoftyaddon` file or a zip that holds an addon |
 | `swofty addons enable <id>` | Enable an addon |
-| `swofty addons disable <id>` | Disable an addon; SwoftyMod cannot be disabled |
+| `swofty addons disable <id> [--yes]` | Disable an addon; SwoftyMod cannot be disabled |
+| `swofty addons remove <id> [--yes]` | Delete an installed addon and take it out of every profile; built-in addons cannot be removed |
+
+For an addon whose manifest sets [`saves.affects`](/reference/addons/manifest#saves), `disable` (when the addon is on) and `remove` print `Warning: <name> (<id>) has affected your saves. Careers you played with it may not load without it.`, then the addon's message, and ask `[y/N]`. `--yes` (`-y`) skips the question. When stdin is not a terminal, the command needs `--yes`; without it, nothing changes and the command exits with status 1.
 
 If you use `swofty mods install <addon folder>` or `swofty mods enable|disable <addon id>`, they still run the `swofty addons` command and print a note.
 

@@ -3,6 +3,7 @@ mod doctor;
 mod offline;
 mod recover;
 mod run;
+mod send_logs;
 mod time;
 mod update;
 
@@ -16,6 +17,7 @@ use clap::{Arg, ArgAction, ArgMatches, CommandFactory, FromArgMatches, Parser, S
 use swofty_core::launcher::CommandSpec;
 use swofty_core::manifest::{Binds, MANIFEST_FILE};
 use swofty_core::registry::{Host, Registry};
+use swofty_core::saves::SavesWarning;
 use swofty_core::store::Store;
 
 #[derive(Parser)]
@@ -81,8 +83,12 @@ enum Command {
     Settings(SettingsCommand),
     #[command(subcommand, about = "List and delete profiles")]
     Profile(ProfileCommand),
-    #[command(about = "Summarise a previous session's logs and crashes")]
+    #[command(
+        about = "Summarise a previous session's logs and crashes; `logs send` sends your logs to the developers"
+    )]
     Logs {
+        #[command(subcommand)]
+        action: Option<LogsCommand>,
         dir: Option<PathBuf>,
         #[arg(long, env = "SWOFTY_EXE_COPY")]
         exe: Option<PathBuf>,
@@ -97,11 +103,33 @@ enum Command {
 }
 
 #[derive(Subcommand)]
+enum LogsCommand {
+    #[command(
+        about = "Send the launcher and game logs to the developers on Discord, with your username and what went wrong"
+    )]
+    Send(send_logs::SendArgs),
+}
+
+#[derive(Subcommand)]
 enum AddonsCommand {
     List,
-    Install { path: PathBuf },
-    Enable { id: String },
-    Disable { id: String },
+    Install {
+        path: PathBuf,
+    },
+    Enable {
+        id: String,
+    },
+    Disable {
+        id: String,
+        #[arg(long, short, help = "Don't ask, even when the addon has affected your saves")]
+        yes: bool,
+    },
+    #[command(about = "Delete an installed addon and take it out of every profile")]
+    Remove {
+        id: String,
+        #[arg(long, short, help = "Don't ask, even when the addon has affected your saves")]
+        yes: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -333,7 +361,11 @@ fn dispatch(store: &Store, cli: Cli) -> Result<ExitCode> {
         Command::Offline(cmd) => offline::command(&store, cmd).map(|_| ExitCode::SUCCESS),
         Command::Settings(cmd) => settings(&store, &profile, cmd).map(|_| ExitCode::SUCCESS),
         Command::Profile(cmd) => profiles(&store, cmd).map(|_| ExitCode::SUCCESS),
-        Command::Logs { dir, exe } => run::logs(&store, dir, exe),
+        Command::Logs {
+            action: Some(LogsCommand::Send(args)),
+            ..
+        } => send_logs::send(&store, args),
+        Command::Logs { dir, exe, .. } => run::logs(&store, dir, exe),
         Command::Doctor => doctor::doctor(&store),
         Command::Update { check } => update::update(check),
     }
@@ -361,13 +393,49 @@ fn addons(store: &Store, profile: &str, cmd: AddonsCommand) -> Result<()> {
                 .with_context(|| format!("installing {}", path.display()))?;
             println!("installed {} {}", m.id, m.version);
         }
-        AddonsCommand::Enable { id } | AddonsCommand::Disable { id }
+        AddonsCommand::Enable { id }
+        | AddonsCommand::Disable { id, .. }
+        | AddonsCommand::Remove { id, .. }
             if !store.addons()?.contains_key(&id) =>
         {
             bail!("{id} is not installed")
         }
         AddonsCommand::Enable { id } => toggle(store, profile, &id, true)?,
-        AddonsCommand::Disable { id } => toggle(store, profile, &id, false)?,
+        AddonsCommand::Disable { id, yes } => {
+            let p = store.profile(profile)?;
+            if let Some(w) = store.registry()?.turn_off_warning(&p, &id) {
+                confirm_saves(&w, "turn off", yes)?;
+            }
+            toggle(store, profile, &id, false)?
+        }
+        AddonsCommand::Remove { id, yes } => {
+            if let Some(w) = store.addons()?.get(&id).and_then(SavesWarning::of) {
+                confirm_saves(&w, "remove", yes)?;
+            }
+            store.remove_addon(&id)?;
+            println!("removed {id}");
+        }
+    }
+    Ok(())
+}
+
+fn confirm_saves(w: &SavesWarning, verb: &str, yes: bool) -> Result<()> {
+    if yes {
+        return Ok(());
+    }
+    let (id, warning) = (&w.id, w.text());
+    if !std::io::stdin().is_terminal() {
+        bail!("{warning}\nstdin is not a terminal: pass --yes to {verb} {id} anyway");
+    }
+    println!("{warning}");
+    let mut ask = verb.to_owned();
+    ask[..1].make_ascii_uppercase();
+    print!("{ask} {id} anyway? [y/N] ");
+    std::io::stdout().flush().ok();
+    let mut line = String::new();
+    std::io::stdin().read_line(&mut line)?;
+    if !matches!(line.trim(), "y" | "Y" | "yes") {
+        bail!("{id} is unchanged");
     }
     Ok(())
 }
@@ -591,6 +659,118 @@ mod tests {
 
     fn os(args: &[&str]) -> Vec<OsString> {
         args.iter().map(OsString::from).collect()
+    }
+
+    #[test]
+    fn logs_takes_a_session_folder_or_send() {
+        let parse = |args: &[&str]| Cli::try_parse_from(os(args)).map(|c| c.command);
+        let Ok(Command::Logs {
+            action: None, dir, ..
+        }) = parse(&["swofty", "logs", "/tmp/s1"])
+        else {
+            panic!("logs <dir>");
+        };
+        assert_eq!(dir, Some(PathBuf::from("/tmp/s1")));
+        assert!(matches!(
+            parse(&["swofty", "logs"]),
+            Ok(Command::Logs {
+                action: None,
+                dir: None,
+                ..
+            })
+        ));
+        let Ok(Command::Logs {
+            action: Some(LogsCommand::Send(a)),
+            dir: None,
+            ..
+        }) = parse(&[
+            "swofty",
+            "logs",
+            "send",
+            "--name",
+            "swofty",
+            "--message",
+            "it crashed",
+        ])
+        else {
+            panic!("logs send");
+        };
+        assert_eq!(
+            (a.name.as_deref(), a.message.as_deref()),
+            (Some("swofty"), Some("it crashed"))
+        );
+        assert_eq!(a.dry_run, None);
+        let Ok(Command::Logs {
+            action: Some(LogsCommand::Send(a)),
+            ..
+        }) = parse(&["swofty", "logs", "send", "--dry-run"])
+        else {
+            panic!("--dry-run");
+        };
+        assert_eq!(a.dry_run, Some(None));
+        let Ok(Command::Logs {
+            action: Some(LogsCommand::Send(a)),
+            ..
+        }) = parse(&["swofty", "logs", "send", "--name", "x1", "--dry-run", "out.zip"])
+        else {
+            panic!("--dry-run <zip>");
+        };
+        assert_eq!(a.dry_run, Some(Some(PathBuf::from("out.zip"))));
+    }
+
+    #[test]
+    fn logs_send_dry_run_writes_the_zip() {
+        let root = std::env::temp_dir().join(format!("swofty-cli-sendlogs-{}", std::process::id()));
+        std::fs::remove_dir_all(&root).ok();
+        let data = root.join("data");
+        std::fs::create_dir_all(data.join("state")).unwrap();
+        std::fs::write(data.join("state/launcher-run.log"), "hello\n").unwrap();
+        std::fs::write(data.join("config.json"), r#"{"discord_username":"remembered"}"#).unwrap();
+        let store = Store::new(&data);
+        let out = root.join("out");
+        std::fs::create_dir_all(&out).unwrap();
+        let args = send_logs::SendArgs {
+            name: None,
+            message: Some("  it froze  ".into()),
+            dry_run: Some(Some(out.clone())),
+        };
+        assert_eq!(send_logs::send(&store, args).unwrap(), ExitCode::SUCCESS);
+        let written: Vec<_> = std::fs::read_dir(&out)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name())
+            .collect();
+        assert_eq!(written.len(), 1);
+        let name = written[0].to_string_lossy().into_owned();
+        assert!(
+            name.starts_with("swofty-logs-remembered-") && name.ends_with(".zip"),
+            "{name}"
+        );
+        let zip = zip_names(&out.join(&name));
+        assert!(zip.contains(&"state/launcher-run.log".to_owned()), "{zip:?}");
+        assert!(zip.contains(&"summary.txt".to_owned()));
+        let bad = send_logs::SendArgs {
+            name: Some("x".into()),
+            message: None,
+            dry_run: Some(None),
+        };
+        assert!(send_logs::send(&store, bad).is_err());
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    fn zip_names(path: &Path) -> Vec<String> {
+        let data = std::fs::read(path).unwrap();
+        let text = String::from_utf8_lossy(&data);
+        [
+            "summary.txt",
+            "config.json",
+            "addons.json",
+            "state/launcher-run.log",
+        ]
+        .iter()
+        .filter(|n| text.contains(*n))
+        .map(|n| (*n).to_owned())
+        .collect()
     }
 
     #[test]

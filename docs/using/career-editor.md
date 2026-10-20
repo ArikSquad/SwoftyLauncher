@@ -27,6 +27,20 @@ Load a career and go to Team HQ. The **Career Editor** page shows the game, the 
 | Weather | Weather for each session of a weekend, and the weather seed |
 | History | Every edit with its before and after values, undo, and save backups |
 
+## Calendar
+
+**Season** lists the calendar with each round's track and country, and changes rounds after the current one that haven't started: move a round, add one, replace its track or remove it. **Move a round** shows what the move does before you apply it, such as "Suzuka becomes round 9, Monaco moves to round 10". With Swofty Launcher 1.0.12 or later, **Add a round** and **Replace track** list every Grand Prix track in your profile's last build, in three groups:
+
+| Group | Tracks |
+|---|---|
+| In this championship | Tracks from a removed round or another season of this career |
+| Other tracks | The game's other Grand Prix tracks |
+| Modded tracks | Community tracks turned on in [Mods and tracks](/using/mods#tracks), such as Okayama or Sepang |
+
+To race a modded track, import its zip on the **Mods** page, turn it on in the profile and press **Play** to build; it then shows under **Modded tracks**. A track already on this season's calendar isn't listed again. A track turned on after the last build appears once the profile builds again; **Play** builds it. Under the forms, the page names each track it doesn't offer and why, such as a track whose mod is off. An older launcher lists only tracks this championship already has.
+
+## Edits
+
 Edits queue while a session is loading, time is advancing or the game is in a menu transition, and apply when Team HQ is idle. Weather edits apply at any time in a loaded career. Screens that are open when an edit applies show it the next time they open.
 
 The game saves the edited career at its next save. The editor backs up your saves before the first edit of each game session; **History** restores a backup while the game is closed.

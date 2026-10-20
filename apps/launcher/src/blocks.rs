@@ -1,20 +1,23 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::path::{Component, Path, PathBuf};
+use std::rc::Rc;
 use std::time::Duration;
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::input::{Input, InputEvent, InputState, NumberInput};
-use gpui_kit::component::menu::{DropdownMenu, PopupMenuItem};
 use gpui_kit::component::notification::Notification;
+use gpui_kit::component::select::{Select, SelectDelegate, SelectEvent, SelectItem, SelectState};
 use gpui_kit::component::slider::{Slider, SliderEvent, SliderState};
 use gpui_kit::component::switch::Switch;
-use gpui_kit::component::{Disableable, Icon, Sizable, WindowExt, h_flex, v_flex};
+use gpui_kit::component::{Disableable, Icon, IndexPath, Sizable, WindowExt, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use serde_json::{Map, Value};
 use swofty_core::view::{
-    Align, Block, Body, Card, Cell, Field, Form, Grid, Hero, Meter, Pill, Search, Table, Tabs, Tile, Tone,
-    View,
+    Align, Block, Body, Card, Cell, Choice, Field, Fit, Form, Grid, Hero, Image as ImageBlock, Meter, Pill,
+    Search, SelectField, Table, Tabs, Tile, Tone, View,
 };
 
 use crate::pages::label;
@@ -23,6 +26,10 @@ use crate::shell::{Page, Shell};
 use crate::theme::Palette;
 
 const GAP: f32 = 16.;
+const SELECT_MENU_H: f32 = 320.;
+const SELECT_HEADING_H: f32 = 26.;
+const SELECT_THUMB: f32 = 30.;
+const SELECT_THUMB_SMALL: f32 = 18.;
 const GRID_COLUMN: f32 = 280.;
 const TILE_COLUMN: f32 = 170.;
 
@@ -56,9 +63,244 @@ pub(crate) enum Reset {
     After(u64),
 }
 
+#[derive(Clone, Default)]
+struct Shown {
+    label: SharedString,
+    image: Option<PathBuf>,
+}
+
+#[derive(Clone)]
+struct Opt {
+    value: String,
+    label: SharedString,
+    image: Option<PathBuf>,
+    thumbs: bool,
+    shown: Rc<RefCell<Shown>>,
+}
+
+fn thumb(image: Option<PathBuf>, size: f32, bg: Option<Hsla>) -> Div {
+    div()
+        .size(px(size))
+        .flex_shrink_0()
+        .rounded(px(4.))
+        .overflow_hidden()
+        .when_some(bg, |d, bg| d.bg(bg))
+        .when_some(image, |d, path| {
+            d.child(
+                img(path)
+                    .size(px(size))
+                    .aspect_square()
+                    .object_fit(ObjectFit::Cover),
+            )
+        })
+}
+
+impl SelectItem for Opt {
+    type Value = String;
+
+    fn title(&self) -> SharedString {
+        self.label.clone()
+    }
+
+    // The closed field keeps showing the committed value while the cursor moves.
+    fn display_title(&self) -> Option<AnyElement> {
+        let shown = self.shown.borrow().clone();
+        Some(match shown.image {
+            Some(image) => h_flex()
+                .gap(px(8.))
+                .min_w_0()
+                .child(thumb(Some(image), SELECT_THUMB_SMALL, None))
+                .child(div().min_w_0().truncate().child(shown.label))
+                .into_any_element(),
+            None => shown.label.into_any_element(),
+        })
+    }
+
+    fn render(&self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+        h_flex()
+            .gap(px(10.))
+            .min_w_0()
+            .when(self.thumbs, |d| {
+                d.child(thumb(
+                    self.image.clone(),
+                    SELECT_THUMB,
+                    Some(crate::theme::palette(cx).elevated),
+                ))
+            })
+            .child(div().min_w_0().truncate().child(self.label.clone()))
+    }
+
+    fn value(&self) -> &String {
+        &self.value
+    }
+}
+
+struct OptGroup {
+    title: Option<SharedString>,
+    items: Vec<Opt>,
+}
+
+struct Opts {
+    groups: Vec<OptGroup>,
+    matched: Vec<(usize, Vec<usize>)>,
+    titled: bool,
+}
+
+impl Opts {
+    fn new(groups: Vec<OptGroup>) -> Self {
+        let titled = groups.iter().any(|g| g.title.is_some());
+        let matched = groups
+            .iter()
+            .enumerate()
+            .map(|(g, group)| (g, (0..group.items.len()).collect()))
+            .collect();
+        Self {
+            groups,
+            matched,
+            titled,
+        }
+    }
+}
+
+impl SelectDelegate for Opts {
+    type Item = Opt;
+
+    fn sections_count(&self, _: &App) -> usize {
+        self.matched.len()
+    }
+
+    fn items_count(&self, section: usize) -> usize {
+        self.matched.get(section).map_or(0, |(_, rows)| rows.len())
+    }
+
+    fn item(&self, ix: IndexPath) -> Option<&Opt> {
+        let (g, rows) = self.matched.get(ix.section)?;
+        self.groups[*g].items.get(*rows.get(ix.row)?)
+    }
+
+    fn position<V>(&self, value: &V) -> Option<IndexPath>
+    where
+        Opt: SelectItem<Value = V>,
+        V: PartialEq,
+    {
+        self.matched.iter().enumerate().find_map(|(section, (g, rows))| {
+            let items = &self.groups[*g].items;
+            let row = rows.iter().position(|&r| items[r].value() == value)?;
+            Some(IndexPath::default().section(section).row(row))
+        })
+    }
+
+    fn perform_search(&mut self, query: &str, _: &mut Window, _: &mut App) -> Task<()> {
+        let needle = query.to_lowercase();
+        self.matched = self
+            .groups
+            .iter()
+            .enumerate()
+            .filter_map(|(g, group)| {
+                let whole = group
+                    .title
+                    .as_ref()
+                    .is_some_and(|t| t.to_lowercase().contains(&needle));
+                let rows: Vec<usize> = (0..group.items.len())
+                    .filter(|&r| whole || group.items[r].matches(query))
+                    .collect();
+                (!rows.is_empty()).then_some((g, rows))
+            })
+            .collect();
+        Task::ready(())
+    }
+
+    fn render_section_header(&self, section: usize, _: &mut Window, cx: &mut App) -> Option<AnyElement> {
+        if !self.titled {
+            return None;
+        }
+        let p = crate::theme::palette(cx);
+        let title = self
+            .matched
+            .get(section)
+            .and_then(|(g, _)| self.groups[*g].title.clone());
+        Some(
+            h_flex()
+                .h(px(SELECT_HEADING_H))
+                .px_2()
+                .items_end()
+                .pb(px(4.))
+                .when(section > 0, |d| d.border_t_1().border_color(p.border_variant))
+                .children(title.map(|t| label(t.to_uppercase(), p)))
+                .into_any_element(),
+        )
+    }
+}
+
+struct SelectSlot {
+    state: Entity<SelectState<Opts>>,
+    options: Vec<Choice>,
+    shown: Rc<RefCell<Shown>>,
+}
+
+struct ImageRoots([PathBuf; 2]);
+
+impl ImageRoots {
+    fn allow(&self, path: &Path) -> Option<PathBuf> {
+        let plain = path.is_absolute()
+            && path.components().all(|c| {
+                matches!(
+                    c,
+                    Component::Prefix(_) | Component::RootDir | Component::Normal(_)
+                )
+            });
+        (plain && self.0.iter().any(|root| path.starts_with(root))).then(|| path.to_path_buf())
+    }
+}
+
+fn opts(sf: &SelectField, roots: &ImageRoots, shown: &Rc<RefCell<Shown>>) -> Opts {
+    let images: Vec<Option<PathBuf>> = sf
+        .options
+        .iter()
+        .map(|o| o.image().and_then(|i| roots.allow(i)))
+        .collect();
+    let thumbs = images.iter().any(Option::is_some);
+    let mut groups = vec![OptGroup {
+        title: None,
+        items: Vec::new(),
+    }];
+    for (o, image) in sf.options.iter().zip(images) {
+        if o.is_heading() {
+            groups.push(OptGroup {
+                title: Some(SharedString::from(o.label().to_owned())),
+                items: Vec::new(),
+            });
+        } else if let Some(group) = groups.last_mut() {
+            group.items.push(Opt {
+                value: o.value().to_owned(),
+                label: SharedString::from(o.label().to_owned()),
+                image,
+                thumbs,
+                shown: shown.clone(),
+            });
+        }
+    }
+    groups.retain(|g| !g.items.is_empty());
+    Opts::new(groups)
+}
+
+fn shown_for(sf: &SelectField, roots: &ImageRoots, value: &str) -> Shown {
+    match sf.options.iter().find(|o| !o.is_heading() && o.value() == value) {
+        Some(o) => Shown {
+            label: SharedString::from(o.label().to_owned()),
+            image: o.image().and_then(|i| roots.allow(i)),
+        },
+        None => Shown {
+            label: SharedString::from(value.to_owned()),
+            image: None,
+        },
+    }
+}
+
 pub(crate) struct FormSlot {
     inputs: HashMap<String, Entity<InputState>>,
     sliders: HashMap<String, Entity<SliderState>>,
+    selects: HashMap<String, SelectSlot>,
     picks: HashMap<String, Value>,
     synced: HashMap<String, Value>,
     pub(crate) reset: Reset,
@@ -234,6 +476,13 @@ impl Shell {
         Some((s.addon.clone(), s.spec.id.clone(), view, generation))
     }
 
+    fn image_roots(&self, addon: &str) -> ImageRoots {
+        ImageRoots([
+            self.store.addon_cache_dir(addon),
+            self.store.addon_data_dir(addon),
+        ])
+    }
+
     pub(crate) fn find_form(&self, addon: &str, section: &str, id: &str) -> Option<Form> {
         let view = self.views.get(&format!("{addon}/{section}"))?.as_ref().ok()?;
         view_blocks(view).into_iter().find_map(|b| match b {
@@ -382,12 +631,14 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         let key = format!("{addon}/{section}/{}", form.id);
+        let roots = self.image_roots(addon);
         if !self.forms.contains_key(&key) {
             self.forms.insert(
                 key.clone(),
                 FormSlot {
                     inputs: HashMap::new(),
                     sliders: HashMap::new(),
+                    selects: HashMap::new(),
                     picks: HashMap::new(),
                     synced: HashMap::new(),
                     reset: Reset::No,
@@ -496,7 +747,64 @@ impl Shell {
                         slot.sliders.insert(id.clone(), state);
                     }
                 }
-                Field::Select(_) | Field::Toggle(_) => {
+                Field::Select(sf) => {
+                    if force || slot.picks.get(&id) == Some(&value) {
+                        slot.picks.remove(&id);
+                    }
+                    let current = slot.picks.get(&id).unwrap_or(&value);
+                    let current = current.as_str().unwrap_or_default().to_owned();
+                    if let Some(select) = slot.selects.get_mut(&id) {
+                        let state = select.state.clone();
+                        if select.options != sf.options {
+                            select.options = sf.options.clone();
+                            let items = opts(sf, &roots, &select.shown);
+                            state.update(cx, |s, cx| s.set_items(items, window, cx));
+                        }
+                        if state.read(cx).selected_value() != Some(&current) {
+                            state.update(cx, |s, cx| s.set_selected_value(&current, window, cx));
+                        }
+                    } else {
+                        let shown = Rc::new(RefCell::new(shown_for(sf, &roots, &current)));
+                        let items = opts(sf, &roots, &shown);
+                        let at = items.position(&current);
+                        let state = cx.new(|cx| {
+                            let mut s = SelectState::new(items, at, window, cx).searchable(sf.search);
+                            s.set_selected_index(at, window, cx);
+                            s
+                        });
+                        let (key, field_id, addon, section, form_id) = (
+                            key.clone(),
+                            id.clone(),
+                            addon.to_owned(),
+                            section.to_owned(),
+                            form.id.clone(),
+                        );
+                        subs.push(cx.subscribe_in(
+                            &state,
+                            window,
+                            move |this, state, ev: &SelectEvent<Opts>, window, cx| {
+                                let SelectEvent::Confirm(Some(v)) = ev else {
+                                    return;
+                                };
+                                state.update(cx, |s, cx| s.set_selected_value(v, window, cx));
+                                let live = this
+                                    .find_form(&addon, &section, &form_id)
+                                    .filter(|f| f.live)
+                                    .map(|f| (addon.clone(), section.clone(), f));
+                                this.pick(&key, &field_id, Value::String(v.clone()), live, window, cx);
+                            },
+                        ));
+                        slot.selects.insert(
+                            id.clone(),
+                            SelectSlot {
+                                state,
+                                options: sf.options.clone(),
+                                shown,
+                            },
+                        );
+                    }
+                }
+                Field::Toggle(_) => {
                     if force || slot.picks.get(&id) == Some(&value) {
                         slot.picks.remove(&id);
                     }
@@ -654,6 +962,7 @@ impl Shell {
             Block::Grid(g) => self.grid(at, g, p, cx),
             Block::Form(f) => self.form(at, f, p, cx),
             Block::Tabs(t) => self.tabs(at, t, p, cx),
+            Block::Image(i) => self.image(at, i, p),
             Block::Table(t) if !t.is_plain() => self.table(at, t, p, cx),
             _ => return None,
         })
@@ -873,6 +1182,42 @@ impl Shell {
                     .children(row.iter().map(tile))
                     .children((row.len()..cols).map(|_| div().flex_1().flex_basis(px(0.))))
             }))
+            .into_any_element()
+    }
+
+    fn image(&self, at: At, i: &ImageBlock, p: Palette) -> AnyElement {
+        let width = i.width.clamp(0., at.width.max(0.));
+        let height = i.height.max(0.);
+        let inner = ((width - 2.).max(1.), (height - 2.).max(1.));
+        let fit = match i.fit {
+            Fit::Cover => ObjectFit::Cover,
+            Fit::Contain => ObjectFit::Contain,
+        };
+        v_flex()
+            .w(px(width))
+            .gap(px(6.))
+            .child(
+                div()
+                    .w(px(width))
+                    .h(px(height))
+                    .rounded(px(6.))
+                    .overflow_hidden()
+                    .bg(p.surface)
+                    .border_1()
+                    .border_color(p.border_variant)
+                    .when_some(self.image_roots(at.addon).allow(&i.path), |d, path| {
+                        d.child(
+                            img(path)
+                                .w(px(inner.0))
+                                .h(px(inner.1))
+                                .aspect_ratio(inner.0 / inner.1)
+                                .object_fit(fit),
+                        )
+                    }),
+            )
+            .when_some(i.caption.clone(), |d, c| {
+                d.child(div().text_size(px(12.)).text_color(p.text_muted).child(c))
+            })
             .into_any_element()
     }
 
@@ -1122,48 +1467,31 @@ impl Shell {
                 }
                 None => div().into_any_element(),
             },
-            Field::Select(sf) => {
-                let current = slot
-                    .and_then(|s| s.picks.get(&id))
-                    .cloned()
-                    .unwrap_or_else(|| field.value());
-                let current = current.as_str().unwrap_or_default().to_owned();
-                let label_text = sf
-                    .options
-                    .iter()
-                    .find(|o| o.value() == current)
-                    .map_or(current.clone(), |o| o.label().to_owned());
-                let shell = cx.entity().downgrade();
-                let (options, key, id) = (sf.options.clone(), key.to_owned(), id.clone());
-                Button::new(control_id)
-                    .outline()
-                    .small()
-                    .w_full()
-                    .label(label_text)
-                    .dropdown_caret(true)
-                    .disabled(disabled)
-                    .dropdown_menu_with_anchor(Anchor::TopLeft, move |mut menu, _, _| {
-                        for o in &options {
-                            let (shell, key, id, live) =
-                                (shell.clone(), key.clone(), id.clone(), live.clone());
-                            let value = Value::String(o.value().to_owned());
-                            menu = menu.item(
-                                PopupMenuItem::new(o.label().to_owned())
-                                    .checked(o.value() == current)
-                                    .on_click(move |_, window, cx| {
-                                        let (value, live) = (value.clone(), live.clone());
-                                        shell
-                                            .update(cx, |this, cx| {
-                                                this.pick(&key, &id, value, live, window, cx)
-                                            })
-                                            .ok();
-                                    }),
-                            );
-                        }
-                        menu
-                    })
-                    .into_any_element()
-            }
+            Field::Select(sf) => match slot.and_then(|s| s.selects.get(&id)) {
+                Some(select) => {
+                    let current = slot
+                        .and_then(|s| s.picks.get(&id))
+                        .cloned()
+                        .unwrap_or_else(|| field.value());
+                    let committed = shown_for(
+                        sf,
+                        &self.image_roots(at.addon),
+                        current.as_str().unwrap_or_default(),
+                    );
+                    let label = committed.label.clone();
+                    select.shown.replace(committed);
+                    Select::new(&select.state)
+                        .id(control_id)
+                        .small()
+                        .w_full()
+                        .menu_max_h(px(SELECT_MENU_H))
+                        .search_placeholder("Search")
+                        .placeholder(label)
+                        .disabled(disabled)
+                        .into_any_element()
+                }
+                None => div().into_any_element(),
+            },
             Field::Toggle(_) => {
                 let on = slot
                     .and_then(|s| s.picks.get(&id))
