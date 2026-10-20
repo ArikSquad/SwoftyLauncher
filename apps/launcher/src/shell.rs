@@ -90,8 +90,17 @@ pub struct Shell {
     pub(crate) sidebar_list: bool,
     pub(crate) vr_profiles: BTreeSet<String>,
     pub(crate) updates: crate::update::Updates,
+    pub(crate) forms: HashMap<String, crate::blocks::FormSlot>,
+    pub(crate) searches: HashMap<String, crate::blocks::SearchSlot>,
+    pub(crate) sorts: HashMap<String, (String, bool)>,
+    pub(crate) cell: Option<crate::blocks::CellEdit>,
+    pub(crate) pending_cells: HashMap<String, String>,
+    pub(crate) content_width: f32,
+    pub(crate) ticking: bool,
+    pub(crate) live_n: u64,
     _console_closed: Subscription,
     _poll: Task<()>,
+    _live: Task<()>,
     _updates: Task<()>,
 }
 
@@ -217,6 +226,14 @@ impl Shell {
             }
         });
         rediscover.detach();
+        let live = cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(Duration::from_millis(250)).await;
+                if this.update(cx, |s, cx| s.live_poll(cx)).is_err() {
+                    break;
+                }
+            }
+        });
         let updates = Self::watch_updates(cx);
         let shell = cx.weak_entity();
         let console_closed = cx.on_window_closed(move |cx, id| {
@@ -260,8 +277,17 @@ impl Shell {
             sidebar_list,
             vr_profiles,
             updates: crate::update::Updates::new(),
+            forms: HashMap::new(),
+            searches: HashMap::new(),
+            sorts: HashMap::new(),
+            cell: None,
+            pending_cells: HashMap::new(),
+            content_width: 900.,
+            ticking: false,
+            live_n: 0,
             _console_closed: console_closed,
             _poll: poll,
+            _live: live,
             _updates: updates,
         };
         shell.refresh_views(cx);
@@ -943,7 +969,10 @@ impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = palette(cx);
         let wide = window.viewport_size().width > px(1500.);
+        self.content_width =
+            (f32::from(window.viewport_size().width) - 220. - 2. * crate::pages::GUTTER).max(320.);
         self.sync_sliders(window, cx);
+        self.sync_blocks(window, cx);
         let content = match self.page {
             Page::Addons => self.addons_page(p, cx),
             Page::Profiles => self.profiles_page(p, wide, cx),

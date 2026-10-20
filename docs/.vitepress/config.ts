@@ -145,6 +145,7 @@ export default defineConfigWithTheme<DocsThemeConfig>({
               { text: "Profiles", link: "/using/profiles" },
               { text: "In-game addon settings", link: "/using/swofty-mod" },
               { text: "Playing in VR", link: "/using/vr" },
+              { text: "Career Mode Editor", link: "/using/career-editor" },
               { text: "Restoring the game", link: "/using/profiles-and-restoring" },
               { text: "Updating", link: "/using/updating" },
               { text: "Uninstalling", link: "/guide/uninstall" },
@@ -161,6 +162,7 @@ export default defineConfigWithTheme<DocsThemeConfig>({
           {
             text: "Releases",
             items: [
+              { text: "1.0.10", link: "/releases/1.0.10" },
               { text: "1.0.9", link: "/releases/1.0.9" },
               { text: "1.0.8", link: "/releases/1.0.8" },
               { text: "1.0.7", link: "/releases/1.0.7" },
@@ -253,6 +255,8 @@ export default defineConfigWithTheme<DocsThemeConfig>({
                   { text: "Telemetry", link: "/reference/std/telemetry", icon: "file" },
                   { text: "Database", link: "/reference/std/db", icon: "file" },
                   { text: "Storage", link: "/reference/std/storage", icon: "file" },
+                  { text: "Career", link: "/reference/std/career", icon: "file" },
+                  { text: "Memory", link: "/reference/std/memory", icon: "file" },
                   { text: "Logging", link: "/reference/std/logging", icon: "file" },
                   { text: "Mixin API", link: "/reference/std/mixin", icon: "file" },
                   { text: "Settings", link: "/reference/std/settings", icon: "file" },
