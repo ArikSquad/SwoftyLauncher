@@ -9,13 +9,17 @@
 //   snapshot.json      status plus every registered section, rewritten when it changes
 //   journal.jsonl      one line per applied op
 //
-// Everything runs on the flow thread from the events library's frame callback. Batches run in
+// Batches, sections and the snapshot body run on the flow thread from the events library's frame
+// callback; a watcher thread reads viewer.json and lists the inbox, and a writer thread writes
+// snapshot.json, so the flow thread does no file IO while no batch is waiting. Batches run in
 // seq order, one per frame, and only while the gate is open: ce::safe() for CE_OP ops,
 // ce::in_career() for CE_OP_ANYTIME ops. A blocked batch stays queued and the snapshot says why.
 // Every op and section call is wrapped in an SEH guard: a fault is logged, answered as an error
 // and the op or section is switched off for the rest of the game session.
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <condition_variable>
 #include <mutex>
@@ -489,9 +493,11 @@ constexpr uint64_t kInboxPollMs = 500;
 constexpr uint64_t kInboxRelistMs = 10000;
 constexpr uint64_t kSnapshotMs = 1000;
 constexpr uint64_t kHeartbeatMs = 5000;
-constexpr uint64_t kViewerPollMs = 1000;
 constexpr uint64_t kViewerFreshMs = 15000;
+constexpr auto kSectionGap = std::chrono::milliseconds(8);
 constexpr size_t kMaxOps = 256;
+
+using Clock = std::chrono::steady_clock;
 
 struct Batch {
     uint64_t seq = 0;
@@ -507,19 +513,18 @@ struct Bridge {
     bool storage = false;
     uint64_t boot = 0;
     uint64_t last_state = 0;
-    uint64_t last_inbox = 0;
-    uint64_t last_list = 0;
     uint64_t last_snapshot = 0;
     uint64_t last_write = 0;
     uint64_t sections_at = 0;
     std::string sections_text;
+    std::string sections_json;
+    bool sections_dirty = true;
     bool sections_live = false;
     bool force_render = false;
     bool pass_active = false;
     size_t pass_index = 0;
-    uint64_t last_viewer_poll = 0;
+    Clock::time_point next_section{};
     uint64_t viewer_at = 0;
-    bool viewer_seeded = false;
     uint64_t renders = 0;
     uint64_t skipped = 0;
     uint64_t pass_ms = 0;
@@ -536,6 +541,17 @@ struct Bridge {
     uint64_t applied = 0;
     uint64_t failed = 0;
     std::string last_body;
+};
+
+Bridge g;
+
+struct Watcher {
+    std::mutex lock;
+    std::string names;
+    std::atomic<bool> changed{false};
+    std::atomic<uint64_t> viewer_at{0};
+    std::atomic<bool> game_in_front{false};
+    bool seeded = false;
 #if defined(_WIN32)
     std::wstring inbox_dir;
     FILETIME inbox_mtime{};
@@ -543,7 +559,11 @@ struct Bridge {
 #endif
 };
 
-Bridge g;
+Watcher &watcher()
+{
+    static Watcher *w = new Watcher;
+    return *w;
+}
 
 #if defined(_WIN32)
 void init_doorbell()
@@ -556,21 +576,23 @@ void init_doorbell()
     size_t cut = dir.find_last_of(L"\\/");
     if (cut == std::wstring::npos)
         return;
-    g.inbox_dir = dir.substr(0, cut) + L"\\swofty\\addons\\swofty.career-editor\\inbox";
+    Watcher &w = watcher();
+    w.inbox_dir = dir.substr(0, cut) + L"\\swofty\\addons\\swofty.career-editor\\inbox";
     WIN32_FILE_ATTRIBUTE_DATA a{};
-    g.doorbell = GetFileAttributesExW(g.inbox_dir.c_str(), GetFileExInfoStandard, &a) &&
+    w.doorbell = GetFileAttributesExW(w.inbox_dir.c_str(), GetFileExInfoStandard, &a) &&
                  (a.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY);
 }
 
 bool doorbell_rang()
 {
-    if (!g.doorbell)
+    Watcher &w = watcher();
+    if (!w.doorbell)
         return false;
     WIN32_FILE_ATTRIBUTE_DATA a{};
-    if (!GetFileAttributesExW(g.inbox_dir.c_str(), GetFileExInfoStandard, &a))
+    if (!GetFileAttributesExW(w.inbox_dir.c_str(), GetFileExInfoStandard, &a))
         return true;
-    bool changed = CompareFileTime(&a.ftLastWriteTime, &g.inbox_mtime) != 0;
-    g.inbox_mtime = a.ftLastWriteTime;
+    bool changed = CompareFileTime(&a.ftLastWriteTime, &w.inbox_mtime) != 0;
+    w.inbox_mtime = a.ftLastWriteTime;
     return changed;
 }
 #else
@@ -604,7 +626,7 @@ bool parse_seq(std::string_view name, uint64_t &seq)
     return true;
 }
 
-void list_inbox()
+bool read_inbox(std::string &names)
 {
     std::vector<char> buf(64 * 1024);
     size_t len = 0;
@@ -614,9 +636,14 @@ void list_inbox()
         r = st::list("inbox", buf.data(), buf.size(), &len);
     }
     if (r != st::Result::ok)
-        return;
+        return false;
+    names.assign(buf.data(), std::min(len, buf.size()));
+    return true;
+}
+
+void merge_inbox(std::string_view all)
+{
     std::set<uint64_t> seen;
-    std::string_view all(buf.data(), std::min(len, buf.size()));
     size_t at = 0;
     while (at < all.size()) {
         size_t nl = all.find('\n', at);
@@ -649,6 +676,71 @@ void list_inbox()
             ++it;
         }
     }
+}
+
+bool game_in_front()
+{
+#if defined(_WIN32)
+    DWORD owner = 0;
+    HWND h = GetForegroundWindow();
+    return h && GetWindowThreadProcessId(h, &owner) && owner == GetCurrentProcessId();
+#else
+    return false;
+#endif
+}
+
+void poll_viewer(Watcher &w)
+{
+    w.game_in_front = game_in_front();
+    std::string text;
+    uint64_t at = 0;
+    if (st::read("viewer.json", text) == st::Result::ok)
+        for (char c : text) {
+            if (c < '0' || c > '9')
+                break;
+            at = at * 10 + uint64_t(c - '0');
+        }
+    else if (!w.seeded)
+        w.seeded = true, st::write("viewer.json", "0");
+    w.viewer_at = at;
+}
+
+void watch()
+{
+    Watcher &w = watcher();
+    uint64_t listed = now_ms();
+    for (;;) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(kInboxPollMs));
+        poll_viewer(w);
+        uint64_t now = now_ms();
+#if defined(_WIN32)
+        bool relist = !w.doorbell || doorbell_rang() || now - listed >= kInboxRelistMs;
+#else
+        bool relist = true;
+#endif
+        std::string names;
+        if (!relist || !read_inbox(names))
+            continue;
+        listed = now;
+        std::lock_guard<std::mutex> l(w.lock);
+        if (names != w.names) {
+            w.names = std::move(names);
+            w.changed = true;
+        }
+    }
+}
+
+void take_inbox()
+{
+    Watcher &w = watcher();
+    if (!w.changed.load(std::memory_order_relaxed) || !w.changed.exchange(false))
+        return;
+    std::string names;
+    {
+        std::lock_guard<std::mutex> l(w.lock);
+        names = w.names;
+    }
+    merge_inbox(names);
 }
 
 void parse_batch(Batch &b)
@@ -932,6 +1024,7 @@ void render_section(SectionEntry &s, uint64_t now)
     {
         if (!s.quarantined.empty())
             return;
+        g.sections_dirty = true;
         SectionCall call{s.fn, {}, {}};
         uint64_t t0 = now_ms();
         unsigned long code = 0;
@@ -1114,16 +1207,20 @@ std::string snapshot_body(uint64_t now)
     else
         w.null();
     w.key("sections");
-    w.begin_object();
-    for (auto &s : section_table()) {
-        if (!s.rendered)
-            continue;
-        w.key(s.name.c_str());
-        emit(w, s.value);
+    if (g.sections_dirty) {
+        Writer all;
+        all.begin_object();
+        for (auto &s : section_table()) {
+            if (!s.rendered)
+                continue;
+            all.key(s.name.c_str());
+            emit(all, s.value);
+        }
+        all.end_object();
+        g.sections_json = all.text();
+        g.sections_dirty = false;
     }
-    w.end_object();
-    w.end_object();
-    return w.text();
+    return w.text() + g.sections_json + '}';
 }
 
 struct SnapshotWriter {
@@ -1175,32 +1272,24 @@ SnapshotWriter &writer()
     return *w;
 }
 
-bool viewer_fresh(uint64_t now)
+bool viewer_fresh()
 {
-    if (now - g.last_viewer_poll >= kViewerPollMs || !g.last_viewer_poll) {
-        g.last_viewer_poll = now;
-        std::string text;
-        uint64_t at = 0;
-        if (st::read("viewer.json", text) == st::Result::ok)
-            for (char c : text) {
-                if (c < '0' || c > '9')
-                    break;
-                at = at * 10 + uint64_t(c - '0');
-            }
-        else if (!g.viewer_seeded)
-            g.viewer_seeded = true, st::write("viewer.json", "0");
-        g.viewer_at = at;
-    }
+    g.viewer_at = watcher().viewer_at;
     uint64_t wall = wall_ms();
-    bool fresh = g.viewer_at && wall >= g.viewer_at && wall - g.viewer_at < kViewerFreshMs;
+    bool open = g.viewer_at && wall >= g.viewer_at && wall - g.viewer_at < kViewerFreshMs;
+    bool front = watcher().game_in_front;
+    int now = open ? front ? 2 : 1 : 0;
     static int was = -1;
-    if (was != int(fresh)) {
-        was = int(fresh);
-        log(fresh ? "launcher page is open: sections render, one per frame, every %llu ms"
-                  : "launcher page is not open: sections are not rendered (%llu ms cadence paused; status heartbeat only)",
+    if (was != now) {
+        was = now;
+        log(now == 1   ? "launcher page is open: sections render, one per frame, every %llu ms"
+            : now == 2 ? "launcher page is open but the game is in front: sections are not rendered (%llu ms cadence "
+                         "paused until another window is in front; status heartbeat only)"
+                       : "launcher page is not open: sections are not rendered (%llu ms cadence paused; status heartbeat "
+                         "only)",
             (unsigned long long)kSnapshotMs);
     }
-    return fresh;
+    return now == 1;
 }
 
 void write_snapshot(uint64_t now)
@@ -1219,8 +1308,11 @@ void snapshot(uint64_t now, bool force)
     g.sections_live = state::sections_ok();
     if (!g.sections_live && !in_career())
         for (auto &s : section_table())
-            s.rendered = false;
-    if (!g.sections_live || !viewer_fresh(now)) {
+            if (s.rendered) {
+                s.rendered = false;
+                g.sections_dirty = true;
+            }
+    if (!g.sections_live || !viewer_fresh()) {
         if (g.sections_live)
             g.skipped++;
         write_snapshot(now);
@@ -1240,13 +1332,57 @@ void snapshot(uint64_t now, bool force)
 void continue_pass(uint64_t now)
 {
     auto &t = section_table();
-    if (g.pass_index < t.size())
+    if (Clock::now() < g.next_section)
+        return;
+    if (g.pass_index < t.size()) {
         render_section(t[g.pass_index++], now);
+        g.next_section = Clock::now() + kSectionGap;
+    }
     if (g.pass_index >= t.size()) {
         g.pass_active = false;
         finish_render();
         write_snapshot(now);
     }
+}
+
+enum Part { PartState, PartInbox, PartBatch, PartSnapshot, PartCount };
+
+struct FramePerf {
+    uint64_t calls = 0;
+    uint64_t logged = 0;
+    double total = 0;
+    double max = 0;
+    double part[PartCount] = {};
+    Clock::time_point lap;
+};
+
+FramePerf g_perf;
+
+void perf_lap(Part p)
+{
+    Clock::time_point t = Clock::now();
+    double ms = std::chrono::duration<double, std::milli>(t - g_perf.lap).count();
+    g_perf.part[p] = std::max(g_perf.part[p], ms);
+    g_perf.lap = t;
+}
+
+void perf_frame(Clock::time_point start, uint64_t now)
+{
+    double ms = std::chrono::duration<double, std::milli>(Clock::now() - start).count();
+    g_perf.calls++;
+    g_perf.total += ms;
+    g_perf.max = std::max(g_perf.max, ms);
+    if (!g_perf.logged)
+        g_perf.logged = now;
+    if (now - g_perf.logged < 10000)
+        return;
+    log("[perf] frame callback: %llu call(s) in %.1f s, %.3f ms in total, slowest %.3f ms; slowest part: state %.3f, "
+        "inbox %.3f, batches %.3f, snapshot %.3f ms (page %s)",
+        (unsigned long long)g_perf.calls, double(now - g_perf.logged) / 1000.0, g_perf.total, g_perf.max,
+        g_perf.part[PartState], g_perf.part[PartInbox], g_perf.part[PartBatch], g_perf.part[PartSnapshot],
+        watcher().viewer_at && wall_ms() - watcher().viewer_at < kViewerFreshMs ? "open" : "closed");
+    g_perf = FramePerf{};
+    g_perf.logged = now;
 }
 
 } // namespace
@@ -1288,10 +1424,14 @@ void start()
     init_doorbell();
 #if defined(_WIN32)
     log("mailbox ready in swofty/addons/swofty.career-editor/ (inbox doorbell %s)",
-        g.doorbell ? "on" : "off, listing every 0.5 s");
+        watcher().doorbell ? "on" : "off, listing every 0.5 s");
 #endif
-    list_inbox();
-    g.last_list = now_ms();
+    std::string names;
+    if (read_inbox(names))
+        merge_inbox(names);
+    watcher().names = std::move(names);
+    poll_viewer(watcher());
+    std::thread(watch).detach();
     g.up = true;
 }
 
@@ -1299,24 +1439,22 @@ void frame()
 {
     if (!g.up)
         return;
+    bool perf = perf_on();
+    Clock::time_point start = perf ? Clock::now() : Clock::time_point{};
+    g_perf.lap = start;
     uint64_t now = now_ms();
     if (now - g.last_state >= kStatePollMs) {
         g.last_state = now;
         state::poll(now);
     }
-    if (now - g.last_inbox >= kInboxPollMs) {
-        g.last_inbox = now;
-#if defined(_WIN32)
-        bool relist = !g.doorbell || doorbell_rang() || now - g.last_list >= kInboxRelistMs;
-#else
-        bool relist = true;
-#endif
-        if (relist) {
-            g.last_list = now;
-            list_inbox();
-        }
-    }
+    if (perf)
+        perf_lap(PartState);
+    take_inbox();
+    if (perf)
+        perf_lap(PartInbox);
     drain_one();
+    if (perf)
+        perf_lap(PartBatch);
     if (g.force_render) {
         g.force_render = false;
         g.pass_active = false;
@@ -1329,6 +1467,10 @@ void frame()
         snapshot(now, false);
         if (g.pass_active)
             continue_pass(now);
+    }
+    if (perf) {
+        perf_lap(PartSnapshot);
+        perf_frame(start, now);
     }
 }
 

@@ -94,7 +94,7 @@ Rewritten when its content changes (checked every second, and right after a batc
 }
 ```
 
-A section is absent when it has never rendered in this career. Sections render only while a career is loaded and the flow is settled (Team HQ idle, the weekend hub, or a running session); they are cleared when the career unloads. A section that faults is switched off for the game session and listed with `off`.
+A section is absent when it has never rendered in this career. Sections render only while a career is loaded and the flow is settled (Team HQ idle, the weekend hub, or a running session), the launcher page is open (`viewer.json`, which the page rewrites every 3 s, is under 15 s old) and the game is not the window in front; they are cleared when the career unloads. A section that faults is switched off for the game session and listed with `off`.
 
 ### Status {#status}
 

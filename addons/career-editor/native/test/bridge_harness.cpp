@@ -9,6 +9,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <thread>
 
 #include <swofty/mixin.hpp>
 #include "bridge.hpp"
@@ -19,19 +20,22 @@ static int fails = 0;
 #define CHECK(c) do { if (!(c)) { std::printf("FAIL %s:%d %s\n", __FILE__, __LINE__, #c); ++fails; } } while (0)
 
 static void flog(const char *fmt, ...) { va_list ap; va_start(ap, fmt); std::vprintf(fmt, ap); va_end(ap); std::printf("\n"); }
+static std::thread::id main_id = std::this_thread::get_id();
+static int main_io = 0;
+static void io() { if (std::this_thread::get_id() == main_id) ++main_io; }
 static int s_avail() { return 1; }
-static int s_read(const char *p, void *buf, size_t cap, size_t *len) {
+static int s_read(const char *p, void *buf, size_t cap, size_t *len) { io();
     std::ifstream f(root / p, std::ios::binary); if (!f) return SWOFTY_ASSET_INVALID;
     std::stringstream ss; ss << f.rdbuf(); std::string d = ss.str(); if (len) *len = d.size();
     if (d.size() > cap) return SWOFTY_ASSET_INVALID; memcpy(buf, d.data(), d.size()); return SWOFTY_ASSET_OK; }
-static int s_write(const char *p, const void *d, size_t n) {
+static int s_write(const char *p, const void *d, size_t n) { io();
     fs::create_directories((root / p).parent_path()); auto tmp = root / (std::string(p) + ".tmp");
     { std::ofstream f(tmp, std::ios::binary); f.write((const char *)d, n); } fs::rename(tmp, root / p); return SWOFTY_ASSET_OK; }
-static int s_append(const char *p, const void *d, size_t n) {
+static int s_append(const char *p, const void *d, size_t n) { io();
     fs::create_directories((root / p).parent_path()); std::ofstream f(root / p, std::ios::binary | std::ios::app); f.write((const char *)d, n); return SWOFTY_ASSET_OK; }
-static int s_remove(const char *p) { return fs::remove(root / p) ? SWOFTY_ASSET_OK : SWOFTY_ASSET_INVALID; }
-static int s_size(const char *p, uint64_t *o) { std::error_code ec; auto n = fs::file_size(root / p, ec); if (ec) return SWOFTY_ASSET_INVALID; *o = n; return SWOFTY_ASSET_OK; }
-static int s_list(const char *d, char *buf, size_t cap, size_t *len) {
+static int s_remove(const char *p) { io(); return fs::remove(root / p) ? SWOFTY_ASSET_OK : SWOFTY_ASSET_INVALID; }
+static int s_size(const char *p, uint64_t *o) { io(); std::error_code ec; auto n = fs::file_size(root / p, ec); if (ec) return SWOFTY_ASSET_INVALID; *o = n; return SWOFTY_ASSET_OK; }
+static int s_list(const char *d, char *buf, size_t cap, size_t *len) { io();
     std::error_code ec; std::string out; for (auto &e : fs::directory_iterator(root / d, ec)) { out += e.path().filename().string(); if (e.is_directory()) out += '/'; out += '\n'; }
     if (ec) return SWOFTY_ASSET_INVALID; if (len) *len = out.size(); if (out.size() > cap) return SWOFTY_ASSET_INVALID; memcpy(buf, out.data(), out.size()); return SWOFTY_ASSET_OK; }
 static SwoftyStorage storage_tab = {s_avail, s_read, s_write, s_append, s_remove, s_size, s_list};
@@ -75,7 +79,7 @@ static std::string slurp(const fs::path &p) { std::ifstream f(p); std::stringstr
 static void put(uint64_t seq, const std::string &body) {
     auto tmp = root / "inbox" / (std::to_string(seq) + ".json.tmp"); { std::ofstream f(tmp); f << body; } fs::rename(tmp, root / "inbox" / (std::to_string(seq) + ".json")); }
 static bool viewer_on = false;
-static void touch_viewer() { std::ofstream f(root / "viewer.json"); f << ce::wall_ms(); }
+static void touch_viewer() { { std::ofstream f(root / "viewer.json.tmp"); f << ce::wall_ms(); } fs::rename(root / "viewer.json.tmp", root / "viewer.json"); }
 static void pump(int n) { for (int i = 0; i < n; ++i) { if (viewer_on) touch_viewer(); ce::bridge::frame(); usleep(30000); } ce::bridge::flush_writes(); }
 static ce::Json parse(const std::string &s) { ce::Json v; bool ok = json::parse(s, v); if (!ok) std::printf("PARSE FAIL: %s\n", s.c_str()); CHECK(ok); return v; }
 
@@ -99,8 +103,9 @@ int main() {
     snap = parse(slurp(root / "snapshot.json"));
     CHECK(snap["bridge"]["blocked"]["seq"].n == 100);
     CHECK(snap["bridge"]["blocked"]["why"].str() == "no career is loaded");
-    // 2a: career, launcher page not open: sections are not rendered, the status still is
-    f_career = true; pump(40);
+    // 2a: career, launcher page not open: sections are not rendered, the status still is, and the frame does no file IO
+    main_io = 0; f_career = true; pump(40);
+    CHECK(main_io == 0);
     snap = parse(slurp(root / "snapshot.json"));
     CHECK(snap["sections"].type == ce::Json::Obj && snap["sections"].o.empty());
     CHECK(snap["bridge"]["renders"].n == 0 && snap["bridge"]["renders_skipped"].n > 0);
