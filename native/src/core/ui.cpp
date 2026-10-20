@@ -1,12 +1,14 @@
 #include <windows.h>
 
 #include <safetyhook.hpp>
+#include <swofty/mem.hpp>
 #include <swofty/mixin.hpp>
 
 #include <string>
 #include <vector>
 
 #include "json.hpp"
+#include "perf.hpp"
 
 bool ui_vm_init(uintptr_t module_base, const std::wstring &swofty_dir);
 bool ui_vm_attach(const std::string &screen);
@@ -148,10 +150,7 @@ uintptr_t find(const Target &t)
 
 bool readable(const void *p, size_t n)
 {
-    MEMORY_BASIC_INFORMATION m{};
-    if (!p || !VirtualQuery(p, &m, sizeof m) || m.State != MEM_COMMIT || (m.Protect & (PAGE_NOACCESS | PAGE_GUARD)))
-        return false;
-    return uintptr_t(p) + n <= uintptr_t(m.BaseAddress) + m.RegionSize;
+    return swofty::mem::readable(p, n);
 }
 
 void *screen_lookup(uint32_t h, bool *ok)
@@ -341,6 +340,8 @@ void factory_site(safetyhook::Context &c)
 
 void screen_site(safetyhook::Context &c)
 {
+    static const uint32_t probe = perf::probe("core", "ui screen built");
+    perf::Scope p(probe);
     auto *job = reinterpret_cast<uint8_t *>(c.rbx);
     int rc = int(c.rbp);
     Screen *s = job_owner(job);
@@ -413,9 +414,11 @@ void register_pending(const char *why)
 
 void handler_hook(void *self, int64_t *resid, void *a3, uint8_t *frags, int64_t count, uint8_t *res)
 {
+    static const uint32_t probe = perf::probe("core", "ui screen loader handler");
     h_handler.call<void>(self, resid, a3, frags, count, res);
     if (!self)
         return;
+    perf::Scope p(probe);
     AcquireSRWLockExclusive(&lock);
     if (!mgr) {
         mgr = *reinterpret_cast<void **>(static_cast<uint8_t *>(self) + 0x10);
@@ -508,13 +511,22 @@ void perf_probe(const char *what, const void *p)
 
 uint64_t open_hook(void *scene, void *screen, void *a3, void *a4)
 {
+    static const uint32_t probe = perf::probe("core", "ui screen open");
+    perf::Scope p(probe);
+    if (perf::live() && readable(screen, 0x70) &&
+        readable(*reinterpret_cast<void **>(static_cast<uint8_t *>(screen) + 0x68), 10))
+        perf::mark("screen", chars(*reinterpret_cast<void **>(static_cast<uint8_t *>(screen) + 0x68)));
     LARGE_INTEGER t0, t1, t2;
     QueryPerformanceCounter(&t0);
     AcquireSRWLockExclusive(&lock);
     register_pending("screen open");
     ReleaseSRWLockExclusive(&lock);
     QueryPerformanceCounter(&t1);
-    uint64_t r = h_open.call<uint64_t>(scene, screen, a3, a4);
+    uint64_t r;
+    {
+        perf::Pause game;
+        r = h_open.call<uint64_t>(scene, screen, a3, a4);
+    }
     QueryPerformanceCounter(&t2);
     double total = perf_ms(t0, t2);
     if (perf || total >= 50.0) {
@@ -608,12 +620,18 @@ NeStrHdr **cancel_missing(NeStrHdr **err, const char *step)
 
 NeStrHdr **resolve_hook(void *self, NeStrHdr **err, void *cmd)
 {
-    return cancel_missing(h_resolve.call<NeStrHdr **>(self, err, cmd), "resolve-target");
+    static const uint32_t probe = perf::probe("core", "ui route guard");
+    NeStrHdr **r = h_resolve.call<NeStrHdr **>(self, err, cmd);
+    perf::Scope p(probe);
+    return cancel_missing(r, "resolve-target");
 }
 
 NeStrHdr **openexec_hook(void *self, NeStrHdr **err, void *cmd)
 {
-    return cancel_missing(h_openexec.call<NeStrHdr **>(self, err, cmd), "open-screen");
+    static const uint32_t probe = perf::probe("core", "ui route guard");
+    NeStrHdr **r = h_openexec.call<NeStrHdr **>(self, err, cmd);
+    perf::Scope p(probe);
+    return cancel_missing(r, "open-screen");
 }
 
 bool env_on(const char *name)
