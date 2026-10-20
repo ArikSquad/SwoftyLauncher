@@ -52,14 +52,18 @@ impl Objects {
         self.path(sha).is_file()
     }
 
+    /// Back up `src` under its SHA-256. The copy is flushed to disk before it
+    /// takes its name, since it is the only copy of an original once the game
+    /// file is replaced; an object a crash left damaged is written again.
     pub fn put_file(&self, src: &Path) -> Result<String> {
         let sha = sha256_file(src)?;
         let dst = self.path(&sha);
-        if !dst.is_file() {
+        if !dst.is_file() || sha256_file(&dst)? != sha {
             let dir = dst.parent().expect("has parent");
             std::fs::create_dir_all(dir).map_err(io_err(dir))?;
             let tmp = dst.with_extension("tmp");
             std::fs::copy(src, &tmp).map_err(io_err(&tmp))?;
+            crate::sync_file(&tmp)?;
             if sha256_file(&tmp)? != sha {
                 return Err(Error::Other(format!(
                     "{} changed while it was backed up",
@@ -67,6 +71,7 @@ impl Objects {
                 )));
             }
             std::fs::rename(&tmp, &dst).map_err(io_err(&dst))?;
+            crate::sync_dir(Some(dir));
         }
         Ok(sha)
     }
@@ -87,13 +92,16 @@ impl Objects {
             dst.file_name().unwrap_or_default().to_string_lossy()
         ));
         std::fs::copy(&src, &tmp).map_err(io_err(&tmp))?;
-        std::fs::rename(&tmp, dst).map_err(io_err(dst))?;
-        if sha256_file(dst)? != sha {
+        crate::sync_file(&tmp)?;
+        if sha256_file(&tmp)? != sha {
+            std::fs::remove_file(&tmp).ok();
             return Err(Error::Other(format!(
-                "{} does not match its backup after restore",
+                "the backup of {} is damaged; verify the game files in Steam",
                 dst.display()
             )));
         }
+        std::fs::rename(&tmp, dst).map_err(io_err(dst))?;
+        crate::sync_dir(dst.parent());
         Ok(())
     }
 }
@@ -164,7 +172,29 @@ pub struct Baseline {
     pub exe_sha256: String,
     #[serde(default)]
     pub files: BTreeMap<String, FileRecord>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rebuild: Option<Rebuild>,
 }
+
+/// Set on a baseline started over because the previous one was damaged.
+/// Until the player has been told to verify the game files, a game file is
+/// only recorded as an original when its bytes are already a backed-up
+/// original in the object store.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Rebuild {
+    pub damaged: String,
+    pub at: u64,
+    #[serde(default)]
+    pub told_to_verify: bool,
+}
+
+impl Rebuild {
+    pub fn checking(&self) -> bool {
+        !self.told_to_verify
+    }
+}
+
+pub const DAMAGED: &str = "the launcher's record of your original game files is damaged; verify the game files in Steam, then press Play again";
 
 pub trait DepotHashes {
     fn sha256(&self, rel: &str) -> Option<String>;
@@ -183,6 +213,7 @@ impl Baseline {
             build_id: id.build_id.clone(),
             exe_sha256: id.exe_sha256.clone(),
             files: BTreeMap::new(),
+            rebuild: None,
         }
     }
 
@@ -190,13 +221,52 @@ impl Baseline {
         data.join("baseline").join(id.key()).join("baseline.json")
     }
 
+    /// The baseline for `id`. A damaged one is moved aside and started over
+    /// in rebuild mode (see [`Rebuild`]), which is saved at once so every
+    /// later load sees it; a missing one next to a damaged copy is rebuilt
+    /// the same way.
     pub fn load_or_new(data: &Path, id: &Identity) -> Result<Self> {
         let p = Self::path(data, id);
-        if p.is_file() {
-            crate::read_json(&p)
-        } else {
-            Ok(Self::new(id))
+        match crate::load_json(&p)? {
+            crate::Loaded::Found(b) => Ok(b),
+            crate::Loaded::Missing => Ok(match damaged_copy(&p) {
+                Some(name) => Self::rebuilding(id, name),
+                None => Self::new(id),
+            }),
+            crate::Loaded::Damaged(moved) => {
+                let name = moved
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned();
+                eprintln!(
+                    "swofty: warning: the record of the original game files for build {} was damaged; \
+                     rebuilding it from game files that match backed-up originals",
+                    id.build_id
+                );
+                let b = Self::rebuilding(id, name);
+                b.save(data)?;
+                Ok(b)
+            }
         }
+    }
+
+    fn rebuilding(id: &Identity, damaged: String) -> Self {
+        let at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
+        Self {
+            rebuild: Some(Rebuild {
+                damaged,
+                at,
+                told_to_verify: false,
+            }),
+            ..Self::new(id)
+        }
+    }
+
+    pub fn checking(&self) -> bool {
+        self.rebuild.as_ref().is_some_and(Rebuild::checking)
     }
 
     pub fn save(&self, data: &Path) -> Result<()> {
@@ -238,6 +308,16 @@ impl Baseline {
         }
         Ok(&self.files[rel])
     }
+}
+
+fn damaged_copy(path: &Path) -> Option<String> {
+    let name = format!("{}{}", path.file_name()?.to_string_lossy(), crate::DAMAGED_SUFFIX);
+    std::fs::read_dir(path.parent()?)
+        .ok()?
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with(&name))
+        .max()
 }
 
 pub const LANG_PREFIX: &str = "localisation/2025_release/language_";

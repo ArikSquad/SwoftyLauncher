@@ -85,9 +85,10 @@ impl Journal {
             .collect();
         paths.sort();
         for p in paths {
-            let mut j: Self = crate::read_json(&p)?;
-            j.file = p;
-            out.push(j);
+            if let crate::Loaded::Found(mut j) = crate::load_json::<Self>(&p)? {
+                j.file = p;
+                out.push(j);
+            }
         }
         Ok(out)
     }
@@ -116,9 +117,13 @@ impl Journal {
         Ok(self.entries.len() - 1)
     }
 
+    /// Mark entry `i` finished. It reaches the disk with the next
+    /// [`begin`](Self::begin) or [`commit`](Self::commit), which saves one
+    /// flushed write per step; a crash before then leaves it pending, which a
+    /// rollback treats exactly as done while the file holds what was written.
     pub fn done(&mut self, i: usize) -> Result<()> {
         self.entries[i].state = State::Done;
-        self.save()
+        Ok(())
     }
 
     pub fn commit(&mut self) -> Result<()> {
