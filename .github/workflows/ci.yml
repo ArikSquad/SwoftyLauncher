@@ -263,10 +263,13 @@ jobs:
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       # The scripts below keep their own Zig cache under native/build, which the restore step covers.
+      # The tool cache installs Zig at the same path every run; the MinGW and libc++ objects are keyed
+      # on compiler arguments that include that path, so the default random temp folder missed them all.
       - uses: mlugg/setup-zig@v2
         with:
           version: 0.16.0
           use-cache: false
+          use-tool-cache: true
 
       # The key starts over each month so the content-addressed cache cannot grow without bound.
       - name: Zig cache period
@@ -315,7 +318,7 @@ jobs:
           ZIG_GLOBAL_CACHE_DIR: ${{ github.workspace }}/native/build/zig-cache
           ZIG_LOCAL_CACHE_DIR: ${{ github.workspace }}/native/build/zig-cache
         run: |
-          zig c++ -std=c++23 -O2 -I packages/sdk/include native/test/telemetry_feed_test.cpp -o telemetry_feed_test
+          zig c++ -target x86_64-linux-musl -std=c++23 -O2 -I packages/sdk/include native/test/telemetry_feed_test.cpp -o telemetry_feed_test
           ./telemetry_feed_test
 
       - name: Wine and Xvfb
