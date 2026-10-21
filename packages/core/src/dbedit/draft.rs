@@ -54,6 +54,96 @@ pub fn path(store: &Store) -> PathBuf {
     store.root.join("dbedit").join(FILE)
 }
 
+/// The draft file's hash, which tells another window's write from this one's.
+pub type Stamp = Option<[u8; 32]>;
+
+pub fn stamp(store: &Store) -> Stamp {
+    use sha2::Digest;
+    Some(sha2::Sha256::digest(std::fs::read(path(store)).ok()?).into())
+}
+
+/// The draft file as one launcher window last read or wrote it.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct DraftFile {
+    pub seen: Stamp,
+    /// Why a damaged draft could not be set aside; nothing is written over it.
+    pub stuck: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Opened {
+    Read(Draft),
+    /// The file did not read and was moved to `kept`.
+    SetAside {
+        error: String,
+        kept: PathBuf,
+    },
+    /// The file did not read and could not be moved.
+    Stuck {
+        error: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Written {
+    Saved,
+    /// Another window wrote the file since this one read or wrote it; it was left as it is.
+    Newer,
+}
+
+impl DraftFile {
+    pub fn open(&mut self, store: &Store) -> Opened {
+        let error = match Draft::load(store) {
+            Ok(d) => {
+                self.seen = stamp(store);
+                self.stuck = None;
+                return Opened::Read(d);
+            }
+            Err(e) => e.to_string(),
+        };
+        match Draft::set_aside(store) {
+            Ok(kept) => {
+                self.seen = None;
+                self.stuck = None;
+                Opened::SetAside { error, kept }
+            }
+            Err(why) => {
+                let error = format!("{error}\nIt could not be set aside: {why}");
+                self.stuck = Some(error.clone());
+                Opened::Stuck { error }
+            }
+        }
+    }
+
+    pub fn is_newer(&self, store: &Store) -> bool {
+        self.stuck.is_none() && stamp(store) != self.seen
+    }
+
+    /// Writes `draft` unless the file is newer than this window's copy or is
+    /// a damaged draft that still cannot be set aside.
+    pub fn write(&mut self, store: &Store, draft: &Draft) -> Result<Written> {
+        if let Some(why) = &self.stuck {
+            if path(store).exists() && Draft::load(store).is_err() {
+                Draft::set_aside(store)
+                    .map_err(|_| Error::Other(format!("the damaged draft file is in the way: {why}")))?;
+            }
+            self.stuck = None;
+            self.seen = None;
+        }
+        if self.is_newer(store) {
+            return Ok(Written::Newer);
+        }
+        draft.clone().save(store)?;
+        self.seen = stamp(store);
+        Ok(Written::Saved)
+    }
+
+    /// Takes the file as it is now as this window's copy, so the next write replaces it.
+    pub fn adopt(&mut self, store: &Store) {
+        self.seen = stamp(store);
+    }
+}
+
 fn same(a: &Edit, b: &Edit) -> bool {
     a.tag == b.tag && a.value == b.value
 }
@@ -77,10 +167,17 @@ impl Draft {
         Ok(d)
     }
 
-    /// Moves a draft file that does not read to `draft.damaged.json`.
+    /// Moves a draft file that does not read to `draft.damaged-<unix seconds>.json`.
     pub fn set_aside(store: &Store) -> Result<PathBuf> {
         let from = path(store);
-        let to = from.with_file_name("draft.damaged.json");
+        let secs = crate::conflicts::now() as u64;
+        let to = (0..)
+            .map(|n| match n {
+                0 => from.with_file_name(format!("draft.damaged-{secs}.json")),
+                n => from.with_file_name(format!("draft.damaged-{secs}-{n}.json")),
+            })
+            .find(|p| !p.exists())
+            .expect("a free name");
         std::fs::rename(&from, &to).map_err(crate::io_err(&from))?;
         Ok(to)
     }
@@ -323,6 +420,87 @@ mod tests {
         let aside = Draft::set_aside(&s).unwrap();
         assert!(aside.is_file() && !path(&s).exists());
         assert_eq!(Draft::load(&s).unwrap(), Draft::default());
+        std::fs::remove_dir_all(&s.root).ok();
+    }
+
+    #[test]
+    fn sets_damaged_drafts_aside_under_new_names_and_never_writes_over_one() {
+        let s = store("damaged");
+        let damaged = b"{\"format\": \"swofty-db-dr";
+        std::fs::create_dir_all(path(&s).parent().unwrap()).unwrap();
+        let mut kept = Vec::new();
+        for _ in 0..2 {
+            std::fs::write(path(&s), damaged).unwrap();
+            let mut f = DraftFile::default();
+            let Opened::SetAside { kept: k, .. } = f.open(&s) else {
+                panic!("not set aside")
+            };
+            assert_eq!(std::fs::read(&k).unwrap(), damaged);
+            kept.push(k);
+        }
+        assert_ne!(kept[0], kept[1]);
+        assert!(kept.iter().all(|k| {
+            k.file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .starts_with("draft.damaged-")
+        }));
+
+        std::fs::write(path(&s), damaged).unwrap();
+        let mut f = DraftFile {
+            stuck: Some("read-only folder".into()),
+            ..DraftFile::default()
+        };
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let dir = path(&s).parent().unwrap().to_owned();
+            let mode = |m| std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(m)).unwrap();
+            mode(0o555);
+            let locked = std::fs::File::create(dir.join("probe")).is_err();
+            let refused = f.write(&s, &Draft::default());
+            mode(0o755);
+            if locked {
+                assert!(refused.is_err());
+                assert_eq!(std::fs::read(path(&s)).unwrap(), damaged);
+                assert!(f.stuck.is_some());
+            }
+        }
+        assert_eq!(f.write(&s, &Draft::default()).unwrap(), Written::Saved);
+        assert!(f.stuck.is_none());
+        assert_eq!(Draft::load(&s).unwrap().format, FORMAT);
+        std::fs::remove_dir_all(&s.root).ok();
+    }
+
+    #[test]
+    fn leaves_a_draft_another_window_wrote_until_it_is_adopted() {
+        let s = store("windows");
+        let cat = Catalog::load(&sample()).unwrap();
+        let (mut one, mut two) = (DraftFile::default(), DraftFile::default());
+        let Opened::Read(mut a) = one.open(&s) else {
+            panic!()
+        };
+        let Opened::Read(mut b) = two.open(&s) else {
+            panic!()
+        };
+        a.edits.set(&cat, fnv1a64(NUM), "33").unwrap();
+        assert_eq!(one.write(&s, &a).unwrap(), Written::Saved);
+        assert!(!one.is_newer(&s) && two.is_newer(&s));
+
+        b.edits.set(&cat, fnv1a64(TEAM), "20").unwrap();
+        assert_eq!(two.write(&s, &b).unwrap(), Written::Newer);
+        assert_eq!(Draft::load(&s).unwrap().edits.len(), 1);
+        assert!(Draft::load(&s).unwrap().edits.get(fnv1a64(NUM)).is_some());
+
+        let Opened::Read(theirs) = two.open(&s) else {
+            panic!()
+        };
+        assert_eq!(theirs.edits.edits, a.edits.edits);
+        two.adopt(&s);
+        assert_eq!(two.write(&s, &b).unwrap(), Written::Saved);
+        assert!(one.is_newer(&s));
+        assert!(Draft::load(&s).unwrap().edits.get(fnv1a64(TEAM)).is_some());
         std::fs::remove_dir_all(&s.root).ok();
     }
 }
