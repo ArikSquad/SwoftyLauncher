@@ -16,6 +16,8 @@ pub struct AddonItem {
     /// Only tracks (see [`swofty_core::tracks::is_track_addon`]): listed on the
     /// Tracks page while one is open in the profile.
     pub track: bool,
+    /// Built from the DB Editor (see [`swofty_core::dbedit::package::is_package`]).
+    pub package: bool,
 }
 
 #[derive(Clone)]
@@ -110,6 +112,7 @@ impl Library {
                 icon: addon_icon(store, &registry, m),
                 track: !m.is_builtin()
                     && swofty_core::tracks::is_track_addon(&store.addons_dir().join(&m.id), m),
+                package: !m.is_builtin() && swofty_core::dbedit::package::is_package(store, &m.id),
                 manifest: m.clone(),
             })
             .collect();

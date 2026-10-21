@@ -586,10 +586,22 @@ impl Shell {
             )
             .child(
                 h_flex()
-                    .w(px(200.))
+                    .w(px(if self.library.listed().any(|a| a.package) {
+                        250.
+                    } else {
+                        200.
+                    }))
                     .gap(px(4.))
                     .flex_shrink_0()
-                    .children(man.kind.iter().map(|k| tag(kind_label(*k), p))),
+                    .children(man.kind.iter().map(|k| tag(kind_label(*k), p)))
+                    .when(m.package, |d| {
+                        d.child(
+                            tag("Built from DB Editor", p)
+                                .gap(px(4.))
+                                .child(Icon::new(IconName::Database).size(px(11.)))
+                                .flex_row_reverse(),
+                        )
+                    }),
             )
             .child(div().w(px(96.)).flex().justify_end().child(trailing))
             .child(chevron(open, p))
@@ -695,7 +707,27 @@ impl Shell {
                 )
             })
             .when(!man.options.is_empty(), |d| d.child(self.settings(man, p, cx)))
-            .children(remove)
+            .map(|d| {
+                let edit = m.package.then(|| {
+                    let id = man.id.clone();
+                    Button::new(SharedString::from(format!("edit-db-{}", man.id)))
+                        .outline()
+                        .icon(IconName::Database)
+                        .label("Edit in DB Editor")
+                        .on_click(cx.listener(move |this, _, _, cx| this.db_edit_package(&id, cx)))
+                });
+                match (edit, remove) {
+                    (Some(edit), Some(remove)) => d.child(
+                        h_flex()
+                            .justify_between()
+                            .items_center()
+                            .child(edit)
+                            .child(remove),
+                    ),
+                    (Some(edit), None) => d.child(h_flex().child(edit)),
+                    (None, remove) => d.children(remove),
+                }
+            })
     }
 
     fn settings(&self, man: &AddonManifest, p: Palette, cx: &mut Context<Self>) -> impl IntoElement {

@@ -39,7 +39,7 @@ impl Progress for Reporter {
     }
 }
 
-fn game(store: &Store, install: Option<&Install>) -> Option<Game> {
+pub(crate) fn game(store: &Store, install: Option<&Install>) -> Option<Game> {
     let install = install?;
     let identity = Identity::detect_cached(&store.root, &install.dir, install.build_id).ok()?;
     Some(Game {

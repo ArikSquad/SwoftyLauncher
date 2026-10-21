@@ -2,6 +2,7 @@
 
 mod blocks;
 mod console;
+mod db;
 mod discord;
 mod game;
 mod library;

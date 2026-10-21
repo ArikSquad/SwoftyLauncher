@@ -32,6 +32,7 @@ use crate::theme::{Palette, palette};
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Page {
     Addons,
+    Database,
     Profiles,
     Section(usize),
 }
@@ -40,6 +41,7 @@ impl Page {
     pub fn label(self) -> &'static str {
         match self {
             Self::Addons => "Addons",
+            Self::Database => "DB Editor",
             Self::Profiles => "Profiles",
             Self::Section(_) => "",
         }
@@ -48,6 +50,7 @@ impl Page {
     pub fn icon(self) -> IconName {
         match self {
             Self::Addons => IconName::Puzzle,
+            Self::Database => IconName::Database,
             Self::Profiles => IconName::Layers,
             Self::Section(_) => IconName::Package,
         }
@@ -108,6 +111,7 @@ pub struct Shell {
     pub(crate) ticking: bool,
     painted: Instant,
     pub(crate) live_n: u64,
+    pub(crate) db: crate::db::Db,
     _console_closed: Subscription,
     _poll: Task<()>,
     _live: Task<()>,
@@ -355,12 +359,14 @@ impl Shell {
             ticking: false,
             painted: Instant::now(),
             live_n: 0,
+            db: crate::db::Db::new(),
             _console_closed: console_closed,
             _poll: poll,
             _live: live,
             _updates: updates,
         };
         shell.refresh_views(cx);
+        shell.db_profile_changed(cx);
         shell
     }
 
@@ -502,6 +508,7 @@ impl Shell {
             .detach();
         }
         self.session = probe.session;
+        self.db_poll(cx);
         let live = was_live || self.launch.is_some() || !self.processes.is_empty();
         if live
             || before != (self.requests, self.processes.clone(), self.session.clone())
@@ -520,6 +527,7 @@ impl Shell {
             self.page = Page::Addons;
         }
         self.refresh_views(cx);
+        self.db_profile_changed(cx);
         cx.notify();
     }
 
@@ -1089,6 +1097,7 @@ impl Shell {
             .child(wrap(vec![
                 self.core_nav(Page::Profiles, self.library.profiles.len(), p, cx),
                 self.core_nav(Page::Addons, self.library.listed().count(), p, cx),
+                self.core_nav(Page::Database, self.db_count(), p, cx),
             ]))
             .children(groups.into_iter().map(|(name, items)| {
                 v_flex()
@@ -1145,8 +1154,16 @@ impl Render for Shell {
             (f32::from(window.viewport_size().width) - 220. - 2. * crate::pages::GUTTER).max(320.);
         self.sync_sliders(window, cx);
         self.sync_blocks(window, cx);
+        self.db_pending_tab(window, cx);
+        if self.page == Page::Database {
+            self.sync_db(window, cx);
+        }
+        for note in std::mem::take(&mut self.db.toasts) {
+            window.push_notification(note, cx);
+        }
         let content = match self.page {
             Page::Addons => self.addons_page(p, cx),
+            Page::Database => self.db_page(p, cx),
             Page::Profiles => self.profiles_page(p, wide, cx),
             Page::Section(i) => self.section_page(i, p, cx),
         };
