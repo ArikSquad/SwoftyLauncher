@@ -1059,7 +1059,7 @@ impl Shell {
             db,
             db.label().into(),
             NavArt::Icon(db.icon()),
-            Some(self.db_count()),
+            Some(self.db_count()).filter(|n| *n > 0),
             p,
             cx,
         )];
