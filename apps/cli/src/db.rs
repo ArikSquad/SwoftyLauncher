@@ -1,0 +1,413 @@
+use std::path::PathBuf;
+use std::process::ExitCode;
+use std::sync::Arc;
+
+use anyhow::{Context, Result, anyhow, bail};
+use clap::Subcommand;
+use swofty_core::dbedit::package::{self, Package};
+use swofty_core::dbedit::{Catalog, Edits, NodeId, NodeKind};
+use swofty_core::store::Store;
+
+#[derive(Subcommand)]
+pub enum DbCommand {
+    #[command(about = "List DB Editor packages and whether each is on in the profile")]
+    Packages,
+    #[command(about = "Create an empty package")]
+    New { name: String },
+    #[command(about = "Delete a package from every profile")]
+    Delete { id: String },
+    #[command(about = "Write a package to a .zip to share it")]
+    Export { id: String, file: PathBuf },
+    #[command(
+        about = "Add a package from a .zip, a DB Editor export, an EGO GameDatabases Editor export, or a modded gamedatabases.2025.bin or mod .zip holding one"
+    )]
+    Import { file: PathBuf },
+    #[command(
+        about = "Write the game database with packages applied to a .zip players without the launcher extract into the game folder"
+    )]
+    ExportGame {
+        file: PathBuf,
+        #[arg(
+            long = "package",
+            value_name = "ID",
+            help = "A package to apply, in order; repeat it (default: the packages on in the profile, in load order)"
+        )]
+        packages: Vec<String>,
+    },
+    #[command(about = "Turn off every package that is on in the profile")]
+    OffAll,
+    #[command(about = "Show a package's details, or change them with the flags")]
+    Details {
+        id: String,
+        #[arg(long)]
+        name: Option<String>,
+        #[arg(long)]
+        version: Option<String>,
+        #[arg(long)]
+        author: Option<String>,
+        #[arg(long)]
+        description: Option<String>,
+    },
+    #[command(about = "Search names, tables, keys, values and English text")]
+    Search {
+        query: String,
+        #[arg(long, default_value_t = 30)]
+        limit: usize,
+    },
+    #[command(about = "Show a key's value, or what a table, row or container holds")]
+    Get {
+        #[arg(help = "A dotted or selector path, or 0x and 16 hex digits")]
+        path: String,
+        #[arg(long, help = "Show values with this package's changes (default: stock)")]
+        package: Option<String>,
+    },
+    #[command(about = "Change a key's value in a package")]
+    Set {
+        path: String,
+        value: String,
+        #[arg(long)]
+        package: String,
+    },
+    #[command(
+        about = "Add a key the game database lacks; TYPE is the record type number (0 int, 1 float, 2 string)"
+    )]
+    Add {
+        path: String,
+        #[arg(value_name = "TYPE")]
+        tag: u8,
+        value: String,
+        #[arg(long)]
+        package: String,
+    },
+    #[command(about = "Put a key back to its stock value in a package, or every key with --all")]
+    Revert {
+        path: Option<String>,
+        #[arg(long)]
+        all: bool,
+        #[arg(long)]
+        package: String,
+    },
+    #[command(about = "List a package's database changes")]
+    List {
+        #[arg(long)]
+        package: String,
+    },
+}
+
+fn open(store: &Store, id: &str) -> Result<Package> {
+    if !package::is_package(store, id) {
+        bail!("no DB Editor package named {id}; swofty db packages lists them");
+    }
+    Ok(Package::open(store, id)?)
+}
+
+/// Opens the package, applies `change` and saves it; when another writer saved
+/// the package in between, starts over from its file.
+fn edit<T>(
+    store: &Store,
+    cat: &Catalog,
+    id: &str,
+    mut change: impl FnMut(&mut Package) -> Result<T>,
+) -> Result<T> {
+    for _ in 0..5 {
+        let stamp = package::modified(store, id);
+        let mut p = open(store, id)?;
+        let out = change(&mut p)?;
+        if package::modified(store, id) == stamp {
+            p.save(store, cat)?;
+            return Ok(out);
+        }
+    }
+    bail!("{id} kept changing while saving; try again")
+}
+
+pub fn command(store: &Store, profile: &str, game: Option<PathBuf>, cmd: DbCommand) -> Result<ExitCode> {
+    let catalog = || -> Result<Arc<Catalog>> {
+        let g = crate::build::game(store, game.clone())?;
+        Ok(Catalog::open(store, &g)?)
+    };
+    let key_of = |cat: &Catalog, p: &str| cat.resolve(p).map_err(|e| anyhow!("{e}"));
+    match cmd {
+        DbCommand::Packages => {
+            let p = store.profile(profile)?;
+            let on: Vec<&str> = p.enabled().collect();
+            let package::Scan {
+                packages: all,
+                damaged,
+            } = package::scan(store)?;
+            for (id, e) in &damaged {
+                println!("bad  {id}  {e}");
+            }
+            for i in &all {
+                let state = if on.contains(&i.id.as_str()) { "on " } else { "off" };
+                println!(
+                    "{state}  {}  {} {} by {}, {} change(s)",
+                    i.id, i.name, i.version, i.author, i.changes
+                );
+            }
+            println!(
+                "{} package(s); on/off is for {profile}",
+                all.len() + damaged.len()
+            );
+        }
+        DbCommand::New { name } => {
+            let p = Package::create(store, &name)?;
+            println!(
+                "created {} ({}); turn it on with swofty addons enable {}",
+                p.id, p.manifest.name, p.id
+            );
+        }
+        DbCommand::Delete { id } => {
+            open(store, &id)?;
+            Package::delete(store, &id)?;
+            println!("deleted {id}");
+        }
+        DbCommand::Export { id, file } => {
+            let p = open(store, &id)?;
+            Package::export_zip(store, &id, &file)?;
+            println!("wrote {} ({} change(s)) to {}", id, p.edits.len(), file.display());
+        }
+        DbCommand::Import { file } => {
+            let got = package::import(store, &*catalog()?, &file)?;
+            let (p, r) = (&got.package, &got.report);
+            let counts = match r.format {
+                "bin" => format!("{} change(s)", r.imported),
+                _ => format!(
+                    "{} imported, {} unchanged, {} skipped",
+                    r.imported,
+                    r.unchanged,
+                    r.skipped.len()
+                ),
+            };
+            println!(
+                "{} ({}): {counts} into {} ({})",
+                file.display(),
+                r.format,
+                p.id,
+                p.name
+            );
+            if let Some(was) = &got.renamed_from {
+                println!("  {was} is already installed; installed as {}", p.id);
+            }
+            let prefix = if r.format == "bin" { "" } else { "skipped " };
+            for s in &r.skipped {
+                println!("  {prefix}{s}");
+            }
+        }
+        DbCommand::ExportGame { file, packages } => {
+            let ids = match packages.is_empty() {
+                true => package::enabled_packages(store, profile)?,
+                false => packages,
+            };
+            if ids.is_empty() {
+                bail!("no packages are on in {profile}; pass --package <id>");
+            }
+            for id in &ids {
+                open(store, id)?;
+            }
+            let g = crate::build::game(store, game.clone())?;
+            let got = package::export_game_files(store, &g, &ids, &file)?;
+            println!(
+                "wrote {} ({} change(s) from {}, {} bytes)",
+                file.display(),
+                got.changes,
+                ids.join(", "),
+                got.bytes
+            );
+            for s in &got.skipped {
+                println!("  {s}");
+            }
+        }
+        DbCommand::OffAll => {
+            let n = package::turn_off_all(store, profile)?;
+            println!("turned off {n} package(s) in {profile}");
+        }
+        DbCommand::Details {
+            id,
+            name,
+            version,
+            author,
+            description,
+        } => {
+            let mut p = open(store, &id)?;
+            if name.is_some() || version.is_some() || author.is_some() || description.is_some() {
+                let i = p.info();
+                p.set_details(
+                    name.as_deref().unwrap_or(&i.name),
+                    version.as_deref().unwrap_or(&i.version),
+                    author.as_deref().unwrap_or(&i.author),
+                    description.as_deref().unwrap_or(&i.description),
+                )?;
+                p.write(store)?;
+            }
+            let i = p.info();
+            println!(
+                "{}\n  name: {}\n  version: {}\n  author: {}",
+                i.id, i.name, i.version, i.author
+            );
+            println!("  description: {}\n  changes: {}", i.description, i.changes);
+            if !i.game_build.is_empty() {
+                println!("  database: {}", i.game_build);
+            }
+        }
+        DbCommand::Search { query, limit } => {
+            for h in catalog()?.search(&query, limit) {
+                println!("{:<10} {}  {}", format!("{:?}", h.kind), h.title, h.detail);
+            }
+        }
+        DbCommand::Get { path, package } => {
+            let edits = match &package {
+                Some(id) => open(store, id)?.edits,
+                None => Edits::default(),
+            };
+            let cat = catalog()?;
+            let node = cat
+                .find(&path)
+                .with_context(|| format!("{path}: not in the game database"))?;
+            show(&cat, &edits, node);
+        }
+        DbCommand::Set { path, value, package } => {
+            let cat = catalog()?;
+            let key = key_of(&cat, &path)?;
+            edit(store, &cat, &package, |p| {
+                p.edits.set(&cat, key, &value).map_err(|e| anyhow!("{path}: {e}"))
+            })?;
+            println!("{path} = {value} in {package}");
+        }
+        DbCommand::Add {
+            path,
+            tag,
+            value,
+            package,
+        } => {
+            let cat = catalog()?;
+            let key = edit(store, &cat, &package, |p| {
+                p.edits
+                    .add(&cat, &path, tag, &value)
+                    .map_err(|e| anyhow!("{path}: {e}"))
+            })?;
+            println!("added {path} (0x{key:016x}) = {value} in {package}");
+        }
+        DbCommand::Revert { path, all, package } => {
+            let cat = catalog()?;
+            match (path, all) {
+                (_, true) => {
+                    let n = edit(store, &cat, &package, |p| Ok(p.clear_edits()))?;
+                    println!("reverted {n} change(s) in {package}");
+                }
+                (Some(path), false) => {
+                    let key = key_of(&cat, &path)?;
+                    edit(store, &cat, &package, |p| match p.edits.revert(key) {
+                        true => Ok(()),
+                        false => bail!("{path} has no change in {package}"),
+                    })?;
+                    println!("reverted {path} in {package}");
+                }
+                (None, false) => bail!("name a key to revert, or pass --all"),
+            }
+        }
+        DbCommand::List { package } => {
+            let p = open(store, &package)?;
+            for e in &p.edits.edits {
+                let name = e.path.clone().unwrap_or_else(|| format!("0x{:016x}", e.key));
+                let stock = e.stock.as_deref().unwrap_or("(added)");
+                let value = e.value.as_deref().unwrap_or("(removed)");
+                println!("{name}: {stock} -> {value}");
+            }
+            println!("{} change(s) in {package}", p.edits.len());
+        }
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn show(cat: &Catalog, edits: &Edits, node: NodeId) {
+    let n = cat.node(node);
+    if let Some(r) = n.record.map(|r| cat.record(r)) {
+        let value = edits.value(cat, r.key).unwrap_or("(removed)");
+        println!("{} (0x{:016x}, type {})", cat.path(node), r.key, r.tag);
+        println!("  value: {value}");
+        if edits.get(r.key).is_some() {
+            println!("  stock: {}", r.value);
+        }
+        if let Some(text) = cat.text(value) {
+            println!("  English: {text}");
+        }
+        if let Some(m) = cat.meta(r.key) {
+            for (k, v) in [("meaning", &m.meaning), ("unit", &m.unit), ("range", &m.range)] {
+                if !v.is_empty() {
+                    println!("  {k}: {v}");
+                }
+            }
+        }
+        return;
+    }
+    println!("{}", cat.path(node));
+    if let Some(m) = cat.table_meaning(node) {
+        println!("  {m}");
+    }
+    for &c in cat.children(node) {
+        let child = cat.node(c);
+        let about = match &child.kind {
+            NodeKind::Table { rows, .. } => format!("table, {rows} rows"),
+            NodeKind::Row { .. } => [child.label.as_deref(), child.display.as_deref()]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .join(" · "),
+            NodeKind::Key => child
+                .record
+                .map(|r| {
+                    edits
+                        .value(cat, cat.record(r).key)
+                        .unwrap_or("(removed)")
+                        .to_owned()
+                })
+                .unwrap_or_default(),
+            _ => String::new(),
+        };
+        println!("  {}  {about}", child.name);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use swofty_formats::gvdb::{Gvdb, Record};
+    use swofty_formats::hash::fnv1a64;
+
+    #[test]
+    fn keeps_a_change_another_window_saved_while_editing() {
+        let root = std::env::temp_dir().join(format!("swofty-cli-db-edit-{}", std::process::id()));
+        std::fs::remove_dir_all(&root).ok();
+        let store = Store::new(root.clone());
+        let records = vec![
+            Record::new("entrants.teams._team_instancecount_", 0, "1"),
+            Record::new("entrants.teams.team_0._metadata_", 2, "mclaren_26"),
+            Record::new("entrants.teams.team_0.stat_id", 0, "100"),
+            Record::new("entrants.teams.team_0.prestige", 0, "5"),
+        ];
+        let cat = Catalog::load(&Gvdb { records }.to_bytes()).unwrap();
+        let id = Package::create(&store, "Mine").unwrap().id;
+        let (stat, prestige) = (
+            fnv1a64("entrants.teams.team_0.stat_id"),
+            fnv1a64("entrants.teams.team_0.prestige"),
+        );
+        let mut calls = 0;
+        edit(&store, &cat, &id, |p| {
+            calls += 1;
+            if calls == 1 {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+                let mut other = Package::open(&store, &id)?;
+                other.edits.set(&cat, stat, "7").map_err(|e| anyhow!(e))?;
+                other.save(&store, &cat)?;
+            }
+            p.edits.set(&cat, prestige, "9").map_err(|e| anyhow!(e))
+        })
+        .unwrap();
+        assert_eq!(calls, 2);
+        let saved = Package::open(&store, &id).unwrap().edits;
+        assert_eq!(saved.value(&cat, stat), Some("7"));
+        assert_eq!(saved.value(&cat, prestige), Some("9"));
+        std::fs::remove_dir_all(&root).ok();
+    }
+}

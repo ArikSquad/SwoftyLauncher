@@ -1,4 +1,5 @@
 mod build;
+mod db;
 mod doctor;
 mod offline;
 mod recover;
@@ -83,6 +84,13 @@ enum Command {
     Settings(SettingsCommand),
     #[command(subcommand, about = "List and delete profiles")]
     Profile(ProfileCommand),
+    #[command(about = "Browse the game database and edit DB Editor packages")]
+    Db {
+        #[arg(long, help = "Game folder (default: discovered from Steam)")]
+        game: Option<PathBuf>,
+        #[command(subcommand)]
+        cmd: db::DbCommand,
+    },
     #[command(
         about = "Summarise a previous session's logs and crashes; `logs send` sends your logs to the developers"
     )]
@@ -371,6 +379,7 @@ fn dispatch(store: &Store, cli: Cli) -> Result<ExitCode> {
         Command::Offline(cmd) => offline::command(&store, cmd).map(|_| ExitCode::SUCCESS),
         Command::Settings(cmd) => settings(&store, &profile, cmd).map(|_| ExitCode::SUCCESS),
         Command::Profile(cmd) => profiles(&store, cmd).map(|_| ExitCode::SUCCESS),
+        Command::Db { game, cmd } => db::command(&store, &profile, game, cmd),
         Command::Logs {
             action: Some(LogsCommand::Send(args)),
             ..
