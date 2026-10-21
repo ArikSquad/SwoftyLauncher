@@ -1476,6 +1476,7 @@ mod tests {
             ("t.a", [0, 9, 2, 3]),
             ("t.b", [0, 1, 2, 8]),
             ("t.c", [0, 7, 2, 3]),
+            ("t.same", [0, 1, 2, 3]),
         ] {
             let src = root.join("src").join(id);
             std::fs::create_dir_all(&src).unwrap();
@@ -1519,6 +1520,16 @@ mod tests {
             .map(|c| c[0])
             .collect();
         assert_eq!(slices, [0, 7, 2, 8]);
+        store
+            .update_profile("default", |p| {
+                ["t.a", "t.b", "t.c"]
+                    .iter()
+                    .try_for_each(|id| p.set_enabled(id, false))
+            })
+            .unwrap();
+        let same = build(&store, "default", &game).unwrap();
+        assert!(!same.plan.data.contains_key(ui), "{:?}", same.plan.data);
+        assert!(!same.overlay.join(ui).exists());
         std::fs::remove_dir_all(&root).ok();
     }
 
