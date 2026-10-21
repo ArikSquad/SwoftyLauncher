@@ -578,7 +578,9 @@ impl Shell {
                             n => format!("Found {}", plural(n, "conflict", "conflicts")),
                         };
                         window.push_notification(Notification::success(text), cx);
-                        s.addons.report = Some(report);
+                        if report.profile == s.library.profile.name {
+                            s.addons.report = Some(report);
+                        }
                     }
                     Err(e) => window
                         .push_notification(Notification::error(e).title("Could not check conflicts"), cx),
