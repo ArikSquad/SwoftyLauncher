@@ -138,6 +138,12 @@ pub enum ErpOp {
         fragment: usize,
         edits: Vec<PkgEdit>,
     },
+    // A ready overlay archive: each resource in it goes into every one of `erps`, as a
+    // put-resource from it would. On the runtime route the archive is loaded as it is.
+    Overlay {
+        erps: Vec<String>,
+        source: Source,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

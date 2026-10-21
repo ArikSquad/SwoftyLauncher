@@ -41,6 +41,7 @@ Inside each file, the prefix on an op names its kind:
 | `erp.put-resource` | `erp`, `resource`, `source`, optional `as` | Copy a resource from an archive in the addon into a game archive, replacing or adding it |
 | `erp.replace-resource`, `erp.add-resource`, `erp.remove-resource` | As in [ERP operations](/reference/ops/erp) | Replace one fragment of a resource with a raw file, add a resource from raw fragment files, or remove a resource |
 | `erp.copy-resource`, `erp.patch-pkg` | As in [ERP operations](/reference/ops/erp) | Copy a resource, or edit a `!pkg` resource in place |
+| `erp.overlay` | `erps` (target archives), `source` (a ready overlay archive) | Put every resource in a ready archive into each target, as a `put-resource` of each would. On the runtime route the archive loads as it is |
 | `erp.add-mipmaps` | `source`, `target` | Copy a mip file, or a folder of them, into the game folder |
 | `db.set`, `db.add-row` | As in [database operations](/reference/ops/database) | Change a field, or copy a row |
 | `db.remove-row`, `db.list-append`, `db.list-remove` | As in [database operations](/reference/ops/database) | Not built yet: a build with one fails |
@@ -106,6 +107,7 @@ To see which runtime features your installed loader offers, look in `swofty/addo
 - Every op of one kind takes the same route in a build, with one exception: an archive whose `erp` changes alter a stock resource's type, argument or fragment sizes, such as a resized scene, is rewritten into the game files while the rest stay on the runtime route. The build prints `erp: <archive> built into the game files; <n> resource(s) change their stock layout, ...`.
 - If your `erp` build includes an `erp.remove-resource`, it goes into the game files: swofty_core cannot take a resource out of a stock archive. The build prints `erp: built into the game files; <n> resource removal(s) cannot apply at runtime`.
 - `erp.add-mipmaps` files go into the game folder through the journal on both routes, as a track's mip files do.
+- An `erp.overlay` archive is listed in `resource_erps` as it is on the runtime route, without its resources being read or written again. If one of its resources would change a target's stock layout, or the `erp` build takes the build route, each resource in it goes in as an `erp.put-resource` would, and the build prints `erp: <origin>: its overlay archive goes in resource by resource; ...` for the first case. An addon that writes the same overlay each time, such as one made when a mod is imported, keeps the build hash the same between launches.
 - If your `db` build removes records, writes a record of tag 10, 15 or 16, or writes one whose value is not text, it goes into the game file instead, with a warning.
 
 ## Order and conflicts
@@ -121,7 +123,7 @@ A later write wins, so load order matters when addons write to the same target. 
 | Target | Written by |
 |---|---|
 | An asset group | `group.register` |
-| A resource in an archive | `erp.put-resource`, `erp.replace-resource`, `erp.remove-resource`, `erp.add-resource`, `erp.copy-resource`, `erp.patch-pkg` |
+| A resource in an archive | `erp.put-resource`, `erp.replace-resource`, `erp.remove-resource`, `erp.add-resource`, `erp.copy-resource`, `erp.patch-pkg` (`erp.overlay` writes resources the planner doesn't list, since they are only known from its archive) |
 | A database record | `db.set`, `db.put-record`, `db.remove-record` |
 | A string in a language | `lang.set` |
 | A game path | `file.put`, `erp.add-mipmaps` (its `target`) |
@@ -141,7 +143,7 @@ You'll find the build's `swofty/assets.json` and its files in the loader folder 
 | Kind | `swofty/assets.json` | Files |
 |---|---|---|
 | `group` | `asset_groups`: `group`, `erps`, `deps`, `template`, `origin` | |
-| `erp` | `resource_erps`: one overlay archive per set of target archives, as `file` and target `erps` | `assets/resources/<n>.erp` |
+| `erp` | `resource_erps`: one overlay archive per origin, as `file`, target `erps` and `origin`, listed from the last origin in load order to the first, since a group reads them in that order and the first that holds a resource wins | `assets/resources/<n>.erp`, and `assets/resources/p<n>.erp` for `erp.overlay` archives |
 | `db` | `db_edits`: each record that differs from the database after track activation, as `hash`, `type` and `value`, and `"early_stage": true` | |
 | `lang` | `lang.<code>.table`, and `lang."*".table` for every language | `assets/lang/<code>.lng`, `assets/lang/all.lng` |
 | `file` | `"overlay": true`, and `"file"` in `features` | `overlay/<target>` |

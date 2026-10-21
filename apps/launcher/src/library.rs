@@ -51,6 +51,17 @@ pub const TRACKS_SECTION: &str = "tracks";
 pub struct SectionItem {
     pub addon: String,
     pub spec: SectionSpec,
+    /// `sections/<id>.svg` in the addon's folder, shown in the sidebar in place of the addon's icon.
+    pub icon: Option<AddonIcon>,
+}
+
+fn section_icon(store: &Store, addon: &str, section: &str) -> Option<AddonIcon> {
+    let path = store
+        .addons_dir()
+        .join(addon)
+        .join("sections")
+        .join(format!("{section}.svg"));
+    Some(AddonIcon::Glyph(std::fs::read(path).ok()?.into()))
 }
 
 pub struct ProfileItem {
@@ -140,6 +151,7 @@ impl Library {
             .flat_map(|e| {
                 e.addon.sections().into_iter().map(|spec| SectionItem {
                     addon: e.id().to_owned(),
+                    icon: section_icon(store, e.id(), &spec.id),
                     spec,
                 })
             })

@@ -11,21 +11,23 @@ An addon is anything with a `swofty.json`. A data addon changes the game's datab
 
 You can install a folder that holds `swofty.json`, a `.swoftyaddon` file, or a zip of either. Drag it anywhere on the launcher window, or:
 
-1. Open the **Addons** page.
+1. Open any page under **ADDONS** in the sidebar: **Tools**, **Tracks** or **Database**.
 2. Select **Install addon…**.
 3. Type the addon's path, or select **Browse…** and choose the addon folder.
 4. Select **Install**.
 
-The launcher copies the addon to `$DATA/addons/<id>/` and lists it on the **Addons** page. If you've already installed an addon with the same id, this replaces it. A new addon starts off in every profile.
+The launcher copies the addon to `$DATA/addons/<id>/` and lists it on the **Tools** page. If you've already installed an addon with the same id, this replaces it. A new addon starts off in every profile.
 
 ## Turn an addon on or off
 
-1. Open the **Addons** page and find your addon's row. Its switch shows whether the addon is on in the active [profile](/using/profiles).
+1. Open the **Tools** page and find your addon's row. Its switch shows whether the addon is on in the active [profile](/using/profiles).
 2. Toggle the switch.
 
 The next time you press **Play**, the launcher builds the profile with the change.
 
 Some addons, such as Driver Manager, change what your careers store. Before you turn one of those off, the launcher asks first: **This addon has affected your saves**. Careers you played with it may not load without it. Select **Turn off anyway** to go ahead, or **Cancel** to leave it on. Removing such an addon asks the same, with **Remove anyway**. Turning an addon on never asks.
+
+**Disable all** on the **Tools** page turns off every addon it lists, except those that show **Always on** and those that would ask about your saves: those keep their switch, and the launcher names them.
 
 If you're using the `vanilla` profile, switch to a modded profile first: on `vanilla`, rows read **Switch away from vanilla to use addons** instead of showing a switch. Addons the launcher needs show **Always on** with a lock.
 
@@ -44,7 +46,7 @@ Settings save to the active profile. When you change a database setting, the sta
 
 ## Remove an addon
 
-1. On the **Addons** page, expand the addon's row.
+1. On the **Tools** page, expand the addon's row.
 2. Select **Remove addon**.
 3. In the **Remove _name_?** dialog, select **Remove addon**.
 
@@ -59,7 +61,7 @@ Removing an addon deletes its files and takes it out of every profile. You can't
 
 Each release also installs a few addons switched off, such as xanpavle's F1 25 RE-Optimization. You can turn them on per profile or remove them; see [Addons that ship with the launcher](/using/bundled-addons).
 
-If an addon adds its own page, you'll find it in the sidebar under a heading with the addon's name.
+The sidebar's **ADDONS** group holds **Tools** (every installed addon), **Tracks** and **Database** (addons that change the game database). If an addon adds its own page, you'll find it in the sidebar under a heading with the addon's name.
 
 ## From a terminal
 

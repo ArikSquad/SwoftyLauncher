@@ -148,6 +148,8 @@ fn erp_target(op: &ErpOp) -> Option<(Target, bool)> {
         ErpOp::AddMipmaps { target, .. } => {
             Some((Target::File(target.trim_end_matches('/').to_owned()), true))
         }
+        // Its resources are only known from the archive; the last writer wins in game.
+        ErpOp::Overlay { .. } => None,
     }
 }
 
