@@ -999,7 +999,7 @@ impl Shell {
                         .hover(move |s| s.bg(p.hover).text_color(p.text))
                 }
             })
-            .child(nav_art(NavArt::Icon(page.icon()), 28., active, p))
+            .child(nav_art(self.big_art(page), 28., active, p))
             .child(div().flex_1().truncate().child(page.label()))
             .children(count.map(|n| {
                 div()
@@ -1009,6 +1009,18 @@ impl Shell {
             }))
             .on_click(cx.listener(move |this, _, _, cx| this.open_page(page, cx)))
             .into_any_element()
+    }
+
+    fn big_art(&self, page: Page) -> NavArt {
+        let glyph = (page == Page::Importer)
+            .then(|| self.importer_section())
+            .flatten()
+            .and_then(|i| self.library.sections.get(i)?.icon.clone());
+        match glyph {
+            Some(AddonIcon::Glyph(data)) => NavArt::Glyph(data),
+            Some(AddonIcon::Image(image)) => NavArt::Image(image),
+            None => NavArt::Icon(page.icon()),
+        }
     }
 
     fn panel_nav(

@@ -320,3 +320,26 @@ fn summaries(store: &Store, registry: &Registry, profile: &Profile) -> Vec<Summa
 pub fn plural(n: usize, one: &str, many: &str) -> String {
     format!("{n} {}", if n == 1 { one } else { many })
 }
+
+#[cfg(test)]
+mod tests {
+    use swofty_core::store::Store;
+
+    use super::{AddonIcon, section_icon};
+
+    #[test]
+    fn a_section_icon_comes_from_the_addon_sections_folder() {
+        let root = std::env::temp_dir().join(format!("swofty-launcher-section-icon-{}", std::process::id()));
+        std::fs::remove_dir_all(&root).ok();
+        let store = Store::new(&root);
+        let dir = store.addons_dir().join("t.mods").join("sections");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("mods.svg"), "<svg/>").unwrap();
+        assert!(matches!(
+            section_icon(&store, "t.mods", "mods"),
+            Some(AddonIcon::Glyph(d)) if &*d == b"<svg/>"
+        ));
+        assert!(section_icon(&store, "t.mods", "tracks").is_none());
+        std::fs::remove_dir_all(&root).ok();
+    }
+}
