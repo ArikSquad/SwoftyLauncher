@@ -411,10 +411,13 @@ impl Shell {
                 })
                 .await;
             if fresh.len() > 1 {
-                done.push(format!(
-                    "Installed {}; Addons highlights the newest",
-                    plural(fresh.len(), "addon", "addons")
-                ));
+                done.insert(
+                    0,
+                    format!(
+                        "Installed {}; Addons highlights the newest",
+                        plural(fresh.len(), "addon", "addons")
+                    ),
+                );
             }
             this.update_in(cx, |s, window, cx| {
                 if !done.is_empty() {
