@@ -67,15 +67,35 @@ fn posts(dir: &Path, kind: &str, out: &mut Vec<serde_json::Value>) {
     }
 }
 
+fn tools_art(out: &Path) {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/tools");
+    println!("cargo:rerun-if-changed={}", dir.display());
+    let mut files: Vec<_> = std::fs::read_dir(&dir)
+        .map(|d| d.flatten().map(|e| e.path()).filter(|p| p.is_file()).collect())
+        .unwrap_or_default();
+    files.sort();
+    let mut code = String::from("pub const ART: &[(&str, &[u8])] = &[\n");
+    for path in files {
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+        code += &format!(
+            "    ({name:?}, include_bytes!({:?})),\n",
+            path.display().to_string()
+        );
+    }
+    code += "];\n";
+    std::fs::write(out.join("tools_art.rs"), code).expect("failed to write the tools art table");
+}
+
 fn main() {
     println!("cargo:rerun-if-changed=assets/icon.ico");
     let docs = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs");
     let mut feed = Vec::new();
     posts(&docs.join("news"), "news", &mut feed);
     posts(&docs.join("releases"), "release", &mut feed);
-    let out = Path::new(&std::env::var("OUT_DIR").expect("OUT_DIR")).join("news.json");
+    let out = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
     let json = serde_json::json!({ "posts": feed });
-    std::fs::write(&out, json.to_string()).expect("failed to write the embedded news feed");
+    std::fs::write(out.join("news.json"), json.to_string()).expect("failed to write the embedded news feed");
+    tools_art(&out);
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         let mut res = winresource::WindowsResource::new();
         res.set_icon("assets/icon.ico");
