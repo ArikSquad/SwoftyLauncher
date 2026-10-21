@@ -42,6 +42,7 @@ Inside each file, the prefix on an op names its kind:
 | `erp.replace-resource`, `erp.add-resource`, `erp.remove-resource` | As in [ERP operations](/reference/ops/erp) | Replace one fragment of a resource with a raw file, add a resource from raw fragment files, or remove a resource |
 | `erp.copy-resource`, `erp.patch-pkg` | As in [ERP operations](/reference/ops/erp) | Copy a resource, or edit a `!pkg` resource in place |
 | `erp.overlay` | `erps` (target archives), `source` (a ready overlay archive) | Put every resource in a ready archive into each target, as a `put-resource` of each would. On the runtime route the archive loads as it is |
+| `erp.merge-slices` | `erp`, `resource`, `source` (an archive in the addon) | Write the slices of a texture array that differ from the game's over the array in `erp` ([Texture arrays](/reference/ops/erp#texture-arrays)) |
 | `erp.add-mipmaps` | `source`, `target` | Copy a mip file, or a folder of them, into the game folder |
 | `db.set`, `db.add-row` | As in [database operations](/reference/ops/database) | Change a field, or copy a row |
 | `db.remove-row`, `db.list-append`, `db.list-remove` | As in [database operations](/reference/ops/database) | Not built yet: a build with one fails |

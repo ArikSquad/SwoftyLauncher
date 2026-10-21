@@ -62,6 +62,7 @@ pub fn load_features(loader: &Path) -> Result<Features> {
 pub enum Target {
     Group(String),
     Resource { erp: String, uri: String },
+    Slice { erp: String, uri: String, slice: usize },
     Record(u64),
     String { language: String, key: String },
     File(String),
@@ -72,6 +73,7 @@ impl std::fmt::Display for Target {
         match self {
             Target::Group(g) => write!(f, "asset group {g}"),
             Target::Resource { erp, uri } => write!(f, "{uri} in {erp}"),
+            Target::Slice { erp, uri, slice } => write!(f, "slice {slice} of {uri} in {erp}"),
             Target::Record(key) => write!(f, "database record {key:#018x}"),
             Target::String { language, key } => write!(f, "text {key} ({language})"),
             Target::File(rel) => f.write_str(rel),
@@ -152,6 +154,8 @@ fn erp_target(op: &ErpOp) -> Option<(Target, bool)> {
         }
         // Its resources are only known from the archive; the last writer wins in game.
         ErpOp::Overlay { .. } => None,
+        // The build writes one target per slice it changes, through `Planner::replaced`.
+        ErpOp::MergeSlices { .. } => None,
     }
 }
 
@@ -332,6 +336,10 @@ impl<'a> Planner<'a> {
         if !writers.contains(origin) {
             writers.push(origin.clone());
         }
+    }
+
+    pub fn replaced(&mut self, target: Target, origin: &Origin) {
+        self.write(target, origin, true);
     }
 
     pub fn features(&self) -> Vec<Kind> {

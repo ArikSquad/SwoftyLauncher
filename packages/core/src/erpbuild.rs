@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use swofty_formats::erp::{self, Entry, Erp, ErpFile, Resource};
 use swofty_formats::pkg::{Node, Pkg, Value};
+use swofty_formats::texarray::Array;
 
 use crate::asset::Source;
 use crate::builtin::loader_files;
@@ -14,6 +15,7 @@ use crate::ui::node::component_id;
 use crate::{Error, Result};
 
 const SCENE: &str = "UILayout";
+const ASSET_GROUPS: &str = "2025_asset_groups";
 
 type SourceKey = (String, String, usize);
 
@@ -73,6 +75,20 @@ pub struct ErpBuild<'a> {
     sources: HashMap<SourceKey, Node>,
     archives: HashMap<PathBuf, ErpFile>,
     mipmaps: BTreeMap<String, PathBuf>,
+    stock: HashMap<String, Option<Resource>>,
+    merges: Vec<SliceMerge>,
+}
+
+// What one merge-slices op did: the stock slice count (0 without a stock array), the
+// slices it wrote, whether it replaced the whole resource, and why, as warnings.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SliceMerge {
+    pub erp: String,
+    pub resource: String,
+    pub slices: usize,
+    pub changed: Vec<usize>,
+    pub whole: bool,
+    pub notes: Vec<String>,
 }
 
 fn fail(msg: impl Into<String>) -> Error {
@@ -153,7 +169,8 @@ pub fn reads(op: &ErpOp) -> Vec<&str> {
         ErpOp::PutResource { erp, .. }
         | ErpOp::ReplaceResource { erp, .. }
         | ErpOp::AddResource { erp, .. }
-        | ErpOp::RemoveResource { erp, .. } => vec![erp.as_str()],
+        | ErpOp::RemoveResource { erp, .. }
+        | ErpOp::MergeSlices { erp, .. } => vec![erp.as_str()],
         ErpOp::Overlay { erps, .. } => erps.iter().map(String::as_str).collect(),
         ErpOp::AddMipmaps { .. } => Vec::new(),
     }
@@ -202,6 +219,8 @@ impl<'a> ErpBuild<'a> {
             sources: HashMap::new(),
             archives: HashMap::new(),
             mipmaps: BTreeMap::new(),
+            stock: HashMap::new(),
+            merges: Vec::new(),
         }
     }
 
@@ -261,6 +280,11 @@ impl<'a> ErpBuild<'a> {
                 self.writers.remove(&(erp.clone(), resource.clone()));
                 None
             }
+            ErpOp::MergeSlices { erp, resource, .. } => self
+                .merges
+                .last()
+                .filter(|m| m.whole || !m.changed.is_empty())
+                .map(|_| (erp, resource.as_str())),
             ErpOp::AddMipmaps { .. } | ErpOp::Overlay { .. } => None,
         };
         if let Some((erp, name)) = written {
@@ -365,6 +389,16 @@ impl<'a> ErpBuild<'a> {
                 e.slots.remove(i);
                 Ok(())
             }
+            ErpOp::MergeSlices {
+                erp,
+                resource,
+                source,
+            } => {
+                let path = resolve(source)?;
+                let merge = self.merge_slices(erp, resource, &path)?;
+                self.merges.push(merge);
+                Ok(())
+            }
             ErpOp::Overlay { erps, source } => {
                 let path = resolve(source)?;
                 for name in overlay_names(&path)? {
@@ -424,7 +458,7 @@ impl<'a> ErpBuild<'a> {
         Ok(())
     }
 
-    fn copy(&mut self, from: &Path, resource: &str, erp: &str, name: &str, replace: bool) -> Result<()> {
+    fn load_from(&mut self, from: &Path, resource: &str) -> Result<Resource> {
         if !self.archives.contains_key(from) {
             let file = ErpFile::open(from).map_err(|e| fail(format!("{}: {e}", from.display())))?;
             self.archives.insert(from.to_path_buf(), file);
@@ -434,15 +468,137 @@ impl<'a> ErpBuild<'a> {
             .erp
             .find(resource)
             .map_err(|e| fail(format!("{}: {e}", from.display())))?;
-        let mut res = file.load(found)?;
-        res.name = name.to_owned();
+        Ok(file.load(found)?)
+    }
+
+    fn place(&mut self, erp: &str, res: Resource, replace: bool) -> Result<()> {
+        let name = res.name.clone();
         let target = self.erp(erp)?;
-        match target.position(name).map_err(|e| fail(format!("{erp}: {e}")))? {
+        match target.position(&name).map_err(|e| fail(format!("{erp}: {e}")))? {
             Some(i) if replace => target.slots[i] = Slot::Owned(res),
             Some(_) => return Err(fail(format!("{erp}: {name} already exists"))),
             None => target.slots.push(Slot::Owned(res)),
         }
         Ok(())
+    }
+
+    fn copy(&mut self, from: &Path, resource: &str, erp: &str, name: &str, replace: bool) -> Result<()> {
+        let mut res = self.load_from(from, resource)?;
+        res.name = name.to_owned();
+        self.place(erp, res, replace)
+    }
+
+    // The game's own copy of `resource`: in `erp`, else in the first archive directly
+    // in the asset group folder its name starts with, such as ui_package.
+    fn stock_copy(&mut self, erp: &str, resource: &str) -> Result<Option<Resource>> {
+        let file = &self.erp(erp)?.file;
+        if let Some(r) = file.erp.resources.iter().find(|r| r.name == resource) {
+            return Ok(Some(file.load(r)?));
+        }
+        if let Some(found) = self.stock.get(resource) {
+            return Ok(found.clone());
+        }
+        let mut found = None;
+        let package = resource.strip_prefix("eaid://").and_then(|r| r.split('/').next());
+        if let Some(package) = package.filter(|p| relative_inside(p)) {
+            let dir = format!("{ASSET_GROUPS}/{package}");
+            let mut names: Vec<String> = std::fs::read_dir((self.original)(&dir))
+                .into_iter()
+                .flatten()
+                .filter_map(|e| e.ok()?.file_name().into_string().ok())
+                .filter(|n| n.to_ascii_lowercase().ends_with(".erp"))
+                .collect();
+            names.sort();
+            for name in names {
+                let path = (self.original)(&format!("{dir}/{name}"));
+                let hits = Erp::read_matching(&path, |n| n == resource)
+                    .map_err(|e| fail(format!("{dir}/{name}: {e}")))?;
+                if let Some(r) = hits.into_iter().next() {
+                    found = Some(r);
+                    break;
+                }
+            }
+        }
+        self.stock.insert(resource.to_owned(), found.clone());
+        Ok(found)
+    }
+
+    fn current(&mut self, erp: &str, resource: &str) -> Result<Option<Resource>> {
+        let target = self.erp(erp)?;
+        let Some(i) = target
+            .position(resource)
+            .map_err(|e| fail(format!("{erp}: {e}")))?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(match &target.slots[i] {
+            Slot::Owned(r) => r.clone(),
+            Slot::Stock(j) => target.file.load(&target.file.erp.resources[*j])?,
+        }))
+    }
+
+    fn merge_slices(&mut self, erp: &str, resource: &str, from: &Path) -> Result<SliceMerge> {
+        let mut merge = SliceMerge {
+            erp: erp.to_owned(),
+            resource: resource.to_owned(),
+            ..SliceMerge::default()
+        };
+        let source = self.load_from(from, resource)?;
+        let stock = self.stock_copy(erp, resource)?;
+        let Some((stock, base)) = stock.as_ref().and_then(|r| Array::read(r).map(|a| (r, a))) else {
+            merge.whole = true;
+            merge.notes.push(match stock {
+                Some(_) => format!(
+                    "the game's {resource} is not a texture array; it replaces the whole resource in {erp}"
+                ),
+                None => format!("the game has no {resource}; it replaces the whole resource in {erp}"),
+            });
+            self.place(erp, source, true)?;
+            return Ok(merge);
+        };
+        merge.slices = base.count;
+        let theirs = match Array::read(&source) {
+            Some(a) if a.fits(&base) => a,
+            _ => {
+                merge.whole = true;
+                merge.notes.push(format!(
+                    "{resource} differs in format or slice size from the game's array; it replaces the whole resource in {erp}"
+                ));
+                self.place(erp, source, true)?;
+                return Ok(merge);
+            }
+        };
+        if theirs.count > base.count {
+            merge.notes.push(format!(
+                "{resource} has {} slices, the game's {}; the slices past {} are left out",
+                theirs.count, base.count, base.count
+            ));
+        }
+        let (mut res, mut into) = match self.current(erp, resource)? {
+            Some(r) => match Array::read(&r).filter(|a| a.same_layout(&base)) {
+                Some(a) => (r, a),
+                None => {
+                    merge.notes.push(format!(
+                        "{resource} in {erp} has another layout from an earlier addon; the slices merge over the game's array instead"
+                    ));
+                    (stock.clone(), base.clone())
+                }
+            },
+            None => (stock.clone(), base.clone()),
+        };
+        merge.changed = into.merge(&base, &theirs);
+        if merge.changed.is_empty() {
+            merge.notes.clear();
+            return Ok(merge);
+        }
+        res.set_fragment(1, &into.data)
+            .map_err(|e| fail(format!("{erp}: {e}")))?;
+        self.place(erp, res, true)?;
+        Ok(merge)
+    }
+
+    pub fn take_merges(&mut self) -> Vec<SliceMerge> {
+        std::mem::take(&mut self.merges)
     }
 
     fn patch(
@@ -1419,6 +1575,254 @@ mod tests {
             let ops = erp_ops(&format!(r#"{{"schema_version":1,"ops":[{bad}]}}"#));
             assert!(apply(&mut ErpBuild::new(&original), &ops, &addon).is_err());
         }
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    const LOGOS: &str =
+        "eaid://ui_package/art/texture_arrays/overrides.uidb/overrides.team_logos.f1_2026.texarray.image";
+    const UI: &str = "2025_asset_groups/ui_package/common_front_end.erp";
+    const BOOT: &str = "2025_asset_groups/vfx_package/common.erp";
+
+    fn array(width: u32, slices: &[[u8; 4]]) -> Resource {
+        let mut head = vec![0u8; 40];
+        head[12..16].copy_from_slice(&width.to_le_bytes());
+        head[16..20].copy_from_slice(&2u32.to_le_bytes());
+        head[28..32].copy_from_slice(&(slices.len() as u32).to_le_bytes());
+        let fragment = |data: Vec<u8>| Fragment {
+            name: *b"temp",
+            offset: 0,
+            size: data.len() as u64,
+            flags: 0x10,
+            compression: STORED,
+            packed: data.len() as u64,
+            raw: data,
+        };
+        let mut r = Resource {
+            name: LOGOS.into(),
+            kind: erp::kind("GfxSurfaceRes").unwrap(),
+            unk: vec![0; 4],
+            fragments: vec![fragment(head), fragment(slices.concat())],
+            hash: [0; 16],
+        };
+        r.hash = r.content_hash().unwrap();
+        r
+    }
+
+    fn texture_erp(resources: Vec<Resource>) -> Vec<u8> {
+        let mut header = [0u8; HEADER_LEN];
+        header[..4].copy_from_slice(MAGIC);
+        header[4..8].copy_from_slice(&3u32.to_le_bytes());
+        Erp {
+            header,
+            version: 3,
+            resources,
+        }
+        .to_bytes()
+    }
+
+    fn slices_in(r: &Resource) -> Vec<u8> {
+        r.fragments[1].data().unwrap().chunks(4).map(|c| c[0]).collect()
+    }
+
+    fn texture_game(name: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!("swofty-erpbuild-slices-{name}-{}", std::process::id()));
+        std::fs::remove_dir_all(&root).ok();
+        let game = root.join("game");
+        for (rel, body) in [
+            (
+                "2025_asset_groups/ui_package/a_other.erp",
+                texture_erp(vec![Resource {
+                    name: "eaid://ui_package/x.image".into(),
+                    ..array(2, &[[0; 4], [0; 4]])
+                }]),
+            ),
+            (UI, texture_erp(vec![array(2, &[[0; 4], [1; 4], [2; 4], [3; 4]])])),
+            (
+                BOOT,
+                texture_erp(vec![Resource {
+                    name: "eaid://vfx_package/y.image".into(),
+                    ..array(2, &[[0; 4], [0; 4]])
+                }]),
+            ),
+        ] {
+            std::fs::create_dir_all(game.join(rel).parent().unwrap()).unwrap();
+            std::fs::write(game.join(rel), body).unwrap();
+        }
+        root
+    }
+
+    fn merge_op(erp: &str, source: &str) -> ErpOp {
+        ErpOp::MergeSlices {
+            erp: erp.into(),
+            resource: LOGOS.into(),
+            source: Source::addon(source),
+        }
+    }
+
+    #[test]
+    fn merges_changed_slices_over_the_array_in_place_in_load_order() {
+        let root = texture_game("order");
+        let (game, addon) = (root.join("game"), root.join("addon"));
+        std::fs::create_dir_all(&addon).unwrap();
+        let mods: [(&str, Resource); 7] = [
+            ("a", array(2, &[[0; 4], [9; 4], [2; 4], [3; 4]])),
+            ("b", array(2, &[[0; 4], [7; 4], [2; 4], [8; 4]])),
+            ("c", array(2, &[[0; 4], [1; 4], [2; 4], [3; 4]])),
+            ("d", array(2, &[[6; 4], [1; 4]])),
+            ("e", array(2, &[[0; 4], [1; 4], [5; 4], [3; 4], [7; 4]])),
+            ("f", array(4, &[[4; 4], [4; 4]])),
+            ("g", array(2, &[[0; 4], [1; 4], [2; 4], [4; 4]])),
+        ];
+        for (id, r) in &mods {
+            std::fs::write(addon.join(format!("{id}.erp")), texture_erp(vec![r.clone()])).unwrap();
+        }
+        let original = |rel: &str| game.join(rel);
+        let resolve = |s: &Source| Ok(s.resolve(&addon)?);
+        let mut b = ErpBuild::new(&original);
+        let mut seen = Vec::new();
+        let mut current = Vec::new();
+        for (id, _) in &mods {
+            b.apply_for(&merge_op(BOOT, &format!("{id}.erp")), id, &resolve)
+                .unwrap();
+            let [m] = b.take_merges().try_into().unwrap();
+            seen.push((m.changed, m.whole, m.notes));
+            let res = b
+                .resources()
+                .find(|(_, r, _, _)| r.name == LOGOS)
+                .map(|(_, r, _, o)| (slices_in(r), o.to_owned()));
+            current.push(res);
+        }
+        let none: Vec<String> = Vec::new();
+        assert_eq!(seen[0], (vec![1], false, none.clone()));
+        assert_eq!(seen[1], (vec![1, 3], false, none.clone()));
+        assert_eq!(seen[2], (vec![], false, none.clone()));
+        assert_eq!(seen[3], (vec![0], false, none.clone()));
+        assert_eq!(
+            seen[4],
+            (
+                vec![2],
+                false,
+                vec![format!(
+                    "{LOGOS} has 5 slices, the game's 4; the slices past 4 are left out"
+                )]
+            )
+        );
+        assert_eq!(
+            seen[5],
+            (
+                vec![],
+                true,
+                vec![format!(
+                    "{LOGOS} differs in format or slice size from the game's array; it replaces the whole resource in {BOOT}"
+                )]
+            )
+        );
+        assert_eq!(
+            seen[6],
+            (
+                vec![3],
+                false,
+                vec![format!(
+                    "{LOGOS} in {BOOT} has another layout from an earlier addon; the slices merge over the game's array instead"
+                )]
+            )
+        );
+        let at = |i: usize| current[i].clone().unwrap();
+        assert_eq!(at(0), (vec![0, 9, 2, 3], "a".to_owned()));
+        assert_eq!(at(1), (vec![0, 7, 2, 8], "b".to_owned()));
+        assert_eq!(at(2), (vec![0, 7, 2, 8], "b".to_owned()));
+        assert_eq!(at(4), (vec![6, 7, 5, 8], "e".to_owned()));
+        assert_eq!(at(5), (vec![4, 4], "f".to_owned()));
+        assert_eq!(at(6), (vec![0, 1, 2, 4], "g".to_owned()));
+        assert_eq!(b.origins(), ["a", "b", "d", "e", "f", "g"]);
+        assert!(b.resized().is_empty());
+        let out = root.join("out");
+        assert_eq!(b.write(&out).unwrap(), [BOOT]);
+        let file = ErpFile::open(&out.join(BOOT)).unwrap();
+        let names: Vec<&str> = file.erp.resources.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, ["eaid://vfx_package/y.image", LOGOS]);
+        let merged = file.load(file.erp.find(LOGOS).unwrap()).unwrap();
+        assert_eq!(slices_in(&merged), [0, 1, 2, 4]);
+        assert_eq!(
+            merged.fragments[0].data().unwrap(),
+            array(2, &[[0; 4]; 4]).fragments[0].data().unwrap()
+        );
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn a_merge_into_the_stock_archive_keeps_its_layout_for_the_runtime_route() {
+        let root = texture_game("runtime");
+        let (game, addon) = (root.join("game"), root.join("addon"));
+        std::fs::create_dir_all(&addon).unwrap();
+        std::fs::write(
+            addon.join("a.erp"),
+            texture_erp(vec![array(2, &[[0; 4], [1; 4], [9; 4], [3; 4]])]),
+        )
+        .unwrap();
+        std::fs::write(addon.join("wide.erp"), texture_erp(vec![array(4, &[[5; 4]; 3])])).unwrap();
+        let original = |rel: &str| game.join(rel);
+        let resolve = |s: &Source| Ok(s.resolve(&addon)?);
+        let mut b = ErpBuild::new(&original);
+        b.apply_for(&merge_op(UI, "a.erp"), "a", &resolve).unwrap();
+        assert!(b.resized().is_empty());
+        let mut rt = Runtime::new(Vec::new());
+        let out = root.join("overlay");
+        let notes = rt.resources(b.resources(), &["a".into()], &[], &out).unwrap();
+        assert!(notes.is_empty(), "{notes:?}");
+        let overlay = Erp::parse(&std::fs::read(out.join("swofty/assets/resources/0.erp")).unwrap()).unwrap();
+        assert_eq!(slices_in(&overlay.resources[0]), [0, 1, 9, 3]);
+        assert_eq!(rt.assets.resource_erps[0].erps, [UI]);
+
+        b.apply_for(&merge_op(UI, "wide.erp"), "wide", &resolve).unwrap();
+        let resized = b.resized();
+        assert_eq!(resized.len(), 1);
+        assert_eq!(resized[0].erp, UI);
+        assert!(b.take_merges().iter().all(|m| m.slices == 4));
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn an_array_the_game_lacks_goes_in_whole() {
+        let root = texture_game("missing");
+        let (game, addon) = (root.join("game"), root.join("addon"));
+        std::fs::create_dir_all(&addon).unwrap();
+        let other = "eaid://ui_package/art/texture_arrays/new.texarray.image";
+        std::fs::write(
+            addon.join("a.erp"),
+            texture_erp(vec![Resource {
+                name: other.into(),
+                ..array(2, &[[1; 4], [2; 4]])
+            }]),
+        )
+        .unwrap();
+        let original = |rel: &str| game.join(rel);
+        let mut b = ErpBuild::new(&original);
+        let op = ErpOp::MergeSlices {
+            erp: BOOT.into(),
+            resource: other.into(),
+            source: Source::addon("a.erp"),
+        };
+        b.apply_for(&op, "a", &|s: &Source| Ok(s.resolve(&addon)?))
+            .unwrap();
+        let [m] = b.take_merges().try_into().unwrap();
+        assert_eq!(
+            (m.whole, m.slices, m.notes),
+            (
+                true,
+                0,
+                vec![format!(
+                    "the game has no {other}; it replaces the whole resource in {BOOT}"
+                )]
+            )
+        );
+        let added: Vec<Vec<u8>> = b.resources().map(|(_, r, _, _)| slices_in(r)).collect();
+        assert_eq!(added, [vec![1, 2]]);
+        let missing = merge_op(BOOT, "none.erp");
+        assert!(
+            b.apply_for(&missing, "a", &|s: &Source| Ok(s.resolve(&addon)?))
+                .is_err()
+        );
         std::fs::remove_dir_all(&root).ok();
     }
 }

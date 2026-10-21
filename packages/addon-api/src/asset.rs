@@ -118,7 +118,8 @@ impl AssetOp {
                 ErpOp::ReplaceResource { source, .. }
                 | ErpOp::PutResource { source, .. }
                 | ErpOp::AddMipmaps { source, .. }
-                | ErpOp::Overlay { source, .. },
+                | ErpOp::Overlay { source, .. }
+                | ErpOp::MergeSlices { source, .. },
             )
             | AssetOp::Lang(LangOp::Table { source, .. })
             | AssetOp::File(FileOp::Put { source, .. })

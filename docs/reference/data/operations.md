@@ -74,7 +74,7 @@ In an `assets` file, the prefix before the dot names the kind:
 | Kind | Ops | Changes | Reference |
 |---|---|---|---|
 | `db.*` | `db.set`, `db.add-row`, `db.put-record`, `db.remove-record` | Game database records | [Database operations](/reference/ops/database) |
-| `erp.*` | `erp.replace-resource`, `erp.add-resource`, `erp.copy-resource`, `erp.put-resource`, `erp.remove-resource`, `erp.add-mipmaps`, `erp.patch-pkg` | Archive resources, and mip files in the game folder | [ERP operations](/reference/ops/erp) |
+| `erp.*` | `erp.replace-resource`, `erp.add-resource`, `erp.copy-resource`, `erp.put-resource`, `erp.remove-resource`, `erp.merge-slices`, `erp.add-mipmaps`, `erp.patch-pkg` | Archive resources, and mip files in the game folder | [ERP operations](/reference/ops/erp) |
 | `lang.*` | `lang.set`, `lang.table` | In-game strings, in one language or all (`*`); new keys are added | [In-game text](./text) |
 | `group.*` | `group.register` | An asset group in the engine's asset manifest | [Asset API](/reference/addons/asset-api#op-files) |
 | `file.*` | `file.put` | A loose file in the game folder | [File operations](/reference/ops/files) |
@@ -137,6 +137,7 @@ warning: conflict: text lng_team_tor_hashtag (eng): teamsimplified.mods (rm-desi
 |---|---|---|
 | A database record | `db.set`, `db.put-record`, `db.remove-record` | `db.add-row` |
 | A resource in an archive | `erp.put-resource`, `erp.replace-resource`, `erp.remove-resource` | `erp.add-resource`, `erp.copy-resource`, `erp.patch-pkg` |
+| A slice of a texture array | `erp.merge-slices` | |
 | A string in a language | `lang.set` | |
 | A game path | `file.put`, `erp.add-mipmaps` | |
 | An asset group | | `group.register` |
