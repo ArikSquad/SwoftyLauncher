@@ -687,7 +687,7 @@ impl Shell {
             return Vec::new();
         };
         let mut groups: Vec<(String, Vec<ChangeItem>)> = Vec::new();
-        for e in &self.db.edits.edits {
+        for e in &self.db.draft.edits.edits {
             let node = catalog.node_of_key(e.key);
             let (name, group) = match node {
                 Some(n) if e.stock.is_some() => {
@@ -741,36 +741,29 @@ impl Shell {
     }
 
     pub(crate) fn db_changes(&mut self, p: Palette, cx: &mut Context<Self>) -> AnyElement {
-        let n = self.db.edits.len();
-        let actions = h_flex()
-            .gap(px(8.))
-            .child(
-                Button::new("db-changes-export")
-                    .outline()
-                    .small()
-                    .icon(IconName::FileUp)
-                    .label("Export .zip…")
-                    .disabled(self.db.editing.is_none())
-                    .on_click(cx.listener(|this, _, window, cx| this.db_export(window, cx))),
-            )
-            .child(
-                Button::new("db-revert-all")
-                    .outline()
-                    .small()
-                    .icon(IconName::Undo2)
-                    .label("Revert all changes")
-                    .disabled(n == 0 || self.db_locked())
-                    .on_click(cx.listener(|this, _, window, cx| this.db_revert_all(window, cx))),
-            );
+        let n = self.db.draft.edits.len();
+        let actions = h_flex().gap(px(8.)).child(
+            Button::new("db-revert-all")
+                .outline()
+                .small()
+                .icon(IconName::Undo2)
+                .label("Revert all changes")
+                .disabled(n == 0 || self.db_locked())
+                .on_click(cx.listener(|this, _, window, cx| this.db_revert_all(window, cx))),
+        );
         let head = h_flex()
             .gap(px(12.))
             .flex_shrink_0()
             .child(super::page::section_head(
                 IconName::ListChecks,
                 "Changes",
-                &match self.db_editing() {
-                    Some(info) => format!("{} in {}", plural(n, "change", "changes"), info.name),
-                    None => "No package is being edited".to_owned(),
+                &match self.db.draft.unsaved() {
+                    0 => format!("{} in {}", plural(n, "change", "changes"), self.db_draft_name()),
+                    k => format!(
+                        "{} in {} · {k} not saved yet",
+                        plural(n, "change", "changes"),
+                        self.db_draft_name()
+                    ),
                 },
                 p,
             ))
@@ -783,7 +776,7 @@ impl Shell {
                 .child(self.empty(
                     IconName::ListChecks,
                     "No changes yet",
-                    "Values you change in the modules or the table browser show up here, saved to the package you are editing.",
+                    "Values you change in the modules or the table browser show up here. Save them as an addon to use them in the game.",
                     div(),
                     p,
                 ))
