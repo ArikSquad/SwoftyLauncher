@@ -1,8 +1,8 @@
-//! The DB Editor: the stock game database named and browsable, packages of
-//! edits on top of it installed as data addons, and the friendly modules the
-//! launcher draws.
+//! The DB Editor: the stock game database named and browsable, a draft of
+//! edits saved as data addons, and the friendly modules the launcher draws.
 
 mod catalog;
+pub mod draft;
 mod edits;
 mod ego;
 mod modules;
@@ -11,12 +11,13 @@ mod schema;
 mod search;
 
 pub use catalog::{Catalog, FieldMeta, Node, NodeId, NodeKind, RecordView, UNNAMED};
+pub use draft::Draft;
 pub use edits::{Edit, Edits, ImportReport, Origin, bool_text, validate, validate_like};
 pub use modules::{
     Cell, Column, FieldSpec, Kind, LinkSpec, Module, ModuleRow, ModuleView, NameSpec, OptionSpec, RefSpec,
     Scope, module, modules,
 };
-pub use package::{GameExport, Imported, Package, PackageInfo};
+pub use package::{GameExport, Imported, Incoming, Package, PackageInfo};
 pub use search::{Hit, HitKind, Target};
 
 use std::path::PathBuf;

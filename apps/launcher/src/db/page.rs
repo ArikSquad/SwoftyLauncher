@@ -132,19 +132,43 @@ impl Shell {
     fn db_header(&self, p: Palette, cx: &mut Context<Self>) -> impl IntoElement {
         let profile = self.library.profile.name.clone();
         let ready = self.db.catalog().is_some();
-        let n = self.db.edits.len();
-        let info = self.db_editing();
-        let on = info.is_some_and(|i| self.db_enabled(&i.id));
-        let status = match (info, &self.db.pkg_error) {
-            (_, Some(_)) => "Could not be read".to_owned(),
-            (Some(_), None) if on => format!("{} · on in {profile}", plural(n, "change", "changes")),
-            (Some(_), None) => format!("{} · off in {profile}", plural(n, "change", "changes")),
-            (None, None) => format!("Your first change creates {}", super::FIRST_PACKAGE),
+        let n = self.db.draft.edits.len();
+        let unsaved = self.db.draft.unsaved();
+        let bound = self.db.draft.addon.clone();
+        let info = self.db_bound().cloned();
+        let on = bound.as_deref().is_some_and(|id| self.db_enabled(id));
+        let broken = self.db_locked();
+        let target = match (&bound, &info) {
+            (Some(_), Some(i)) => format!("{} {}", i.name, i.version),
+            (Some(id), None) => id.clone(),
+            (None, _) => "New addon".to_owned(),
         };
-        let turn_on = info.filter(|_| !on && self.db.pkg_error.is_none()).map(|i| {
-            let id = i.id.clone();
+        let place = match &bound {
+            Some(_) if broken => Some("Could not be read".to_owned()),
+            Some(_) if on => Some(format!("on in {profile}")),
+            Some(_) => Some(format!("off in {profile}")),
+            None => None,
+        };
+        let (state, color) = match (unsaved, &bound) {
+            (0, Some(_)) => ("Saved".to_owned(), p.success),
+            (0, None) => ("No changes yet".to_owned(), p.text_placeholder),
+            (k, _) => (format!("Unsaved changes · {k}"), p.warning),
+        };
+        let pill = h_flex()
+            .h(px(22.))
+            .px(px(8.))
+            .gap(px(5.))
+            .flex_shrink_0()
+            .rounded(px(11.))
+            .bg(color.opacity(0.13))
+            .text_size(px(12.))
+            .font_weight(FontWeight::MEDIUM)
+            .text_color(color)
+            .child(div().size(px(6.)).rounded_full().bg(color))
+            .child(state);
+        let turn_on = bound.clone().filter(|_| !on && !broken).map(|id| {
             Button::new("db-turn-on")
-                .outline()
+                .ghost()
                 .xsmall()
                 .icon(IconName::Power)
                 .label("Turn on")
@@ -154,6 +178,44 @@ impl Shell {
                     cx.listener(move |this, _, window, cx| this.set_addon_enabled(&id, true, window, cx)),
                 )
         });
+        let details = bound.as_ref().filter(|_| !broken).map(|_| {
+            Button::new("db-details")
+                .ghost()
+                .xsmall()
+                .icon(IconName::SquarePen)
+                .label("Details…")
+                .on_click(cx.listener(|this, _, window, cx| this.db_details(window, cx)))
+        });
+        let fresh = bound.as_ref().map(|_| {
+            Button::new("db-new-draft")
+                .ghost()
+                .xsmall()
+                .icon(IconName::Plus)
+                .label("New addon")
+                .tooltip("Start a new addon from the game's stock values")
+                .on_click(cx.listener(|this, _, window, cx| this.db_new_draft(window, cx)))
+        });
+        let discard = (unsaved > 0 && !broken).then(|| {
+            Button::new("db-discard")
+                .ghost()
+                .xsmall()
+                .icon(IconName::Undo2)
+                .label("Discard changes")
+                .on_click(cx.listener(|this, _, window, cx| this.db_discard(window, cx)))
+        });
+        let save = match &bound {
+            Some(_) => Button::new("db-save")
+                .primary()
+                .icon(IconName::Save)
+                .label("Save")
+                .disabled(!ready || broken || unsaved == 0),
+            None => Button::new("db-save")
+                .primary()
+                .icon(IconName::PackagePlus)
+                .label("Save as Addon")
+                .disabled(!ready || n == 0),
+        }
+        .on_click(cx.listener(|this, _, window, cx| this.db_save(window, cx)));
         let actions = h_flex()
             .gap(px(8.))
             .child(
@@ -165,7 +227,7 @@ impl Shell {
                     .disabled(!ready || self.db.importing)
                     .on_click(cx.listener(|this, _, window, cx| this.db_import(window, cx))),
             )
-            .child(self.db_export_menu("db-export".into(), None, true, cx))
+            .child(self.db_export_menu(cx))
             .child(
                 Button::new("db-changes")
                     .outline()
@@ -173,7 +235,8 @@ impl Shell {
                     .label(format!("Changes ({n})"))
                     .disabled(!ready)
                     .on_click(cx.listener(|this, _, _, cx| this.db_go(Nav::Changes, cx))),
-            );
+            )
+            .child(save);
         h_flex()
             .px(px(GUTTER))
             .pt(px(22.))
@@ -196,28 +259,34 @@ impl Shell {
                         h_flex()
                             .gap(px(10.))
                             .min_w_0()
-                            .child(div().text_size(px(13.)).text_color(p.text_muted).child("Editing"))
-                            .child(self.db_picker(!ready, cx))
+                            .child(
+                                Icon::new(if bound.is_some() {
+                                    IconName::Pencil
+                                } else {
+                                    IconName::PackagePlus
+                                })
+                                .size(px(14.))
+                                .text_color(p.text_muted),
+                            )
                             .child(
                                 div()
                                     .text_size(px(13.))
-                                    .text_color(if on { p.text_muted } else { p.text_placeholder })
+                                    .font_weight(FontWeight::MEDIUM)
                                     .truncate()
-                                    .child(status),
+                                    .child(target),
                             )
+                            .children(place.map(|t| {
+                                div()
+                                    .text_size(px(13.))
+                                    .flex_shrink_0()
+                                    .text_color(if broken { p.error } else { p.text_muted })
+                                    .child(t)
+                            }))
+                            .when(!broken, |d| d.child(pill))
                             .children(turn_on)
-                            .when(n > 0 && !self.db_locked(), |d| {
-                                d.child(
-                                    Button::new("db-header-revert")
-                                        .ghost()
-                                        .xsmall()
-                                        .icon(IconName::Undo2)
-                                        .label("Revert all changes")
-                                        .on_click(
-                                            cx.listener(|this, _, window, cx| this.db_revert_all(window, cx)),
-                                        ),
-                                )
-                            }),
+                            .children(discard)
+                            .children(details)
+                            .children(fresh),
                     ),
             )
             .child(h_flex().gap(px(8.)).pb(px(2.)).child(actions))
@@ -257,30 +326,30 @@ impl Shell {
                 "db-vanilla-notice",
                 IconName::Lock,
                 p.warning,
-                "Vanilla stays stock. You can still edit packages here; turn them on in another profile."
+                "Vanilla stays stock. You can still edit and save addons here; turn them on in another profile."
                     .into(),
                 p,
             )
             .mx(px(GUTTER))
             .mb(px(10.))
         });
-        let broken = self.db.pkg_error.clone().map(|e| {
+        let broken = self.db.addon_error.clone().map(|e| {
             notice(
-                "db-package-error",
+                "db-addon-error",
                 IconName::CircleAlert,
                 p.error,
-                format!("This package could not be read, so it can't be edited: {e}"),
+                format!("This addon could not be read, so it can't be edited: {e}"),
                 p,
             )
             .mx(px(GUTTER))
             .mb(px(10.))
             .child(
-                Button::new("db-package-retry")
+                Button::new("db-addon-retry")
                     .outline()
                     .small()
                     .icon(IconName::RefreshCw)
                     .label("Try again")
-                    .on_click(cx.listener(|this, _, _, cx| this.db_refresh_packages(cx))),
+                    .on_click(cx.listener(|this, _, _, cx| this.db_retry(cx))),
             )
         });
         let body = match &self.db.load {
@@ -350,7 +419,6 @@ impl Shell {
 
     fn db_body(&mut self, p: Palette, cx: &mut Context<Self>) -> AnyElement {
         let main = match self.db.nav.clone() {
-            Nav::Packages => self.db_packages(p, cx),
             Nav::Module(id) => self.db_module(&id, p, cx),
             Nav::Raw(node) => self.db_raw(node, p, cx),
             Nav::Unnamed => self.db_unnamed_view(p, cx),
@@ -553,19 +621,6 @@ impl Shell {
                     .into_any_element()
             })
             .collect();
-        let packages = v_flex()
-            .gap(px(2.))
-            .child(label("PACKAGES", p).px(px(10.)).pb(px(4.)))
-            .child(item(
-                "db-nav-packages".into(),
-                IconName::Package,
-                "All packages".into(),
-                Some(self.db.packages.len().to_string()),
-                Nav::Packages,
-                cx,
-            ))
-            .into_any_element();
-        sections.insert(0, packages);
         let root = catalog.as_ref().map_or(0, |c| c.root());
         let unnamed = catalog.as_ref().map(|c| c.records().saturating_sub(c.named()));
         let advanced: Vec<AnyElement> = vec![
@@ -589,7 +644,7 @@ impl Shell {
                 "db-nav-changes".into(),
                 IconName::ListChecks,
                 "Changes".into(),
-                Some(self.db.edits.len().to_string()),
+                Some(self.db.draft.edits.len().to_string()),
                 Nav::Changes,
                 cx,
             ),
@@ -919,7 +974,7 @@ impl Shell {
                                         .border_color(p.warning)
                                         .tooltip(|window, cx| {
                                             gpui_kit::component::tooltip::Tooltip::new(
-                                                "Another package on in this profile changes this row",
+                                                "Another DB Editor addon on in this profile changes this row",
                                             )
                                             .build(window, cx)
                                         }),

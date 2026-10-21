@@ -6,37 +6,42 @@ use anyhow::{Context, Result, anyhow, bail};
 use clap::Subcommand;
 use swofty_core::dbedit::package::{self, Package};
 use swofty_core::dbedit::{Catalog, Edits, NodeId, NodeKind};
+use swofty_core::manifest::Category;
 use swofty_core::store::Store;
 
 #[derive(Subcommand)]
 pub enum DbCommand {
-    #[command(about = "List DB Editor packages and whether each is on in the profile")]
-    Packages,
-    #[command(about = "Create an empty package")]
+    #[command(
+        about = "List DB Editor addons and whether each is on in the profile",
+        alias = "packages"
+    )]
+    Addons,
+    #[command(about = "Create an empty DB Editor addon")]
     New { name: String },
-    #[command(about = "Delete a package from every profile")]
+    #[command(about = "Delete a DB Editor addon from every profile")]
     Delete { id: String },
-    #[command(about = "Write a package to a .zip to share it")]
+    #[command(about = "Write a DB Editor addon to a .zip to share it")]
     Export { id: String, file: PathBuf },
     #[command(
-        about = "Add a package from a .zip, a DB Editor export, an EGO GameDatabases Editor export, or a modded gamedatabases.2025.bin or mod .zip holding one"
+        about = "Add a DB Editor addon from a .zip, a DB Editor export, an EGO GameDatabases Editor export, or a modded gamedatabases.2025.bin or mod .zip holding one"
     )]
     Import { file: PathBuf },
     #[command(
-        about = "Write the game database with packages applied to a .zip players without the launcher extract into the game folder"
+        about = "Write the game database with DB Editor addons applied to a .zip players without the launcher extract into the game folder"
     )]
     ExportGame {
         file: PathBuf,
         #[arg(
-            long = "package",
+            long = "addon",
+            alias = "package",
             value_name = "ID",
-            help = "A package to apply, in order; repeat it (default: the packages on in the profile, in load order)"
+            help = "An addon to apply, in order; repeat it (default: the DB Editor addons on in the profile, in load order)"
         )]
-        packages: Vec<String>,
+        addons: Vec<String>,
     },
-    #[command(about = "Turn off every package that is on in the profile")]
+    #[command(about = "Turn off every DB Editor addon that is on in the profile")]
     OffAll,
-    #[command(about = "Show a package's details, or change them with the flags")]
+    #[command(about = "Show a DB Editor addon's details, or change them with the flags")]
     Details {
         id: String,
         #[arg(long)]
@@ -47,6 +52,8 @@ pub enum DbCommand {
         author: Option<String>,
         #[arg(long)]
         description: Option<String>,
+        #[arg(long, value_parser = category, help = "One of tracks, liveries, cars, drivers-teams, seasons, database, gameplay, ui, audio, tools, other")]
+        category: Option<Category>,
     },
     #[command(about = "Search names, tables, keys, values and English text")]
     Search {
@@ -58,15 +65,19 @@ pub enum DbCommand {
     Get {
         #[arg(help = "A dotted or selector path, or 0x and 16 hex digits")]
         path: String,
-        #[arg(long, help = "Show values with this package's changes (default: stock)")]
-        package: Option<String>,
+        #[arg(
+            long,
+            alias = "package",
+            help = "Show values with this addon's changes (default: stock)"
+        )]
+        addon: Option<String>,
     },
-    #[command(about = "Change a key's value in a package")]
+    #[command(about = "Change a key's value in a DB Editor addon")]
     Set {
         path: String,
         value: String,
-        #[arg(long)]
-        package: String,
+        #[arg(long, alias = "package")]
+        addon: String,
     },
     #[command(
         about = "Add a key the game database lacks; TYPE is the record type number (0 int, 1 float, 2 string)"
@@ -76,33 +87,38 @@ pub enum DbCommand {
         #[arg(value_name = "TYPE")]
         tag: u8,
         value: String,
-        #[arg(long)]
-        package: String,
+        #[arg(long, alias = "package")]
+        addon: String,
     },
-    #[command(about = "Put a key back to its stock value in a package, or every key with --all")]
+    #[command(about = "Put a key back to its stock value in a DB Editor addon, or every key with --all")]
     Revert {
         path: Option<String>,
         #[arg(long)]
         all: bool,
-        #[arg(long)]
-        package: String,
+        #[arg(long, alias = "package")]
+        addon: String,
     },
-    #[command(about = "List a package's database changes")]
+    #[command(about = "List a DB Editor addon's database changes")]
     List {
-        #[arg(long)]
-        package: String,
+        #[arg(long, alias = "package")]
+        addon: String,
     },
+}
+
+fn category(s: &str) -> std::result::Result<Category, String> {
+    serde_json::from_value(serde_json::Value::String(s.to_owned()))
+        .map_err(|_| format!("{s} is not a category; see --help"))
 }
 
 fn open(store: &Store, id: &str) -> Result<Package> {
     if !package::is_package(store, id) {
-        bail!("no DB Editor package named {id}; swofty db packages lists them");
+        bail!("no DB Editor addon named {id}; swofty db addons lists them");
     }
     Ok(Package::open(store, id)?)
 }
 
-/// Opens the package, applies `change` and saves it; when another writer saved
-/// the package in between, starts over from its file.
+/// Opens the addon, applies `change` and saves it; when another writer saved
+/// the addon in between, starts over from its file.
 fn edit<T>(
     store: &Store,
     cat: &Catalog,
@@ -128,7 +144,7 @@ pub fn command(store: &Store, profile: &str, game: Option<PathBuf>, cmd: DbComma
     };
     let key_of = |cat: &Catalog, p: &str| cat.resolve(p).map_err(|e| anyhow!("{e}"));
     match cmd {
-        DbCommand::Packages => {
+        DbCommand::Addons => {
             let p = store.profile(profile)?;
             let on: Vec<&str> = p.enabled().collect();
             let package::Scan {
@@ -146,7 +162,7 @@ pub fn command(store: &Store, profile: &str, game: Option<PathBuf>, cmd: DbComma
                 );
             }
             println!(
-                "{} package(s); on/off is for {profile}",
+                "{} DB Editor addon(s); on/off is for {profile}",
                 all.len() + damaged.len()
             );
         }
@@ -194,13 +210,13 @@ pub fn command(store: &Store, profile: &str, game: Option<PathBuf>, cmd: DbComma
                 println!("  {prefix}{s}");
             }
         }
-        DbCommand::ExportGame { file, packages } => {
-            let ids = match packages.is_empty() {
+        DbCommand::ExportGame { file, addons } => {
+            let ids = match addons.is_empty() {
                 true => package::enabled_packages(store, profile)?,
-                false => packages,
+                false => addons,
             };
             if ids.is_empty() {
-                bail!("no packages are on in {profile}; pass --package <id>");
+                bail!("no DB Editor addons are on in {profile}; pass --addon <id>");
             }
             for id in &ids {
                 open(store, id)?;
@@ -220,7 +236,7 @@ pub fn command(store: &Store, profile: &str, game: Option<PathBuf>, cmd: DbComma
         }
         DbCommand::OffAll => {
             let n = package::turn_off_all(store, profile)?;
-            println!("turned off {n} package(s) in {profile}");
+            println!("turned off {n} DB Editor addon(s) in {profile}");
         }
         DbCommand::Details {
             id,
@@ -228,9 +244,18 @@ pub fn command(store: &Store, profile: &str, game: Option<PathBuf>, cmd: DbComma
             version,
             author,
             description,
+            category,
         } => {
             let mut p = open(store, &id)?;
-            if name.is_some() || version.is_some() || author.is_some() || description.is_some() {
+            if let Some(c) = category {
+                p.set_category(c);
+            }
+            if name.is_some()
+                || version.is_some()
+                || author.is_some()
+                || description.is_some()
+                || category.is_some()
+            {
                 let i = p.info();
                 p.set_details(
                     name.as_deref().unwrap_or(&i.name),
@@ -246,6 +271,9 @@ pub fn command(store: &Store, profile: &str, game: Option<PathBuf>, cmd: DbComma
                 i.id, i.name, i.version, i.author
             );
             println!("  description: {}\n  changes: {}", i.description, i.changes);
+            if let Some(c) = p.manifest.category {
+                println!("  category: {}", c.label());
+            }
             if !i.game_build.is_empty() {
                 println!("  database: {}", i.game_build);
             }
@@ -255,8 +283,8 @@ pub fn command(store: &Store, profile: &str, game: Option<PathBuf>, cmd: DbComma
                 println!("{:<10} {}  {}", format!("{:?}", h.kind), h.title, h.detail);
             }
         }
-        DbCommand::Get { path, package } => {
-            let edits = match &package {
+        DbCommand::Get { path, addon } => {
+            let edits = match &addon {
                 Some(id) => open(store, id)?.edits,
                 None => Edits::default(),
             };
@@ -266,55 +294,55 @@ pub fn command(store: &Store, profile: &str, game: Option<PathBuf>, cmd: DbComma
                 .with_context(|| format!("{path}: not in the game database"))?;
             show(&cat, &edits, node);
         }
-        DbCommand::Set { path, value, package } => {
+        DbCommand::Set { path, value, addon } => {
             let cat = catalog()?;
             let key = key_of(&cat, &path)?;
-            edit(store, &cat, &package, |p| {
+            edit(store, &cat, &addon, |p| {
                 p.edits.set(&cat, key, &value).map_err(|e| anyhow!("{path}: {e}"))
             })?;
-            println!("{path} = {value} in {package}");
+            println!("{path} = {value} in {addon}");
         }
         DbCommand::Add {
             path,
             tag,
             value,
-            package,
+            addon,
         } => {
             let cat = catalog()?;
-            let key = edit(store, &cat, &package, |p| {
+            let key = edit(store, &cat, &addon, |p| {
                 p.edits
                     .add(&cat, &path, tag, &value)
                     .map_err(|e| anyhow!("{path}: {e}"))
             })?;
-            println!("added {path} (0x{key:016x}) = {value} in {package}");
+            println!("added {path} (0x{key:016x}) = {value} in {addon}");
         }
-        DbCommand::Revert { path, all, package } => {
+        DbCommand::Revert { path, all, addon } => {
             let cat = catalog()?;
             match (path, all) {
                 (_, true) => {
-                    let n = edit(store, &cat, &package, |p| Ok(p.clear_edits()))?;
-                    println!("reverted {n} change(s) in {package}");
+                    let n = edit(store, &cat, &addon, |p| Ok(p.clear_edits()))?;
+                    println!("reverted {n} change(s) in {addon}");
                 }
                 (Some(path), false) => {
                     let key = key_of(&cat, &path)?;
-                    edit(store, &cat, &package, |p| match p.edits.revert(key) {
+                    edit(store, &cat, &addon, |p| match p.edits.revert(key) {
                         true => Ok(()),
-                        false => bail!("{path} has no change in {package}"),
+                        false => bail!("{path} has no change in {addon}"),
                     })?;
-                    println!("reverted {path} in {package}");
+                    println!("reverted {path} in {addon}");
                 }
                 (None, false) => bail!("name a key to revert, or pass --all"),
             }
         }
-        DbCommand::List { package } => {
-            let p = open(store, &package)?;
+        DbCommand::List { addon } => {
+            let p = open(store, &addon)?;
             for e in &p.edits.edits {
                 let name = e.path.clone().unwrap_or_else(|| format!("0x{:016x}", e.key));
                 let stock = e.stock.as_deref().unwrap_or("(added)");
                 let value = e.value.as_deref().unwrap_or("(removed)");
                 println!("{name}: {stock} -> {value}");
             }
-            println!("{} change(s) in {package}", p.edits.len());
+            println!("{} change(s) in {addon}", p.edits.len());
         }
     }
     Ok(ExitCode::SUCCESS)
