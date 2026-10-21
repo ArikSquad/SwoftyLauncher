@@ -487,6 +487,30 @@ pub fn apply_db_ops(db: &mut Gvdb, ops: &DbOps, names: &dyn FieldNames) -> Resul
     Ok(replaced)
 }
 
+/// Like [`apply_db_ops`], but an op that fails is skipped and returned with
+/// its error instead of stopping the rest. A failing op changes nothing.
+pub fn apply_db_ops_lenient(
+    db: &mut Gvdb,
+    ops: &DbOps,
+    names: &dyn FieldNames,
+) -> (Vec<u64>, Vec<(usize, Error)>) {
+    let schema = Schema {
+        file: &ops.fields,
+        names,
+    };
+    let mut db = Db::new(db);
+    let mut replaced = Vec::new();
+    let mut failed = Vec::new();
+    for (i, op) in ops.ops.iter().enumerate() {
+        match apply(&mut db, op, &schema) {
+            Ok(key) => replaced.extend(key),
+            Err(e) => failed.push((i, e)),
+        }
+    }
+    db.finish();
+    (replaced, failed)
+}
+
 pub fn apply_db_op(db: &mut Gvdb, op: &DbOp, names: &dyn FieldNames) -> Result<Option<u64>> {
     let mut db = Db::new(db);
     let replaced = apply(&mut db, op, names)?;
