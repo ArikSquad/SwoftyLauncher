@@ -141,6 +141,7 @@ export default defineConfigWithTheme<DocsThemeConfig>({
             text: "Using the launcher",
             items: [
               { text: "Overview", link: "/using/" },
+              { text: "News", link: "/using/news" },
               { text: "Addons", link: "/using/addons" },
               { text: "Addons that ship with the launcher", link: "/using/bundled-addons" },
               { text: "Mods and tracks", link: "/using/mods" },
@@ -150,6 +151,7 @@ export default defineConfigWithTheme<DocsThemeConfig>({
               { text: "Career Mode Editor", link: "/using/career-editor" },
               { text: "Driver Manager", link: "/using/driver-manager" },
               { text: "DB Editor", link: "/using/db-editor" },
+              { text: "Tools", link: "/using/tools" },
               { text: "Restoring the game", link: "/using/profiles-and-restoring" },
               { text: "Updating", link: "/using/updating" },
               { text: "Sending your logs", link: "/using/send-logs" },
