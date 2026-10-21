@@ -17,6 +17,7 @@ use crate::asset::{
 };
 use crate::baseline::{Baseline, Objects, hex, sha256_file, sha256_opt};
 use crate::builtin::{CORE_ID, LOADER_ENV, loader_dir, loader_files};
+use crate::conflicts::Report;
 use crate::erpbuild::{ErpBuild, Resized, reads, unsupported};
 use crate::install::{Game, LOADER_DIR, Plan};
 use crate::launcher::BuildCx;
@@ -24,7 +25,7 @@ use crate::manifest::{AddonManifest, relative_inside};
 use crate::map::TrackPackage;
 use crate::owned;
 use crate::placed::Placed;
-use crate::planner::{Conflict, Features, Kind, Planner, Route, load_features, waiting_lines};
+use crate::planner::{Conflict, Features, Kind, Planner, Route, Target, load_features, waiting_lines};
 use crate::profile::Profile;
 use crate::registry::Host;
 use crate::resolver::resolve;
@@ -52,6 +53,7 @@ pub struct Built {
     pub settings: Option<SessionSettings>,
     pub conflicts: Vec<Conflict>,
     pub waiting: Vec<Op>,
+    pub report: Report,
 }
 
 pub fn original(data: &Path, game: &Game, rel: &str) -> PathBuf {
@@ -281,6 +283,8 @@ struct Saved {
     warnings: Vec<String>,
     conflicts: Vec<Conflict>,
     waiting: Vec<Op>,
+    #[serde(default)]
+    report: Option<Report>,
 }
 
 impl Saved {
@@ -306,6 +310,7 @@ impl Saved {
             warnings: built.warnings[warnings..].to_vec(),
             conflicts: built.conflicts.clone(),
             waiting: built.waiting.clone(),
+            report: Some(built.report.clone()),
         })
     }
 
@@ -350,6 +355,11 @@ impl Saved {
         ));
         built.lines.extend(self.lines);
         built.warnings.extend(self.warnings);
+        built.report = match self.report {
+            Some(report) => report,
+            None => crate::conflicts::summarise(&built.plan.profile, &self.conflicts, &|_| None).0,
+        };
+        built.report.built_at = crate::conflicts::now();
         built.conflicts = self.conflicts;
         built.waiting = self.waiting;
     }
@@ -369,6 +379,11 @@ pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
         },
         ..Built::default()
     };
+    built.report = Report {
+        profile: profile.into(),
+        built_at: crate::conflicts::now(),
+        pairs: Vec::new(),
+    };
     if p.is_vanilla() {
         built.plan = Plan::vanilla();
         return Ok(built);
@@ -387,9 +402,17 @@ pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
         .filter(|id| crate::dbedit::package::is_package(store, id))
         .map(|id| (id.clone(), addons[id].name.clone()))
         .collect();
+    let overlay_names = |origin: &Origin, src: &Source| -> Vec<String> {
+        src.resolve(&source_dir(store, &origin.addon, src.root))
+            .ok()
+            .and_then(|p| swofty_formats::erp::ErpFile::open(&p).ok())
+            .map(|f| f.erp.resources.into_iter().map(|r| r.name).collect())
+            .unwrap_or_default()
+    };
     let mut planner = Planner::new(&features, &config.runtime_assets)
         .build_only(&config.build_assets)
-        .lenient(packages.clone());
+        .lenient(packages.clone())
+        .overlays(&overlay_names);
     if features != Features::default() {
         hasher.update(format!("runtime {features:?} {:?};", config.runtime_assets));
         if !config.build_assets.is_empty() {
@@ -570,6 +593,7 @@ pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
     let (lines_at, warnings_at) = (built.lines.len(), built.warnings.len());
     if let Some(saved) = Saved::load(&built.overlay, &built.buildhash).filter(|s| s.usable(store, game)) {
         saved.restore(&mut built);
+        crate::write_json(&crate::conflicts::path(store, profile), &built.report)?;
         return Ok(built);
     }
     let (ui_lists, ui_notes) = if ui_maps.is_empty() {
@@ -904,6 +928,7 @@ pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
         )),
     }
     built.settings = Some(session);
+    let mut changes = planner.changes();
     let planned = planner.finish();
     for op in planned.runtime {
         let resolve = |op: &Op, s: &Source| Ok(s.resolve(&source_dir(store, &op.origin.addon, s.root))?);
@@ -918,9 +943,31 @@ pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
         }
     }
     built.warnings.extend(waiting_lines(&planned.waiting, &features));
-    built
-        .warnings
-        .extend(planned.conflicts.iter().map(|c| format!("conflict: {c}")));
+    for (_, _, origin) in &tracks {
+        changes.entry(origin.addon.clone()).or_default().tracks += 1;
+    }
+    let name = |id: &str| addons.get(id).map_or_else(|| id.to_owned(), |m| m.name.clone());
+    for id in resolved.order.iter().filter(|id| *id != CORE_ID) {
+        if let Some(c) = changes.get(id).filter(|c| !c.is_empty()) {
+            built.lines.push(format!("{}: {c}", name(id)));
+        }
+    }
+    let records = planned
+        .conflicts
+        .iter()
+        .any(|c| matches!(c.target, Target::Record(_)));
+    let catalog = records
+        .then(|| crate::dbedit::Catalog::open(store, game).ok())
+        .flatten();
+    let record = |key: u64| {
+        catalog
+            .as_deref()
+            .and_then(|c| crate::conflicts::record_name(c, key))
+    };
+    let (report, within) = crate::conflicts::summarise(profile, &planned.conflicts, &record);
+    built.warnings.extend(report.pairs.iter().map(|p| p.line(&name)));
+    built.warnings.extend(within);
+    built.report = report;
     built.conflicts = planned.conflicts;
     built.waiting = planned.waiting;
     if !built.plan.is_vanilla() {
@@ -961,6 +1008,7 @@ pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
     if let Some(saved) = saved {
         crate::write_json(&built.overlay.join(SAVED_FILE), &saved)?;
     }
+    crate::write_json(&crate::conflicts::path(store, profile), &built.report)?;
     Ok(built)
 }
 
@@ -1639,6 +1687,176 @@ mod tests {
         ] {
             assert_eq!(out.get_text(path).as_deref(), Some(want), "{path}");
         }
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    fn archive(names: &[&str], byte: u8) -> Vec<u8> {
+        use swofty_formats::erp::{Erp, Fragment, HEADER_LEN, MAGIC, Resource, STORED};
+        let mut header = [0u8; HEADER_LEN];
+        header[..4].copy_from_slice(MAGIC);
+        header[4..8].copy_from_slice(&3u32.to_le_bytes());
+        Erp {
+            header,
+            version: 3,
+            resources: names
+                .iter()
+                .map(|n| Resource {
+                    name: (*n).into(),
+                    kind: swofty_formats::erp::kind("UILayout").unwrap(),
+                    unk: vec![0; 4],
+                    fragments: vec![Fragment {
+                        name: *b"temp",
+                        offset: 0,
+                        size: 1,
+                        flags: 0x10,
+                        compression: STORED,
+                        packed: 1,
+                        raw: vec![byte],
+                    }],
+                    hash: [0; 16],
+                })
+                .collect(),
+        }
+        .to_bytes()
+    }
+
+    #[test]
+    fn records_and_reports_the_conflicts_between_addons() {
+        use swofty_formats::gvdb::Record;
+        if loader_dir().is_some() {
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("swofty-build-conflicts-{}", std::process::id()));
+        std::fs::remove_dir_all(&root).ok();
+        let dir = root.join("game");
+        std::fs::create_dir_all(dir.join("game_package/gamedatabases")).unwrap();
+        std::fs::create_dir_all(dir.join("2025_asset_groups")).unwrap();
+        std::fs::write(dir.join(crate::GAME_EXE), "exe").unwrap();
+        let records = vec![
+            Record::new("entrants.teams._team_instancecount_", 0, "1"),
+            Record::new("entrants.teams.team_0._metadata_", 4, "mclaren_26"),
+            Record::new("entrants.teams.team_0.stat_id", 0, "100"),
+        ];
+        std::fs::write(dir.join(GVDB), Gvdb { records }.to_bytes()).unwrap();
+        let erp = "2025_asset_groups/t.erp";
+        let uri = "eaid://t/a.idf";
+        std::fs::write(dir.join(erp), archive(&[uri, "eaid://t/b.idf"], 0)).unwrap();
+        let game = Game {
+            identity: Identity::detect(&dir, Some(1)).unwrap(),
+            dir: dir.clone(),
+            user_reg: None,
+        };
+        let store = Store::new(root.join("data"));
+        let stat = format!(
+            "0x{:016x}",
+            swofty_formats::hash::fnv1a64("entrants.teams.team_0.stat_id")
+        );
+        for (id, name, erp_op) in [
+            (
+                "t.first",
+                "First",
+                format!(r#"{{"op":"erp.put-resource","erp":"{erp}","resource":"{uri}","source":"a.erp"}}"#),
+            ),
+            (
+                "t.second",
+                "Second",
+                format!(r#"{{"op":"erp.overlay","erps":["{erp}"],"source":"a.erp"}}"#),
+            ),
+        ] {
+            let src = root.join("src").join(id);
+            std::fs::create_dir_all(&src).unwrap();
+            std::fs::write(
+                src.join("swofty.json"),
+                format!(
+                    r#"{{ "schema_version": 1, "id": "{id}", "name": "{name}", "version": "1.0.0", "author": "t",
+                         "compat": {{ "game": "f1_25" }},
+                         "operations": {{ "assets": ["ops.json"], "files": [{{ "source": "a.dds", "target": "x/a.dds" }}] }} }}"#
+                ),
+            )
+            .unwrap();
+            std::fs::write(
+                src.join("ops.json"),
+                format!(
+                    r#"{{ "schema_version": 1, "ops": [{{"op":"db.put-record","key":"{stat}","type":0,"value":"3135"}}, {erp_op}] }}"#
+                ),
+            )
+            .unwrap();
+            std::fs::write(src.join("a.erp"), archive(&[uri], 7)).unwrap();
+            std::fs::write(src.join("a.dds"), name).unwrap();
+            store.install_addon(&src).unwrap();
+            store
+                .update_profile("default", |p| p.set_enabled(id, true))
+                .unwrap();
+        }
+        let listing = |d: &Path| {
+            let mut all: Vec<_> = loader_files(d).unwrap().into_iter().collect();
+            all.sort();
+            all
+        };
+        let before = listing(&dir);
+        let checked = crate::conflicts::check(&store, "default", &game).unwrap();
+        assert_eq!(listing(&dir), before);
+        let built = build(&store, "default", &game).unwrap();
+        assert!(
+            built
+                .lines
+                .contains(&"First: 1 database value, 1 archive resource, 1 file".to_owned()),
+            "{:?}",
+            built.lines
+        );
+        assert!(
+            built.warnings.contains(
+                &"Second overrides First on 1 database value, 1 archive resource and 1 file".to_owned()
+            ),
+            "{:?}",
+            built.warnings
+        );
+        assert!(
+            !built.warnings.iter().any(|w| w.starts_with("conflict:")),
+            "{:?}",
+            built.warnings
+        );
+        let report = crate::conflicts::last(&store, "default").unwrap();
+        assert_eq!(report.pairs, checked.pairs);
+        assert_eq!(report.pairs, built.report.pairs);
+        let pair = &report.pairs[0];
+        assert_eq!(
+            (
+                pair.winner.as_str(),
+                pair.loser.as_str(),
+                pair.database,
+                pair.resources,
+                pair.files
+            ),
+            ("t.second", "t.first", 1, 1, 1)
+        );
+        assert_eq!(
+            pair.items,
+            [
+                format!("{erp}:{uri}"),
+                "x/a.dds".to_owned(),
+                "entrants.teams.team[_metadata_=mclaren_26].stat_id".to_owned()
+            ]
+        );
+        std::fs::remove_file(crate::conflicts::path(&store, "default")).unwrap();
+        let again = build(&store, "default", &game).unwrap();
+        assert!(
+            again
+                .lines
+                .iter()
+                .any(|l| l.starts_with("build: nothing changed"))
+        );
+        assert_eq!(
+            crate::conflicts::last(&store, "default").unwrap().pairs,
+            report.pairs
+        );
+        assert!(crate::conflicts::last(&store, "vanilla").is_none());
+        assert!(
+            crate::conflicts::check(&store, "vanilla", &game)
+                .unwrap()
+                .pairs
+                .is_empty()
+        );
         std::fs::remove_dir_all(&root).ok();
     }
 

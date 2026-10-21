@@ -1,11 +1,12 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use swofty_formats::gvdb::Gvdb;
 
-use crate::asset::{AssetOp, FileKind, FileOp, GroupOp, LangOp, Op, OpFile, Origin};
+use crate::asset::{AssetOp, FileKind, FileOp, GroupOp, LangOp, Op, OpFile, Origin, Source};
 pub use crate::asset::{Features, Kind};
+use crate::conflicts::Changes;
 use crate::ops::{DbOps, DbReport, ErpOp, apply_db_ops_lenient, apply_db_ops_report};
 use crate::owned::{self, Added};
 use crate::rowkeys::{Names, RowKeys};
@@ -58,7 +59,7 @@ pub fn load_features(loader: &Path) -> Result<Features> {
     Ok(out)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Target {
     Group(String),
     Resource { erp: String, uri: String },
@@ -121,6 +122,17 @@ pub struct Planner<'a> {
     fields: BTreeMap<String, BTreeMap<String, Vec<String>>>,
     skipped: Vec<String>,
     lenient: BTreeMap<String, String>,
+    touched: BTreeMap<String, Touched>,
+    overlays: Option<&'a OverlayNames<'a>>,
+}
+
+/// The resource names in an `erp.overlay` op's archive.
+pub type OverlayNames<'a> = dyn Fn(&Origin, &Source) -> Vec<String> + 'a;
+
+#[derive(Default)]
+struct Touched {
+    records: HashSet<u64>,
+    other: HashSet<Target>,
 }
 
 fn erp_target(op: &ErpOp) -> Option<(Target, bool)> {
@@ -150,7 +162,7 @@ fn erp_target(op: &ErpOp) -> Option<(Target, bool)> {
         ErpOp::AddMipmaps { target, .. } => {
             Some((Target::File(target.trim_end_matches('/').to_owned()), true))
         }
-        // Its resources are only known from the archive; the last writer wins in game.
+        // Its resources come from the archive's index, through `Planner::overlays`.
         ErpOp::Overlay { .. } => None,
     }
 }
@@ -193,7 +205,14 @@ impl<'a> Planner<'a> {
             fields: BTreeMap::new(),
             skipped: Vec::new(),
             lenient: BTreeMap::new(),
+            touched: BTreeMap::new(),
+            overlays: None,
         }
+    }
+
+    pub fn overlays(mut self, names: &'a OverlayNames<'a>) -> Self {
+        self.overlays = Some(names);
+        self
     }
 
     pub fn build_only(mut self, kinds: &'a BTreeSet<Kind>) -> Self {
@@ -243,6 +262,17 @@ impl<'a> Planner<'a> {
     pub fn push(&mut self, op: Op) {
         if let Some((target, replaces)) = target(&op.op) {
             self.write(target, &op.origin, replaces);
+        }
+        if let (AssetOp::Erp(ErpOp::Overlay { erps, source }), Some(names)) = (&op.op, self.overlays) {
+            for uri in names(&op.origin, source) {
+                for erp in erps {
+                    let target = Target::Resource {
+                        erp: erp.clone(),
+                        uri: uri.clone(),
+                    };
+                    self.write(target, &op.origin, true);
+                }
+            }
         }
         if matches!(op.op, AssetOp::Erp(ErpOp::RemoveResource { .. })) {
             self.removals += 1;
@@ -307,6 +337,15 @@ impl<'a> Planner<'a> {
     }
 
     fn write(&mut self, target: Target, origin: &Origin, replaces: bool) {
+        if !self.touched.contains_key(&origin.addon) {
+            self.touched.insert(origin.addon.clone(), Touched::default());
+        }
+        let touched = self.touched.get_mut(&origin.addon).expect("inserted above");
+        match target {
+            Target::Record(key) => touched.records.insert(key),
+            Target::Group(_) => false,
+            _ => touched.other.insert(target.clone()),
+        };
         let writers = self.writers.entry(target.clone()).or_default();
         if replaces {
             let lost: Vec<Origin> = writers.drain(..).filter(|w| w != origin).collect();
@@ -332,6 +371,23 @@ impl<'a> Planner<'a> {
         if !writers.contains(origin) {
             writers.push(origin.clone());
         }
+    }
+
+    /// What each addon writes so far: distinct records, resources, files and strings.
+    pub fn changes(&self) -> BTreeMap<String, Changes> {
+        self.touched
+            .iter()
+            .map(|(addon, t)| {
+                let mut c = Changes {
+                    database: t.records.len(),
+                    ..Changes::default()
+                };
+                for target in &t.other {
+                    c.count(target);
+                }
+                (addon.clone(), c)
+            })
+            .collect()
     }
 
     pub fn features(&self) -> Vec<Kind> {
