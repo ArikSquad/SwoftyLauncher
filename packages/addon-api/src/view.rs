@@ -1057,6 +1057,10 @@ mod tests {
             }
         );
         assert_eq!(serde_json::to_value(Effect::Reload).unwrap(), "reload");
+        assert_eq!(
+            serde_json::from_str::<Effect>(r#"{"show_addon":"you.okayama"}"#).unwrap(),
+            Effect::ShowAddon("you.okayama".into())
+        );
     }
 
     #[test]

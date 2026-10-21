@@ -32,7 +32,49 @@ Your addon needs a `swofty.json` at its root. This is where you give it a name, 
 | `license` | string? | SPDX identifier, such as `MIT`. |
 | `homepage` | string? | A URL. |
 | `icon` | string? | A path inside your addon, shown on the Addons page and your addon's sidebar pages. Use an `.svg` for a one-colour glyph in the launcher's icon style, or a square `.png`, `.jpg` or `.webp` to show the image as it is. |
-| `kind` | string[] | Optional categories: `database`, `erp`, `ui`, `files`, `native`. |
+| `kind` | string[] | What the addon touches: `database`, `erp`, `ui`, `files`, `native`. |
+| `category` | string? | What the addon is for ([category](#category)). |
+| `origin` | object? | The tool and file the addon was made from ([origin](#origin)). |
+
+## category
+
+`kind` says what an addon touches; `category` says what it is for. The **Addons** page groups and filters by it.
+
+```json
+"category": "liveries"
+```
+
+| Value | Label |
+|---|---|
+| `tracks` | Tracks |
+| `liveries` | Liveries |
+| `cars` | Cars |
+| `drivers-teams` | Drivers & teams |
+| `seasons` | Seasons |
+| `database` | Database |
+| `gameplay` | Gameplay |
+| `ui` | UI |
+| `audio` | Audio |
+| `tools` | Tools |
+| `other` | Other |
+
+## origin
+
+`origin` records the tool that generated an addon and the file it came from. Tools set it; leave it out in an addon you write by hand.
+
+```json
+"origin": { "tool": "teamsimplified.mods", "tool_version": "2.0.0", "file": "okayama.zip",
+            "sha256": "9f2c…" }
+```
+
+| Field | Type | Value |
+|---|---|---|
+| `tool` | string | `db-editor`, or the id of the addon that generated it, such as `teamsimplified.mods`. |
+| `tool_version` | string? | The tool's version. |
+| `file` | string? | The file name the addon was made from. |
+| `sha256` | string? | That file's SHA-256, in hex. |
+
+The **Addons** page shows the source as Built in, Built from DB Editor, Imported by Mod Importer or Installed. A launcher before 1.3.0 rejects `category` and `origin`; set `"compat": { "launcher": ">=1.3.0" }` when you use them.
 
 ## saves
 

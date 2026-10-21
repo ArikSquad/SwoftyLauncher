@@ -428,6 +428,7 @@ When you handle `event`, you receive one event and return one effect to tell the
 | `{ "notice": "Imported okayama.exmod" }` | shows a notification and reloads |
 | `{ "set_addon_enabled": true }` | turns the addon on or off in the active profile |
 | `{ "open": "/home/you/.local/share/swofty/addon-data/example.launcher-addon/items" }` | opens the file or folder with the system handler |
+| `{ "show_addon": "yourname.okayama" }` *(1.3.0)* | switches to the **Addons** page and highlights that addon |
 
 Answer `view` and `summary` within 5 seconds. For `event`, `import`, `build` and `command`, you have 300 seconds; each message your plugin sends resets the wait. Until you return an effect, the control that fired the event shows busy.
 
