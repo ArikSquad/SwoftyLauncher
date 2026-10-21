@@ -7,6 +7,7 @@ pub mod builtin;
 pub mod bundled;
 pub mod cache;
 pub mod compat;
+pub mod conflicts;
 pub mod crash;
 pub mod dbedit;
 pub mod erpbuild;

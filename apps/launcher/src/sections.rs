@@ -376,6 +376,10 @@ impl Shell {
                 cx.open_with_system(&path);
                 cx.notify();
             }
+            Ok(Effect::ShowAddon(id)) => {
+                self.reload(cx);
+                self.show_addon(&id, cx);
+            }
             Err(e) => {
                 window.push_notification(Notification::error(e), cx);
                 cx.notify();

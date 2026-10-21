@@ -44,6 +44,74 @@ pub struct AddonManifest {
     pub launcher: Option<Launcher>,
     #[serde(default, skip_serializing_if = "Saves::is_unset")]
     pub saves: Saves,
+    /// What the addon is for, for grouping and filtering; `kind` says what it touches.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<Category>,
+    /// The tool that generated the addon and the file it came from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<Origin>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[serde(rename_all = "kebab-case")]
+pub enum Category {
+    Tracks,
+    Liveries,
+    Cars,
+    DriversTeams,
+    Seasons,
+    Database,
+    Gameplay,
+    Ui,
+    Audio,
+    Tools,
+    Other,
+}
+
+impl Category {
+    pub const ALL: [Category; 11] = [
+        Self::Tracks,
+        Self::Liveries,
+        Self::Cars,
+        Self::DriversTeams,
+        Self::Seasons,
+        Self::Database,
+        Self::Gameplay,
+        Self::Ui,
+        Self::Audio,
+        Self::Tools,
+        Self::Other,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Tracks => "Tracks",
+            Self::Liveries => "Liveries",
+            Self::Cars => "Cars",
+            Self::DriversTeams => "Drivers & teams",
+            Self::Seasons => "Seasons",
+            Self::Database => "Database",
+            Self::Gameplay => "Gameplay",
+            Self::Ui => "UI",
+            Self::Audio => "Audio",
+            Self::Tools => "Tools",
+            Self::Other => "Other",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Origin {
+    /// `db-editor`, or the id of the addon that generated it (`teamsimplified.mods`).
+    pub tool: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_version: Option<String>,
+    /// The file name the addon was made from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]

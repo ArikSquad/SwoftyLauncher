@@ -5,13 +5,16 @@ mod console;
 mod db;
 mod discord;
 mod game;
+mod importer;
 mod library;
+mod news;
 mod pages;
 mod play_bar;
 mod sections;
 mod send_logs;
 mod shell;
 mod theme;
+mod tools;
 mod update;
 
 use gpui_kit::component::TitleBar;

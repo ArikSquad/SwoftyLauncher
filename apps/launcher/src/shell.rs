@@ -31,27 +31,36 @@ use crate::theme::{Palette, palette};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Page {
+    News,
     Addons,
-    Database,
+    Importer,
+    Tools,
     Profiles,
+    Database,
     Section(usize),
 }
 
 impl Page {
     pub fn label(self) -> &'static str {
         match self {
+            Self::News => "News",
             Self::Addons => "Addons",
-            Self::Database => "DB Editor",
+            Self::Importer => "Mod Importer",
+            Self::Tools => "Tools",
             Self::Profiles => "Profiles",
+            Self::Database => "DB Editor",
             Self::Section(_) => "",
         }
     }
 
     pub fn icon(self) -> IconName {
         match self {
+            Self::News => IconName::Newspaper,
             Self::Addons => IconName::Puzzle,
-            Self::Database => IconName::Database,
+            Self::Importer => IconName::FolderInput,
+            Self::Tools => IconName::Wrench,
             Self::Profiles => IconName::Layers,
+            Self::Database => IconName::Database,
             Self::Section(_) => IconName::Package,
         }
     }
@@ -111,6 +120,8 @@ pub struct Shell {
     pub(crate) ticking: bool,
     painted: Instant,
     pub(crate) live_n: u64,
+    /// The addon the Addons page highlights, and since when.
+    pub(crate) highlight: Option<(String, Instant)>,
     pub(crate) db: crate::db::Db,
     _console_closed: Subscription,
     _poll: Task<()>,
@@ -318,7 +329,7 @@ impl Shell {
         let mut shell = Self {
             library,
             store,
-            page: Page::Addons,
+            page: Page::News,
             open_addon: None,
             install: None,
             detected: false,
@@ -359,6 +370,7 @@ impl Shell {
             ticking: false,
             painted: Instant::now(),
             live_n: 0,
+            highlight: None,
             db: crate::db::Db::new(),
             _console_closed: console_closed,
             _poll: poll,
@@ -1162,6 +1174,9 @@ impl Render for Shell {
             window.push_notification(note, cx);
         }
         let content = match self.page {
+            Page::News => self.news_page(p, cx),
+            Page::Importer => self.importer_page(p, cx),
+            Page::Tools => self.tools_page(p, cx),
             Page::Addons => self.addons_page(p, cx),
             Page::Database => self.db_page(p, cx),
             Page::Profiles => self.profiles_page(p, wide, cx),

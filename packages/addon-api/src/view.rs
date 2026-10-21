@@ -860,6 +860,8 @@ pub enum Effect {
     Notice(String),
     SetAddonEnabled(bool),
     Open(PathBuf),
+    /// Switches to the Addons page and highlights this addon.
+    ShowAddon(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
