@@ -19,11 +19,18 @@ pub const UI_ERPS: &[&str] = &[
     "2025_asset_groups/ui_package/screens/fe_home.erp",
 ];
 pub fn game(store: &Store, explicit: Option<PathBuf>) -> Result<Game> {
-    Ok(Game::locate(&store.root, game_dir(explicit)?)?)
+    Ok(Game::locate(&store.root, game_dir(store, explicit)?)?)
 }
 
-fn game_dir(explicit: Option<PathBuf>) -> Result<PathBuf> {
+/// `--game`, else the folder picked with Locate F1 25 in the launcher, else Steam's copy.
+fn game_dir(store: &Store, explicit: Option<PathBuf>) -> Result<PathBuf> {
     explicit
+        .or_else(|| {
+            store
+                .config()
+                .game_dir
+                .filter(|d| d.join(swofty_core::GAME_EXE).is_file())
+        })
         .or_else(|| steam::find_game().map(|g| g.dir))
         .context("F1 25 not found; pass --game or run swofty doctor")
 }
