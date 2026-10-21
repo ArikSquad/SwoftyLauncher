@@ -151,6 +151,21 @@ mod tests {
     }
 
     #[test]
+    fn moved_addons_load_in_their_new_place() {
+        let installed = BTreeMap::from([m(CORE_ID, ""), m("dbedit.a", ""), m("dbedit.b", "")]);
+        let mut p = profile(&["dbedit.a", "dbedit.b"]);
+        assert_eq!(
+            resolve(&p, &installed).unwrap().order,
+            [CORE_ID, "dbedit.a", "dbedit.b"]
+        );
+        p.move_addon("dbedit.b", -1).unwrap();
+        assert_eq!(
+            resolve(&p, &installed).unwrap().order,
+            [CORE_ID, "dbedit.b", "dbedit.a"]
+        );
+    }
+
+    #[test]
     fn missing_requirement_fails() {
         let installed = BTreeMap::from([
             m(CORE_ID, ""),

@@ -104,6 +104,31 @@ impl Profile {
             .map(|m| m.id.as_str())
     }
 
+    /// Moves `id` by `delta` places among the profile's addons, which is its
+    /// place in the load order; the core addon stays first.
+    pub fn move_addon(&mut self, id: &str, delta: isize) -> crate::Result<()> {
+        if self.is_vanilla() {
+            return Err(crate::Error::Other(format!(
+                "{VANILLA} is built in and cannot be changed"
+            )));
+        }
+        if id == CORE_ID {
+            return Err(crate::Error::Other(format!("{CORE_ID} always loads first")));
+        }
+        let from = self
+            .addons
+            .iter()
+            .position(|m| m.id == id)
+            .ok_or_else(|| crate::Error::Other(format!("{id} is not in the {} profile", self.name)))?;
+        let first = usize::from(self.addons.first().is_some_and(|m| m.id == CORE_ID));
+        let to = from
+            .saturating_add_signed(delta)
+            .clamp(first, self.addons.len() - 1);
+        let addon = self.addons.remove(from);
+        self.addons.insert(to, addon);
+        Ok(())
+    }
+
     pub fn set_enabled(&mut self, id: &str, on: bool) -> crate::Result<()> {
         if self.is_vanilla() {
             return Err(crate::Error::Other(format!(
@@ -234,6 +259,25 @@ mod tests {
         assert!(p.set_enabled(CORE_ID, false).is_err());
         p.set_enabled("a.b", false).unwrap();
         assert_eq!(p.enabled().collect::<Vec<_>>(), ["swofty.core"]);
+    }
+
+    #[test]
+    fn moves_addons_in_the_load_order() {
+        let mut p = Profile::new("x");
+        for id in ["a.a", "b.b", "c.c"] {
+            p.set_enabled(id, true).unwrap();
+        }
+        let order = |p: &Profile| p.addons.iter().map(|a| a.id.clone()).collect::<Vec<_>>();
+        p.move_addon("c.c", -1).unwrap();
+        assert_eq!(order(&p), [CORE_ID, "a.a", "c.c", "b.b"]);
+        p.move_addon("b.b", -10).unwrap();
+        assert_eq!(order(&p), [CORE_ID, "b.b", "a.a", "c.c"]);
+        p.move_addon("b.b", 10).unwrap();
+        assert_eq!(order(&p), [CORE_ID, "a.a", "c.c", "b.b"]);
+        p.move_addon("a.a", 0).unwrap();
+        assert_eq!(order(&p), [CORE_ID, "a.a", "c.c", "b.b"]);
+        assert!(p.move_addon(CORE_ID, 1).is_err() && p.move_addon("nope.x", 1).is_err());
+        assert!(Profile::vanilla().move_addon("a.a", 1).is_err());
     }
 
     #[test]
