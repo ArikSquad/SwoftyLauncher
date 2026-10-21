@@ -208,6 +208,10 @@ impl AddonBuilder {
                 f.target
             ));
         }
+        let named = self.sources.keys().chain(self.files.iter().map(|f| &f.target));
+        if let Some(rel) = named.into_iter().find(|r| is_code(Path::new(r))) {
+            return fail(format!("{rel} is a program; a generated addon carries data only"));
+        }
         let mut targets = std::collections::BTreeSet::new();
         if let Some(f) = self.files.iter().find(|f| !targets.insert(f.target.as_str())) {
             return fail(format!("{} is put twice", f.target));
@@ -309,6 +313,11 @@ fn mkdir(dir: &Path) -> Result<()> {
     })
 }
 
+fn is_code(path: &Path) -> bool {
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or_default();
+    CODE.iter().any(|c| ext.eq_ignore_ascii_case(c))
+}
+
 fn refuse_code(path: &Path) -> Result<()> {
     if path.is_dir() {
         let entries = std::fs::read_dir(path).map_err(|source| Error::Io {
@@ -320,8 +329,7 @@ fn refuse_code(path: &Path) -> Result<()> {
         }
         return Ok(());
     }
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or_default();
-    match CODE.iter().any(|c| ext.eq_ignore_ascii_case(c)) {
+    match is_code(path) {
         true => Err(Error::Other(format!(
             "{} is a program; a generated addon carries data only",
             path.display()
@@ -484,6 +492,12 @@ mod tests {
             },
         });
         assert!(refused(&b).contains("own folder"));
+        let mut b = base.clone();
+        b.source("bin/x64/version.dll", root.join("r.bin"));
+        assert!(refused(&b).contains("data only"));
+        let mut b = base.clone();
+        b.file(root.join("a.dds"), "bin/x64/dinput8.DLL");
+        assert!(refused(&b).contains("data only"));
         std::fs::write(root.join("okayama/plugin.dll"), "MZ").unwrap();
         assert!(refused(&base).contains("data only"));
         std::fs::remove_dir_all(&root).ok();
