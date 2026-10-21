@@ -22,6 +22,23 @@ fn front_matter(text: &str) -> Vec<(String, String)> {
         .collect()
 }
 
+fn body(text: &str) -> String {
+    let mut lines: Vec<&str> = text.lines().collect();
+    if lines.first().map(|l| l.trim()) == Some("---") {
+        let end = lines[1..].iter().position(|l| l.trim() == "---");
+        lines.drain(..end.map_or(lines.len(), |e| e + 2));
+    }
+    let start = lines
+        .iter()
+        .position(|l| !l.trim().is_empty())
+        .unwrap_or(lines.len());
+    let mut lines = &lines[start..];
+    if lines.first().is_some_and(|l| l.starts_with("# ")) {
+        lines = &lines[1..];
+    }
+    lines.join("\n").trim().to_owned()
+}
+
 // Mirrors docs/scripts/news.mjs, which publishes the same feed as news.json.
 fn posts(dir: &Path, kind: &str, out: &mut Vec<serde_json::Value>) {
     println!("cargo:rerun-if-changed={}", dir.display());
@@ -55,7 +72,7 @@ fn posts(dir: &Path, kind: &str, out: &mut Vec<serde_json::Value>) {
                 i
             }
         });
-        out.push(serde_json::json!({
+        let mut post = serde_json::json!({
             "id": format!("{kind}/{slug}"),
             "kind": kind,
             "title": title,
@@ -63,7 +80,11 @@ fn posts(dir: &Path, kind: &str, out: &mut Vec<serde_json::Value>) {
             "summary": get("description").unwrap_or_default(),
             "image": image,
             "url": format!("{SITE}/{}/{slug}", if kind == "release" { "releases" } else { "news" }),
-        }));
+        });
+        if kind == "news" {
+            post["body"] = body(&text).into();
+        }
+        out.push(post);
     }
 }
 
