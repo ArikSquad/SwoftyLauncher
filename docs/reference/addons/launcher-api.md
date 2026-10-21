@@ -439,6 +439,7 @@ When you handle `event`, you receive one event and return one effect to tell the
 | A form's Apply, a live field or an edited table cell *(1.0.10)* | `{ "submit": { "form": "finance", "values": { "cash": 15000000 }, "changed": ["cash"] } }`, plus `"row"` for a table cell ([Forms](#forms), [Tables](#tables)) |
 | A search box, when it asks for events *(1.0.10)* | `{ "search": { "id": "drivers", "query": "ver" } }` ([Search](#search)) |
 | A tab click *(1.0.10)* | `{ "tab": { "id": "page", "tab": "drivers" } }` ([Tabs](#tabs)) |
+| Launcher start, once, to the first section of an addon whose manifest sets `launcher.startup` *(1.3.0)* | `{ "startup": {} }` |
 
 | Effect | The launcher |
 |---|---|

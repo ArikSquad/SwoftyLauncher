@@ -149,6 +149,9 @@ pub struct Launcher {
     // `<program> claims <path>`, instead of matching `imports` against extensions.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub claims: bool,
+    // Send the addon's first section a `startup` event once per launcher start.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub startup: bool,
 }
 
 impl Launcher {

@@ -202,6 +202,7 @@ To add sidebar pages, an importer, a build hook and commands, name a [launcher p
 | `build` | boolean | Set to `true` when your plugin answers the `build` call. Defaults to `false`. |
 | `commands` | `[CommandSpec]` | `swofty` subcommands — `{ name, about, args, subcommands }`. |
 | `claims` | boolean | Set to `true` to decide yourself which dropped files and folders you import: the launcher runs `<program> claims <path>` and reads `yes`, `maybe` or `no` ([Importers](./launcher-api#importers-and-drag-and-drop)). Defaults to `false`. |
+| `startup` | boolean | Set to `true` to receive a `startup` event once per launcher start, with the 300-second event budget, for long work such as converting mods ([Events and effects](./launcher-api#events-and-effects)). Launcher 1.3.0 or later. Defaults to `false`. |
 
 ## Paths and validation
 

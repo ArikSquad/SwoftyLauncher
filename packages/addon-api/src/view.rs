@@ -850,6 +850,9 @@ pub enum Event {
         id: String,
         tab: String,
     },
+    /// Sent once per launcher start to a section whose addon declares
+    /// `launcher.startup`, for long work such as converting mods.
+    Startup {},
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

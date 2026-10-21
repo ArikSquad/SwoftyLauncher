@@ -310,6 +310,27 @@ impl Shell {
         .detach();
     }
 
+    /// Sends `startup` to the first section of each addon that asks for it.
+    pub(crate) fn run_startup(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let mut seen = std::collections::BTreeSet::new();
+        let targets: Vec<(String, String)> = self
+            .library
+            .sections
+            .iter()
+            .filter(|s| seen.insert(s.addon.clone()))
+            .filter(|s| {
+                self.library.addons.iter().any(|a| {
+                    a.manifest.id == s.addon && a.manifest.launcher.as_ref().is_some_and(|l| l.startup)
+                })
+            })
+            .map(|s| (s.addon.clone(), s.spec.id.clone()))
+            .collect();
+        for (addon, section) in targets {
+            let control = format!("{addon}/{section}/startup");
+            self.send(&addon, &section, control, Event::Startup {}, window, cx);
+        }
+    }
+
     pub(crate) fn send(
         &mut self,
         addon: &str,

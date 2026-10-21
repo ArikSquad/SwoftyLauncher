@@ -52,6 +52,10 @@ fn main() {
             })
             .detach();
             shell.update(cx, |s, cx| s.restore_console(cx));
+            main.update(cx, |_, window, cx| {
+                shell.update(cx, |s, cx| s.run_startup(window, cx))
+            })
+            .ok();
             cx.activate(true);
         });
 }
