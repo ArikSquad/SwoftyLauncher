@@ -84,7 +84,7 @@ enum Command {
     Settings(SettingsCommand),
     #[command(subcommand, about = "List and delete profiles")]
     Profile(ProfileCommand),
-    #[command(about = "Browse the game database and edit DB Editor packages")]
+    #[command(about = "Browse the game database and edit DB Editor addons")]
     Db {
         #[arg(long, help = "Game folder (default: discovered from Steam)")]
         game: Option<PathBuf>,
