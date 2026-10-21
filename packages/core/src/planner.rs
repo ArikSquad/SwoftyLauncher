@@ -6,8 +6,9 @@ use swofty_formats::gvdb::Gvdb;
 
 use crate::asset::{AssetOp, FileKind, FileOp, GroupOp, LangOp, Op, OpFile, Origin};
 pub use crate::asset::{Features, Kind};
-use crate::ops::{DbOps, ErpOp, apply_db_ops, apply_db_ops_lenient};
+use crate::ops::{DbOps, DbReport, ErpOp, apply_db_ops_lenient, apply_db_ops_report};
 use crate::owned::{self, Added};
+use crate::rowkeys::{Names, RowKeys};
 use crate::{Error, Result};
 
 pub const FEATURES_FILE: &str = "swofty/addons/core/features.json";
@@ -149,6 +150,8 @@ fn erp_target(op: &ErpOp) -> Option<(Target, bool)> {
         ErpOp::AddMipmaps { target, .. } => {
             Some((Target::File(target.trim_end_matches('/').to_owned()), true))
         }
+        // Its resources are only known from the archive; the last writer wins in game.
+        ErpOp::Overlay { .. } => None,
     }
 }
 
@@ -267,6 +270,7 @@ impl<'a> Planner<'a> {
                         DbOps {
                             schema_version: 1,
                             fields: BTreeMap::new(),
+                            strict: false,
                             ops: vec![db],
                         },
                     )),
@@ -283,6 +287,7 @@ impl<'a> Planner<'a> {
             let ops = DbOps {
                 schema_version: file.schema_version,
                 fields: file.fields,
+                strict: file.strict,
                 ops: Vec::new(),
             };
             self.db.push((origin.clone(), ops));
@@ -342,14 +347,22 @@ impl<'a> Planner<'a> {
     }
 
     pub fn apply_db(&mut self, db: &mut Gvdb) -> Result<Vec<Added>> {
+        self.apply_db_report(db, &mut DbReport::default())
+    }
+
+    pub fn apply_db_report(&mut self, db: &mut Gvdb, report: &mut DbReport) -> Result<Vec<Added>> {
         let fields = std::mem::take(&mut self.fields);
         let none = BTreeMap::new();
         let mut added = Vec::new();
         for (origin, ops) in std::mem::take(&mut self.db) {
             let before = owned::counts(db);
-            let names = fields.get(&origin.addon).unwrap_or(&none);
+            let names = Names {
+                fields: fields.get(&origin.addon).unwrap_or(&none),
+                keys: RowKeys::builtin(),
+            };
+            let mut ours = DbReport::default();
             let replaced = if let Some(name) = self.lenient.get(&origin.addon) {
-                let (replaced, failed) = apply_db_ops_lenient(db, &ops, names);
+                let (replaced, failed) = apply_db_ops_lenient(db, &ops, &names, &mut ours);
                 self.skipped.extend(
                     failed
                         .into_iter()
@@ -357,8 +370,17 @@ impl<'a> Planner<'a> {
                 );
                 replaced
             } else {
-                apply_db_ops(db, &ops, names).map_err(|e| Error::Other(format!("applying {origin}: {e}")))?
+                apply_db_ops_report(db, &ops, &names, &mut ours)
+                    .map_err(|e| Error::Other(format!("applying {origin}: {e}")))?
             };
+            report
+                .lines
+                .extend(ours.lines.into_iter().map(|l| format!("{}: {l}", origin.addon)));
+            report.warnings.extend(
+                ours.warnings
+                    .into_iter()
+                    .map(|w| format!("{}: {w}", origin.addon)),
+            );
             for key in replaced {
                 self.write(Target::Record(key), &origin, true);
             }

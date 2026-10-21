@@ -159,8 +159,8 @@ EOF
         once "addons: a dll in both folders loads from addons only" 'addon t_drop\.dll: also in .*[\]swofty[\]mods, skipped'
         once "mixins: a binding bindings.json does not list is named as missing" 'addon t_want\.dll needs wine-test:Fake_Unlisted, which bindings\.json does not list'
         once "mixins: a listed binding that does not match stays unresolved" 'addon t_want\.dll needs wine-test:Fake_Missing, which does not resolve on this build'
-        check "addons: SwoftyAddonInit is called" 'addon t_chain_a\.dll: loaded at .*, calling SwoftyAddonInit \(API v7\)'
-        check "addons: SWOFTY_MOD exports SwoftyAddonInit" 'addon t_conflict_y\.dll: loaded at .*, calling SwoftyAddonInit \(API v7\)'
+        check "addons: SwoftyAddonInit is called" 'addon t_chain_a\.dll: loaded at .*, calling SwoftyAddonInit \(API v8\)'
+        check "addons: SWOFTY_MOD exports SwoftyAddonInit" 'addon t_conflict_y\.dll: loaded at .*, calling SwoftyAddonInit \(API v8\)'
         if grep -q "core mixin set 'swofty_core.dll (flow states)'" "$LOG"; then
             once "career: the flow-state site is a core mixin set of its own" "core mixin set 'swofty_core\.dll \(flow states\)': 1 mixin"
             once "career: a missing flow-state site drops only its own set" 'addon swofty_core\.dll \(flow states\) dropped: needs site_FeFlow_SetStateStatus'
@@ -171,7 +171,14 @@ EOF
         fi
         check "career: swofty_core itself still initialises" 'addon swofty_core\.dll: SwoftyAddonInit returned 1 \(ok\)'
         check "addons: a plugin exporting only SwoftyModInit loads" 'addon t_v1\.dll: loaded at .*, API v1 plugin, SwoftyModInit runs after the mixin commit'
-        check "addons: every dll in both folders loads" 'addons: done, 13 addon\(s\) loaded'
+        check "addons: every dll in both folders loads" 'addons: done, 14 addon\(s\) loaded'
+        check "career content: a content registered at init is queued for the commit" '\[career\] content .wine-test. from t_content\.dll registered \(tile 1 after the stock ones, 2026 model, data group f1_career_wine, suffix wt, mode driver_career_wine\): queued for the next mixin commit'
+        check "career content: a duplicate data group is refused" '\[career\] content .wine-test-2. from t_content\.dll refused: another content already has data group f1_career_wine'
+        check "career content: a stock data group is refused" '\[career\] content .wine-stock. from t_content\.dll refused: data_group f1_career_2026 is a stock career'
+        check "career content: the SDK reports ok, invalid, invalid at init" '\[t_content\] at init: available 1, add ok'
+        check "career content: bindings the fake exe lacks turn the content off before any hook is offered" '\[career\] content .wine-test. \(t_content\.dll\) is off: needs site_FeTile_CareerContentEnd, .*which this build does not resolve'
+        if grep -q "core mixin set 'swofty_core.dll (career contents)'" "$LOG"; then echo "FAIL: career content: no hook set is offered when its bindings are missing"; status=1; else echo "ok  : career content: no hook set is offered when its bindings are missing"; fi
+        check "career content: the SDK reads the off state through the core table" '\[t_content\] at load: info ok state 2 \(needs .*\), available 0, data_group unavailable, pressed unavailable, is 0'
         for re in 'scan \.xtls \[.*\] -> 1 hit at' 'registry global base\+0x[0-9a-f]+ \(= [0-9a-f]+ now\)' \
             'hook #1: list\(r14\)=0x[0-9a-f]+ r12=0x2 r15=0x1' 'built mod vtable .* from career vtable .* \(slot 4 populate .* slot 5 getAction' \
             'added button_3 \(items 1 -> 2\)' 'populate #1 .* vm=0*[1-9a-f]' "getAction #1 .* route 'mod_menu'"; do
@@ -186,6 +193,8 @@ EOF
         count "scan cache: nothing is cached yet on the first run" 0 'the address cached for this exe'
         ;;
     fallback)
+        once "loader: a dialog before the window is logged with its text" 'dialog shown: Error: Game launch error\. Error code: 0x00000004[[:space:]]*$'
+        count "loader: a dialog is not taken as the main window" 0 "main window visible.*class '#32770'"
         check "scan cache: the second run reads the saved addresses" '\[core\] scan cache: [1-9][0-9]* address\(es\) for this exe \(key [0-9a-f]{16}\), each checked'
         check "scan cache: a cached address is checked against the pattern and used without a scan" 'scan \.xtls \[.*\] -> 1 hit at 0x[0-9a-f]+ \(base\+0x[0-9a-f]+\), the address cached for this exe'
         count "scan cache: with every address cached, no pattern needs a full scan" 0 'scan \.xtls \[.*\] -> 1 hit at 0x[0-9a-f]+ \(base\+0x[0-9a-f]+\)[[:space:]]*$'

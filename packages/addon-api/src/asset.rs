@@ -117,7 +117,8 @@ impl AssetOp {
             AssetOp::Erp(
                 ErpOp::ReplaceResource { source, .. }
                 | ErpOp::PutResource { source, .. }
-                | ErpOp::AddMipmaps { source, .. },
+                | ErpOp::AddMipmaps { source, .. }
+                | ErpOp::Overlay { source, .. },
             )
             | AssetOp::Lang(LangOp::Table { source, .. })
             | AssetOp::File(FileOp::Put { source, .. })
@@ -305,6 +306,8 @@ pub struct OpFile {
     pub schema_version: u32,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub fields: BTreeMap<String, Vec<String>>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub strict: bool,
     pub ops: Vec<AssetOp>,
 }
 

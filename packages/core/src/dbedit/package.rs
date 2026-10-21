@@ -644,7 +644,12 @@ pub fn export_packages(store: &Store, game: &Game, packages: &[Package], out: &P
     let mut export = GameExport::default();
     for p in packages {
         let ops = p.edits.to_ops();
-        let (_, failed) = crate::ops::apply_db_ops_lenient(&mut db, &ops, &BTreeMap::new());
+        let (_, failed) = crate::ops::apply_db_ops_lenient(
+            &mut db,
+            &ops,
+            &BTreeMap::new(),
+            &mut crate::ops::DbReport::default(),
+        );
         export.changes += ops.ops.len() - failed.len();
         let name = &p.manifest.name;
         export.skipped.extend(
@@ -1426,6 +1431,7 @@ mod tests {
         db.set("nobody.knows.this", "2.5", None).unwrap();
         db.remove("tracks.Track_0.PoleOnRight").unwrap();
         let add = crate::ops::DbOps {
+            strict: false,
             schema_version: 1,
             fields: BTreeMap::from([(
                 "entrants.drivers.driver".to_owned(),
@@ -1440,6 +1446,8 @@ mod tests {
                     ("_metadata_".to_owned(), "new_guy".to_owned()),
                     ("car_number".to_owned(), "77".to_owned()),
                 ]),
+                copy: None,
+                stat_id: None,
             }],
         };
         crate::ops::apply_db_ops(&mut db, &add, &BTreeMap::new()).unwrap();

@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
-use swofty_formats::erp::{Erp, Resource};
+use swofty_formats::erp::{Erp, ErpFile, Resource};
 use swofty_formats::gvdb::Gvdb;
 use swofty_formats::lng::Lng;
 
@@ -68,6 +68,35 @@ pub struct DbEdit {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct LangTable {
     pub table: String,
+}
+
+// A ready overlay archive from an erp.overlay op, loaded as it is.
+#[derive(Debug, Clone)]
+pub struct Prebuilt {
+    pub origin: String,
+    pub path: PathBuf,
+    pub erps: Vec<String>,
+    pub resources: usize,
+}
+
+// Whether an overlay archive loads as it is over each target: no resource in it may
+// change a target's stock layout. Ok with its resource count, or why not.
+pub fn overlay_fits(
+    path: &Path,
+    targets: &[String],
+    base: &dyn Fn(&str) -> PathBuf,
+) -> Result<std::result::Result<usize, String>> {
+    let open = |p: &Path| ErpFile::open(p).map_err(|e| Error::Other(format!("{}: {e}", p.display())));
+    let overlay = open(path)?;
+    for target in targets {
+        let stock = open(&base(target))?;
+        for res in &overlay.erp.resources {
+            if let Some(why) = layout_change(res, &stock.erp) {
+                return Ok(Err(format!("{} in {target}: {why}", res.name)));
+            }
+        }
+    }
+    Ok(Ok(overlay.erp.resources.len()))
 }
 
 #[derive(Debug, Default)]
@@ -244,12 +273,15 @@ impl Runtime {
         Ok(())
     }
 
-    // One overlay archive for each origin and set of target archives, in the
-    // order of `origins`, so that each addon or mod has its own.
+    // One overlay archive for each origin and set of target archives, so that each
+    // addon or mod has its own, beside the ready ones in `prebuilt`. The game reads a
+    // group's overlays in the listed order and the first that has a resource wins, so
+    // they are listed from the last origin in `origins` to the first.
     pub fn resources<'r>(
         &mut self,
         resources: impl IntoIterator<Item = (&'r str, &'r Resource, &'r Erp, &'r str)>,
         origins: &[String],
+        prebuilt: &[Prebuilt],
         out: &Path,
     ) -> Result<Vec<String>> {
         let stale = out.join(SWOFTY).join(RESOURCES_DIR);
@@ -288,7 +320,8 @@ impl Runtime {
             set.0.push(res.clone());
             set.2.extend(erps);
         }
-        for (n, ((_, origin, _, _), (resources, stock, targets))) in sets.into_iter().enumerate() {
+        let mut listed: Vec<(usize, ResErp)> = Vec::new();
+        for (n, ((rank, origin, _, _), (resources, stock, targets))) in sets.into_iter().enumerate() {
             let rel = format!("{RESOURCES_DIR}/{n}.erp");
             let path = out.join(SWOFTY).join(&rel);
             let dir = path.parent().expect("has parent");
@@ -301,12 +334,32 @@ impl Runtime {
             };
             std::fs::write(&path, erp.to_bytes()).map_err(io_err(&path))?;
             self.place(rel.clone(), path)?;
-            self.assets.resource_erps.push(ResErp {
-                file: rel,
-                erps: targets.into_iter().map(str::to_owned).collect(),
-                origin: origin.to_owned(),
-            });
+            listed.push((
+                rank,
+                ResErp {
+                    file: rel,
+                    erps: targets.into_iter().map(str::to_owned).collect(),
+                    origin: origin.to_owned(),
+                },
+            ));
         }
+        for (n, p) in prebuilt.iter().enumerate() {
+            let rel = format!("{RESOURCES_DIR}/p{n}.erp");
+            self.resources += p.resources;
+            self.place(rel.clone(), p.path.clone())?;
+            listed.push((
+                rank(&p.origin),
+                ResErp {
+                    file: rel,
+                    erps: p.erps.clone(),
+                    origin: p.origin.clone(),
+                },
+            ));
+        }
+        listed.sort_by_key(|e| std::cmp::Reverse(e.0));
+        self.assets
+            .resource_erps
+            .extend(listed.into_iter().map(|(_, e)| e));
         Ok(warnings)
     }
 
@@ -469,6 +522,7 @@ mod tests {
                     (boot, &resized, &stock, ""),
                     (boot, &added, &stock, ""),
                 ],
+                &[],
                 &[],
                 &out,
             )

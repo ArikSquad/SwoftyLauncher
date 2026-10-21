@@ -28,7 +28,7 @@ use crate::planner::{Conflict, Features, Kind, Planner, Route, load_features, wa
 use crate::profile::Profile;
 use crate::registry::Host;
 use crate::resolver::resolve;
-use crate::runtime::{Runtime, db_edits};
+use crate::runtime::{Prebuilt, Runtime, db_edits, overlay_fits};
 use crate::settings::{SessionMod, SessionSettings, SessionUi, render_ops, screen_file, screens};
 use crate::store::Store;
 use crate::ui::{ERPS as MENU_ERPS, READS as MENU_READS, ui_file};
@@ -184,6 +184,7 @@ fn package_ops(store: &Store, id: &str) -> Result<OpFile> {
     Ok(OpFile {
         schema_version: ops.schema_version,
         fields: ops.fields,
+        strict: ops.strict,
         ops: ops.ops.into_iter().map(AssetOp::Db).collect(),
     })
 }
@@ -603,7 +604,10 @@ pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
             }
         }
         let staged = (planner.route(Kind::Db) == Route::Runtime && planner.has_db()).then(|| db.clone());
-        let added = planner.apply_db(&mut db)?;
+        let mut db_report = crate::ops::DbReport::default();
+        let added = planner.apply_db_report(&mut db, &mut db_report)?;
+        built.lines.extend(db_report.lines);
+        built.warnings.extend(db_report.warnings);
         built.warnings.extend(planner.take_skipped());
         if !added.is_empty() {
             let found = owned::owned_items(&db, &Gvdb::parse(&shipped)?, &added);
@@ -756,10 +760,46 @@ pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
         let staged = built.plan.data.clone();
         let base = |rel: &str| staged.get(rel).cloned().unwrap_or_else(|| resolve(rel));
         let mut erps = ErpBuild::new(&base);
+        let runtime_route = planner.route(Kind::Erp) == Route::Runtime;
+        // Every origin that writes, in load order: the later wins.
+        let mut ranks: Vec<String> = Vec::new();
+        let mut prebuilt: Vec<Prebuilt> = Vec::new();
         for op in &erp_ops {
             let id = &op.origin.addon;
             let resolve = |s: &Source| Ok(s.resolve(&source_dir(store, id, s.root))?);
+            let origin = op.origin.to_string();
+            if matches!(op.op, AssetOp::Erp(_)) && !ranks.contains(&origin) {
+                ranks.push(origin.clone());
+            }
             match &op.op {
+                AssetOp::Erp(crate::ops::ErpOp::Overlay {
+                    erps: targets,
+                    source,
+                }) if runtime_route => {
+                    let path = resolve(source)?;
+                    match overlay_fits(&path, targets, &base)? {
+                        Ok(resources) => prebuilt.push(Prebuilt {
+                            origin,
+                            path,
+                            erps: targets.clone(),
+                            resources,
+                        }),
+                        Err(why) => {
+                            built.lines.push(format!(
+                                "erp: {origin}: its overlay archive goes in resource by resource; {why}"
+                            ));
+                            erps.apply_for(
+                                &crate::ops::ErpOp::Overlay {
+                                    erps: targets.clone(),
+                                    source: source.clone(),
+                                },
+                                &origin,
+                                &resolve,
+                            )
+                            .map_err(|e| Error::Other(format!("applying {}: {e}", op.origin)))?;
+                        }
+                    }
+                }
                 AssetOp::Erp(erp) => erps
                     .apply_for(erp, &op.origin.to_string(), &resolve)
                     .map_err(|e| Error::Other(format!("applying {}: {e}", op.origin)))?,
@@ -782,7 +822,13 @@ pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
                 ));
             }
             let built_in: Vec<String> = resized.iter().map(|r| r.erp.clone()).collect();
-            let notes = runtime.resources(erps.resources(), erps.origins(), &built.overlay)?;
+            if !prebuilt.is_empty() {
+                built.lines.push(format!(
+                    "erp: {} ready overlay archive(s) load as they are",
+                    prebuilt.len()
+                ));
+            }
+            let notes = runtime.resources(erps.resources(), &ranks, &prebuilt, &built.overlay)?;
             built.warnings.extend(notes);
             stage_erps(&mut built, &staged, built_in)?;
             resized
@@ -1366,7 +1412,15 @@ mod tests {
         );
         assert_eq!(
             db.get_text("entrants.teams.team_2.stat_id").as_deref(),
-            Some("100")
+            Some("102")
+        );
+        assert!(
+            built
+                .lines
+                .iter()
+                .any(|l| l.ends_with("stat_id 102 (the source's is 100)")),
+            "{:?}",
+            built.lines
         );
         std::fs::remove_dir_all(&root).ok();
     }

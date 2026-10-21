@@ -462,6 +462,7 @@ impl Edits {
             })
             .collect();
         DbOps {
+            strict: false,
             schema_version: 1,
             fields: Default::default(),
             ops,

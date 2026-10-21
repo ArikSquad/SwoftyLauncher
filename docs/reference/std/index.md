@@ -21,6 +21,10 @@ When your [engine plugin](/reference/addons/native-plugins) initializes, it rece
 | [Storage](./storage) | `swofty/storage.hpp` | `storage` (stable) | 5 | Caller thread |
 | [Career](./career) | `swofty/career.hpp` | `career` (stable) | 6, `block` 7 | Flow thread |
 | [Popup](./popup) | `swofty/popup.hpp` | `popup` (stable) | 7 | Any; shown on the flow thread |
+| [Strings](./strings) | `swofty/lang.hpp` | `lang` (stable) | 8 | Any; `refresh` on the game thread |
+| [Career contents](./career-content) | `swofty/career_content.hpp` | `career` (experimental) | 8, feature-detected | Addon init, flow thread |
+| [Characters](./characters) | `swofty/characters.hpp` | `career` (stable) | 8, feature-detected | Any; `refresh` on the game thread |
+| [Career wizard](./career-wizard) | `swofty/career_wizard.hpp` | `career` (stable) | 8, feature-detected | Any |
 | [Memory](./memory) | `swofty/mem.hpp` | none (header only) | any | Any |
 
 For screens and home tiles, use an addon operation rather than a `SwoftyApi` table; see [UI](./ui). You can find the merged engine-side contract for the version-5 tables in [the native-libraries design](/design/native-libraries).
@@ -40,6 +44,9 @@ Include the header for the library you need. The [addon template](/reference/add
 | `swofty/storage.hpp` | `packages/sdk/include/swofty/` | Addon storage |
 | `swofty/career.hpp` | `packages/sdk/include/swofty/` | Flow states, the running career, its components, the game bus and career-mode blocks |
 | `swofty/popup.hpp` | `packages/sdk/include/swofty/` | The game's message popup with your text |
+| `swofty/career_content.hpp` | `packages/sdk/include/swofty/` | Extra career content tiles with their own save slots, and the per-career check |
+| `swofty/characters.hpp` | `packages/sdk/include/swofty/` | Per-career character refs, voices and strings |
+| `swofty/career_wizard.hpp` | `packages/sdk/include/swofty/` | Per-career new-career wizard control |
 | `swofty/mem.hpp` | `packages/sdk/include/swofty/` | Guarded memory reads: `read`, `in_image`, `object_like`, `c_string` |
 | `swofty/assets.hpp` | `packages/sdk/include/swofty/` | Runtime asset loading; see [Asset API](/reference/addons/asset-api) |
 | `swofty/game.hpp`, `swofty/game/*.hpp` | `native/include/swofty/` | The [Game API](/reference/game/): the engine's functions, structs and sites |
@@ -71,7 +78,7 @@ You can use subscriptions, paint callbacks, and `db` and `storage` calls from an
 
 ## API versions
 
-To see which version the running loader offers, read `SwoftyApi::version`. The header constant, `SWOFTY_API_VERSION` in `swofty_api.h`, is 7.
+To see which version the running loader offers, read `SwoftyApi::version`. The header constant, `SWOFTY_API_VERSION` in `swofty_api.h`, is 8.
 
 | Members | Offered by |
 |---|---|
@@ -80,5 +87,6 @@ To see which version the running loader offers, read `SwoftyApi::version`. The h
 | `events`, `overlay`, `telemetry`, `db`, `storage` | `swofty_core.dll`, as version 5 |
 | `career` | `swofty_core.dll` 0.2.11, as version 6 |
 | `popup`, `career->block`, `career->unblock` | `swofty_core.dll` 0.2.12, as version 7 |
+| `lang` | `swofty_core.dll`, as version 8 |
 
-The helpers you use determine which version you need: the mixin helpers in `mixin.hpp` need version 2, the settings helpers version 3, `assets.hpp` version 4, the five table headers version 5, `career.hpp` version 6 (its `block` and `unblock` version 7), and `popup.hpp` version 7. `mem.hpp` needs no table.
+The helpers you use determine which version you need: the mixin helpers in `mixin.hpp` need version 2, the settings helpers version 3, `assets.hpp` version 4, the five table headers version 5, `career.hpp` version 6 (its `block` and `unblock` version 7), `popup.hpp` version 7, and `lang.hpp` version 8. `mem.hpp` needs no table.
