@@ -1861,6 +1861,75 @@ mod tests {
     }
 
     #[test]
+    fn a_built_addon_installs_and_builds() {
+        use crate::builder::AddonBuilder;
+        use crate::manifest::Category;
+        use crate::ops::{DbOp, ErpOp};
+        use swofty_formats::gvdb::Record;
+        if loader_dir().is_some() {
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("swofty-build-builder-{}", std::process::id()));
+        std::fs::remove_dir_all(&root).ok();
+        let dir = root.join("game");
+        std::fs::create_dir_all(dir.join("game_package/gamedatabases")).unwrap();
+        std::fs::create_dir_all(dir.join("2025_asset_groups")).unwrap();
+        std::fs::write(dir.join(crate::GAME_EXE), "exe").unwrap();
+        let records = vec![Record::new("rules.laps", 0, "5")];
+        std::fs::write(dir.join(GVDB), Gvdb { records }.to_bytes()).unwrap();
+        let (erp, uri) = ("2025_asset_groups/t.erp", "eaid://t/a.idf");
+        std::fs::write(dir.join(erp), archive(&[uri], 0)).unwrap();
+        let game = Game {
+            identity: Identity::detect(&dir, Some(1)).unwrap(),
+            dir: dir.clone(),
+            user_reg: None,
+        };
+        let src = root.join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("a.erp"), archive(&[uri], 9)).unwrap();
+        std::fs::write(src.join("a.dds"), "dds").unwrap();
+        let mut b = AddonBuilder::new("t.generated", "Generated", "t");
+        b.category = Some(Category::Gameplay);
+        b.db(DbOp::PutRecord {
+            key: "rules.laps".into(),
+            tag: 0,
+            value: "3132".into(),
+        })
+        .erp(ErpOp::PutResource {
+            erp: erp.into(),
+            resource: uri.into(),
+            source: Source::addon("erp/a.erp"),
+            rename: None,
+        })
+        .source("erp/a.erp", src.join("a.erp"))
+        .text("*", "lng_laps", "Laps")
+        .file(src.join("a.dds"), "x/a.dds");
+        b.write(&root.join("out")).unwrap();
+        let store = Store::new(root.join("data"));
+        let m = store.install_addon(&root.join("out")).unwrap();
+        assert_eq!(m.category, Some(Category::Gameplay));
+        store
+            .update_profile("default", |p| p.set_enabled("t.generated", true))
+            .unwrap();
+        let built = build(&store, "default", &game).unwrap();
+        let db = Gvdb::parse(&std::fs::read(&built.plan.data[GVDB]).unwrap()).unwrap();
+        assert_eq!(db.get_text("rules.laps").as_deref(), Some("12"));
+        assert!(built.plan.data.contains_key(erp));
+        assert_eq!(
+            built.plan.added["x/a.dds"],
+            store.addons_dir().join("t.generated/files/x/a.dds")
+        );
+        assert!(
+            built.lines.contains(
+                &"Generated: 1 database value, 1 archive resource, 1 file, 1 text string".to_owned()
+            ),
+            "{:?}",
+            built.lines
+        );
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
     fn places_screens_under_the_loader_ui_dir() {
         let m = AddonManifest::parse(
             r#"{ "schema_version": 1, "id": "a.pages", "name": "S", "version": "1.0.0", "author": "a",
