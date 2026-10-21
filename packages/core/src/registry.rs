@@ -219,6 +219,12 @@ impl AddonStore for ProfileState {
         }
         self.store.remove_addon(id).map_err(other)
     }
+
+    fn move_addon(&self, id: &str, delta: isize) -> swofty_addon::Result<()> {
+        self.store
+            .update_profile(&self.profile, |p| p.move_addon(id, delta))
+            .map_err(other)
+    }
 }
 
 fn other(e: Error) -> swofty_addon::Error {
@@ -508,6 +514,17 @@ mod tests {
         );
         assert_eq!(info.dir, store.addons_dir().join("t.okayama"));
         addons.set_enabled("t.okayama", true).unwrap();
+        let order = || -> Vec<String> {
+            let p = store.profile("default").unwrap();
+            p.addons.iter().map(|a| a.id.clone()).collect()
+        };
+        assert_eq!(order(), [CORE_ID, "t.a", "t.okayama"]);
+        addons.move_addon("t.okayama", -1).unwrap();
+        assert_eq!(order(), [CORE_ID, "t.okayama", "t.a"]);
+        addons.move_addon("t.okayama", -5).unwrap();
+        assert_eq!(order(), [CORE_ID, "t.okayama", "t.a"]);
+        assert!(addons.move_addon(CORE_ID, 1).is_err());
+        assert!(addons.move_addon("t.missing", 1).is_err());
         let listed = addons.list().unwrap();
         let okayama = listed.iter().find(|a| a.id == "t.okayama").unwrap();
         assert!(okayama.enabled && okayama.dir.join(crate::manifest::MANIFEST_FILE).is_file());

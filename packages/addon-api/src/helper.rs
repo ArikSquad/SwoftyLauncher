@@ -14,6 +14,8 @@ pub const API_VERSION: u32 = 1;
 pub const RESTART: &str = "swofty.restart";
 // The host calls a launcher lists in hello's host_calls when it answers them.
 pub const ADDON_CALLS: [&str; 4] = ["addons", "install_addon", "set_addon_enabled", "remove_addon"];
+// Listed from launcher 1.3.0, beside ADDON_CALLS.
+pub const MOVE_ADDON: &str = "move_addon";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Request<C> {
@@ -85,6 +87,7 @@ pub enum HostCall {
     InstallAddon { path: PathBuf },
     SetAddonEnabled { id: String, on: bool },
     RemoveAddon { id: String },
+    MoveAddon { id: String, delta: isize },
     Invalidate(#[serde(default)] Invalidate),
 }
 
@@ -367,9 +370,17 @@ mod tests {
                 },
                 json!({"id": "you.okayama"}),
             ),
+            (
+                HostCall::MoveAddon {
+                    id: "you.okayama".into(),
+                    delta: -2,
+                },
+                json!({"id": "you.okayama", "delta": -2}),
+            ),
         ] {
             let method = serde_json::to_value(&call).unwrap()["method"].clone();
-            assert!(ADDON_CALLS.contains(&method.as_str().unwrap()));
+            let method_name = method.as_str().unwrap();
+            assert!(ADDON_CALLS.contains(&method_name) || method_name == MOVE_ADDON);
             round(
                 Incoming::Call(Request { id: Some(12), call }),
                 json!({"id": 12, "method": method, "params": params}),
