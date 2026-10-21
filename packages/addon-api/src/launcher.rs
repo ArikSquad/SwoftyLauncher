@@ -148,7 +148,7 @@ pub struct GameStatus {
     pub session: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AddonInfo {
     pub id: String,
     pub name: String,
@@ -156,6 +156,9 @@ pub struct AddonInfo {
     pub author: String,
     pub dir: PathBuf,
     pub enabled: bool,
+    /// The addon's index in the active profile's addon list; `None` from launchers before 1.3.0.
+    #[serde(default)]
+    pub position: Option<usize>,
 }
 
 // Installed addons and their switch in the active profile, for a plugin that
@@ -325,5 +328,24 @@ mod tests {
         assert_eq!(cx.state::<Order>().unwrap(), order);
         store.set("a.b", serde_json::json!({ "mods": 3 })).unwrap();
         assert!(cx.state::<Order>().is_err());
+    }
+
+    #[test]
+    fn addon_info_reads_launchers_without_a_position() {
+        let old = serde_json::json!({"id": "a.b", "name": "B", "version": "1.0.0", "author": "t", "dir": "/a/b", "enabled": true});
+        let info: AddonInfo = serde_json::from_value(old).unwrap();
+        assert_eq!(
+            (info.id.as_str(), info.enabled, info.position),
+            ("a.b", true, None)
+        );
+        let placed = AddonInfo {
+            position: Some(2),
+            ..info
+        };
+        let json = serde_json::to_value(&placed).unwrap();
+        assert_eq!(json["position"], 2);
+        assert_eq!(serde_json::from_value::<AddonInfo>(json).unwrap(), placed);
+        let off = serde_json::to_value(AddonInfo::default()).unwrap();
+        assert!(off["position"].is_null());
     }
 }
