@@ -1,7 +1,7 @@
 mod fields;
-mod packages;
 mod page;
 mod raw;
+mod save;
 
 use std::collections::HashMap;
 use std::panic::AssertUnwindSafe;
@@ -14,9 +14,10 @@ use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::notification::Notification;
 use gpui_kit::component::{WindowExt, v_flex};
 use gpui_kit::*;
-use swofty_core::dbedit::package::{self, Package, PackageInfo};
+use swofty_core::dbedit::package::{self, Incoming, PackageInfo};
 use swofty_core::dbedit::{
-    Catalog, Edit, Edits, Hit, ImportReport, Kind, LinkSpec, Module, ModuleView, NodeId, NodeKind, Target,
+    Catalog, Draft, Edit, Edits, Hit, ImportReport, Kind, LinkSpec, Module, ModuleView, NodeId, NodeKind,
+    Target,
 };
 use swofty_core::store::Store;
 use swofty_core::view::{Block, Body};
@@ -38,7 +39,6 @@ pub(crate) enum Load {
 
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) enum Nav {
-    Packages,
     Module(String),
     Raw(NodeId),
     Unnamed,
@@ -84,14 +84,18 @@ pub(crate) struct Db {
     pub load: Load,
     pub game: Option<GameId>,
     pub modules: &'static [Module],
-    pub edits: Edits,
+    /// The changes being edited; `draft.edits` is what every view shows.
+    pub draft: Draft,
+    draft_read: bool,
     index: HashMap<u64, usize>,
-    pub editing: Option<String>,
-    pkg: Option<Package>,
-    pub pkg_error: Option<String>,
-    stamp: Option<SystemTime>,
-    pub packages: Vec<PackageInfo>,
-    pub damaged: HashMap<String, String>,
+    /// Why the draft's addon could not be read; editing stays off until it reads.
+    pub addon_error: Option<String>,
+    /// The DB Editor addons installed, from their manifests.
+    pub addons: Vec<PackageInfo>,
+    /// An addon to open once the player answers Save / Discard / Cancel.
+    pending_open: Option<String>,
+    /// The addon file time last looked at, so a damaged file is read once per change.
+    seen: Option<Option<SystemTime>>,
     pub others: Arc<HashMap<u64, Vec<(String, String)>>>,
     pub toasts: Vec<Notification>,
     pub nav: Nav,
@@ -138,14 +142,13 @@ impl Db {
             load: Load::Idle,
             game: None,
             modules: &[],
-            edits: Edits::default(),
+            draft: Draft::default(),
+            draft_read: false,
             index: HashMap::new(),
-            editing: None,
-            pkg: None,
-            pkg_error: None,
-            stamp: None,
-            packages: Vec::new(),
-            damaged: HashMap::new(),
+            addon_error: None,
+            addons: Vec::new(),
+            pending_open: None,
+            seen: None,
             others: Arc::new(HashMap::new()),
             toasts: Vec::new(),
             nav: Nav::Raw(0),
@@ -189,7 +192,7 @@ impl Db {
     }
 
     pub(crate) fn edit(&self, key: u64) -> Option<&Edit> {
-        self.index.get(&key).and_then(|&i| self.edits.edits.get(i))
+        self.index.get(&key).and_then(|&i| self.draft.edits.edits.get(i))
     }
 
     pub(crate) fn current(&self, key: u64) -> String {
@@ -205,6 +208,7 @@ impl Db {
 
     fn reindex(&mut self) {
         self.index = self
+            .draft
             .edits
             .edits
             .iter()
@@ -328,8 +332,6 @@ pub(crate) fn hex(key: u64) -> String {
 
 type Loaded = Result<(Arc<Catalog>, &'static [Module]), String>;
 
-pub(crate) const FIRST_PACKAGE: &str = "My changes";
-
 pub(crate) fn guarded<T>(f: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
     std::panic::catch_unwind(AssertUnwindSafe(f))
         .unwrap_or_else(|_| Err("The database editor is not available in this build.".into()))
@@ -358,7 +360,7 @@ pub(crate) fn debug_path(var: &str) -> Option<PathBuf> {
 fn report_text(r: &ImportReport) -> String {
     let format = match r.format {
         "ego" => "EGO GameDatabases Editor export",
-        "package" | "zip" => "DB Editor package",
+        "package" | "zip" => "DB Editor addon",
         "bin" => "Modded game database",
         _ => "DB Editor export",
     };
@@ -381,191 +383,209 @@ fn report_text(r: &ImportReport) -> String {
     lines.join("\n")
 }
 
+/// What runs once the player answers Save / Discard / Cancel about unsaved changes.
+#[derive(Clone)]
+pub(crate) enum Then {
+    Open(String),
+    New,
+    Load {
+        file: String,
+        name: String,
+        edits: Edits,
+        report: ImportReport,
+    },
+}
+
 impl Shell {
     pub(crate) fn db_count(&self) -> usize {
-        self.db.packages.len()
+        self.db.draft.unsaved()
     }
 
     pub(crate) fn db_profile_changed(&mut self, cx: &mut Context<Self>) {
-        self.db_refresh_packages(cx);
+        self.db_refresh(cx);
     }
 
-    pub(crate) fn db_package(&self, id: &str) -> Option<&PackageInfo> {
-        self.db.packages.iter().find(|p| p.id == id)
+    pub(crate) fn db_addon(&self, id: &str) -> Option<&PackageInfo> {
+        self.db.addons.iter().find(|p| p.id == id)
     }
 
-    pub(crate) fn db_editing(&self) -> Option<&PackageInfo> {
-        self.db.editing.as_deref().and_then(|id| self.db_package(id))
+    /// The installed addon the draft edits, if any.
+    pub(crate) fn db_bound(&self) -> Option<&PackageInfo> {
+        self.db.draft.addon.as_deref().and_then(|id| self.db_addon(id))
+    }
+
+    /// The draft's addon name, or "the new addon".
+    pub(crate) fn db_draft_name(&self) -> String {
+        match (&self.db.draft.addon, self.db_bound()) {
+            (_, Some(info)) => info.name.clone(),
+            (Some(id), None) => id.clone(),
+            (None, None) => "the new addon".into(),
+        }
     }
 
     pub(crate) fn db_locked(&self) -> bool {
-        self.db.pkg_error.is_some()
+        self.db.addon_error.is_some()
     }
 
     pub(crate) fn db_enabled(&self, id: &str) -> bool {
         self.library.profile.enabled().any(|e| e == id)
     }
 
-    /// The packages on in the active profile, in load order.
+    /// The DB Editor addons on in the active profile, in load order.
     pub(crate) fn db_stack(&self) -> Vec<String> {
         self.library
             .profile
             .enabled()
-            .filter(|id| self.db_package(id).is_some())
+            .filter(|id| self.db_addon(id).is_some())
             .map(str::to_owned)
             .collect()
     }
 
-    pub(crate) fn db_refresh_packages(&mut self, cx: &mut Context<Self>) {
-        self.db.damaged.clear();
-        self.db.packages = self.db_list_one_by_one();
-        if self
-            .db
-            .editing
-            .as_ref()
-            .is_some_and(|id| self.db_package(id).is_none())
-        {
-            self.db.editing = None;
+    pub(crate) fn db_refresh(&mut self, cx: &mut Context<Self>) {
+        let mut addons: Vec<PackageInfo> = self
+            .library
+            .addons
+            .iter()
+            .filter(|a| a.package)
+            .map(|a| {
+                let m = &a.manifest;
+                PackageInfo {
+                    id: m.id.clone(),
+                    name: m.name.clone(),
+                    version: m.version.to_string(),
+                    author: m.author.clone(),
+                    description: m.description.clone().unwrap_or_default(),
+                    changes: 0,
+                    game_build: String::new(),
+                }
+            })
+            .collect();
+        addons.sort_by_key(|p| p.name.to_lowercase());
+        self.db.addons = addons;
+        if !self.db.draft_read {
+            self.db_read_draft();
         }
-        if self.db.editing.is_none() {
-            self.db.editing = self.db_stack().pop();
-        }
-        self.db_sync_package(cx);
+        self.db_sync_addon(false, cx);
         let profile = self.library.profile.name.clone();
         self.db.others = Arc::new(
             guarded(|| package::enabled_changes(&self.store, &profile).map_err(text)).unwrap_or_default(),
         );
     }
 
-    // Every package on the Addons list, with the damaged ones marked.
-    fn db_list_one_by_one(&mut self) -> Vec<PackageInfo> {
-        let mut list: Vec<PackageInfo> = Vec::new();
-        for a in self.library.addons.iter().filter(|a| a.package) {
-            let m = &a.manifest;
-            match guarded(|| Package::open(&self.store, &m.id).map_err(text)) {
-                Ok(pkg) => list.push(pkg.info()),
-                Err(e) => {
-                    self.db.damaged.insert(m.id.clone(), e);
-                    list.push(PackageInfo {
-                        id: m.id.clone(),
-                        name: m.name.clone(),
-                        version: m.version.to_string(),
-                        author: m.author.clone(),
-                        description: m.description.clone().unwrap_or_default(),
-                        changes: 0,
-                        game_build: String::new(),
-                    });
-                }
+    // Reads the autosaved draft once; a file that does not read is set aside.
+    fn db_read_draft(&mut self) {
+        self.db.draft_read = true;
+        match guarded(|| Draft::load(&self.store).map_err(text)) {
+            Ok(d) => self.db.draft = d,
+            Err(e) => {
+                let body = match guarded(|| Draft::set_aside(&self.store).map_err(text)) {
+                    Ok(kept) => format!("{e}\nIt was kept as {}", kept.display()),
+                    Err(_) => e,
+                };
+                self.db.toasts.push(
+                    Notification::error(body)
+                        .title("The DB Editor draft could not be read")
+                        .autohide(false),
+                );
             }
         }
-        list.sort_by_key(|p| p.name.to_lowercase());
-        list
+        self.db.reindex();
     }
 
-    pub(crate) fn db_select(&mut self, id: Option<String>, cx: &mut Context<Self>) {
-        self.db.editing = id;
-        self.db_sync_package(cx);
-        cx.notify();
+    /// Writes the draft to disk after every change.
+    pub(crate) fn db_persist(&mut self) {
+        let store = self.store.clone();
+        let draft = &mut self.db.draft;
+        self.db.save_error = guarded(|| draft.save(&store).map_err(text))
+            .err()
+            .map(|e| format!("Your changes could not be saved to the draft: {e}"));
     }
 
-    fn db_stale(&self) -> bool {
-        self.db.editing.as_deref().is_some_and(|id| {
-            guarded(|| Ok(package::modified(&self.store, id))).ok().flatten() != self.db.stamp
-        })
-    }
-
-    // Loads the editing package when it is not the one in memory or its file changed on disk.
-    fn db_sync_package(&mut self, cx: &mut Context<Self>) -> bool {
-        let loaded = self.db.pkg.as_ref().map(|p| p.id.as_str());
-        let fresh = match self.db.editing.as_deref() {
-            Some(id) => loaded == Some(id) && !self.db_stale(),
-            None => loaded.is_none() && self.db.pkg_error.is_none(),
+    // Follows the draft's addon on disk: removed, damaged, or saved by another writer.
+    fn db_sync_addon(&mut self, quiet: bool, cx: &mut Context<Self>) {
+        let Some(id) = self.db.draft.addon.clone() else {
+            if self.db.addon_error.take().is_some() {
+                self.db_changed(None, false, cx);
+            }
+            return;
         };
-        if fresh {
-            return false;
-        }
-        self.db_load_package(cx);
-        true
-    }
-
-    fn db_load_package(&mut self, cx: &mut Context<Self>) {
-        self.db.pkg = None;
-        self.db.pkg_error = None;
-        self.db.stamp = None;
-        self.db.edits = Edits::default();
-        if let Some(id) = self.db.editing.clone() {
-            let stamp = guarded(|| Ok(package::modified(&self.store, &id))).ok().flatten();
-            match guarded(|| Package::open(&self.store, &id).map_err(text)) {
-                Ok(mut pkg) => {
-                    self.db.edits = std::mem::take(&mut pkg.edits);
-                    self.db.pkg = Some(pkg);
-                    self.db.stamp = stamp;
-                }
-                Err(e) => self.db.pkg_error = Some(e),
+        let store = self.store.clone();
+        if !guarded(|| Ok(package::is_package(&store, &id))).unwrap_or(false) {
+            let name = self.db_draft_name();
+            if self.db.draft.is_dirty() {
+                let edits = self.db.draft.edits.clone();
+                self.db.draft.clear();
+                self.db.draft.edits = edits;
+                self.db.draft.name = Some(name.clone());
+                self.db.toasts.push(Notification::warning(format!(
+                    "{name} was removed. Your unsaved changes stay in the DB Editor as a new addon."
+                )));
+            } else {
+                self.db.draft.clear();
             }
+            self.db.addon_error = None;
+            self.db.seen = None;
+            self.db_persist();
+            self.db_changed(None, false, cx);
+            return;
+        }
+        let stamp = guarded(|| Ok(package::modified(&store, &id))).ok().flatten();
+        if self.db.seen == Some(stamp) {
+            return;
+        }
+        self.db.seen = Some(stamp);
+        if self.db.addon_error.is_none() && stamp == self.db.draft.stamp {
+            return;
+        }
+        match guarded(|| package::Package::open(&store, &id).map_err(text)) {
+            Ok(pkg) => {
+                let reload = self.db.addon_error.is_none() && self.db.draft.stamp.is_some();
+                let dirty = self.db.draft.is_dirty();
+                self.db.draft.rebase(pkg.edits.edits, stamp);
+                self.db.addon_error = None;
+                self.db_persist();
+                if reload && !quiet {
+                    let name = self.db_draft_name();
+                    self.db.toasts.push(Notification::info(if dirty {
+                        format!(
+                            "{name} changed on disk and was reloaded. Your unsaved changes are kept on top."
+                        )
+                    } else {
+                        format!("{name} changed on disk and was reloaded.")
+                    }));
+                }
+            }
+            Err(e) => self.db.addon_error = Some(e),
         }
         self.db.errors.clear();
         self.db.cell = None;
         self.db.slots = Slots::default();
-        self.db.save_error = None;
         self.db_changed(None, false, cx);
     }
 
-    /// The poll's check: another writer (the CLI, a second window) changed the editing package.
+    /// Re-reads the draft's addon after this window changed its files, without a notice.
+    pub(crate) fn db_quiet_reload(&mut self, cx: &mut Context<Self>) {
+        self.db.seen = None;
+        self.db_sync_addon(true, cx);
+    }
+
+    /// Try again on a draft whose addon did not read.
+    pub(crate) fn db_retry(&mut self, cx: &mut Context<Self>) {
+        self.db.seen = None;
+        self.db_sync_addon(false, cx);
+        cx.notify();
+    }
+
+    /// The poll's check: another writer (the CLI, a second window) changed the draft's addon.
     pub(crate) fn db_poll(&mut self, cx: &mut Context<Self>) {
-        if self.page == crate::shell::Page::Database && self.db.pkg.is_some() && self.db_stale() {
-            let name = self.db_editing().map(|p| p.name.clone()).unwrap_or_default();
-            self.db_refresh_packages(cx);
-            if self.db.pkg.is_none() {
-                return;
-            }
-            self.db.toasts.push(Notification::info(format!(
-                "{name} changed on disk and was reloaded."
-            )));
+        if self.page == crate::shell::Page::Database && self.db.draft.addon.is_some() {
+            self.db_sync_addon(false, cx);
         }
     }
 
-    // Every change goes to a package: reload a changed file first, or make "My changes" when none is picked.
     fn db_ready_to_edit(&mut self, cx: &mut Context<Self>) -> bool {
-        if self.db.editing.is_some() {
-            self.db_sync_package(cx);
-            return self.db.pkg.is_some();
-        }
-        let Some(catalog) = self.db.catalog().cloned() else {
-            return false;
-        };
-        let store = self.store.clone();
-        let made = guarded(|| {
-            let mut pkg = Package::create(&store, FIRST_PACKAGE).map_err(text)?;
-            let version = pkg.manifest.version.to_string();
-            pkg.set_details(FIRST_PACKAGE, &version, &packages::default_author(&store), "")
-                .map_err(text)?;
-            pkg.save(&store, &catalog).map_err(text)?;
-            Ok(pkg)
-        });
-        let mut pkg = match made {
-            Ok(p) => p,
-            Err(e) => {
-                self.db
-                    .toasts
-                    .push(Notification::error(e).title(format!("Could not create {FIRST_PACKAGE}")));
-                return false;
-            }
-        };
-        let (id, name) = (pkg.id.clone(), pkg.manifest.name.clone());
-        let profile = self.library.profile.name.clone();
-        let on = !self.vanilla() && self.db_turn_on(&id).is_ok();
-        self.db.toasts.push(Notification::success(if on {
-            format!("Created {name} and turned it on in {profile}")
-        } else {
-            format!("Created {name}. Turn it on in a profile to use it in the game.")
-        }));
-        self.db.edits = std::mem::take(&mut pkg.edits);
-        self.db.stamp = guarded(|| Ok(package::modified(&store, &id))).ok().flatten();
-        self.db.pkg = Some(pkg);
-        self.db.editing = Some(id);
-        self.reload(cx);
-        true
+        self.db_sync_addon(false, cx);
+        self.db.catalog().is_some() && self.db.addon_error.is_none()
     }
 
     pub(crate) fn db_turn_on(&mut self, id: &str) -> Result<(), String> {
@@ -575,81 +595,76 @@ impl Shell {
             .map_err(text)
     }
 
-    fn db_save(&mut self) {
-        let (Some(catalog), Some(mut pkg)) = (self.db.catalog().cloned(), self.db.pkg.take()) else {
-            return;
-        };
-        pkg.edits = std::mem::take(&mut self.db.edits);
+    /// Opens the DB Editor addon `id` as the draft. Unsaved changes in the
+    /// draft ask Save / Discard / Cancel first.
+    pub(crate) fn db_edit_addon(&mut self, id: &str, cx: &mut Context<Self>) {
+        self.go(Page::Database, cx);
+        if self.db.draft.addon.as_deref() == Some(id) {
+            self.db_retry(cx);
+        } else if self.db.draft.is_dirty() {
+            self.db.pending_open = Some(id.to_owned());
+        } else {
+            self.db_then(Then::Open(id.to_owned()), cx);
+        }
+        cx.notify();
+    }
+
+    /// The old name of [`Self::db_edit_addon`], until the Addons page calls the new one.
+    #[allow(dead_code)]
+    pub(crate) fn db_edit_package(&mut self, id: &str, cx: &mut Context<Self>) {
+        self.db_edit_addon(id, cx);
+    }
+
+    pub(crate) fn db_then(&mut self, then: Then, cx: &mut Context<Self>) {
         let store = self.store.clone();
-        let result = guarded(|| pkg.save(&store, &catalog).map_err(text));
-        self.db.edits = std::mem::take(&mut pkg.edits);
-        self.db.stamp = guarded(|| Ok(package::modified(&store, &pkg.id))).ok().flatten();
-        self.db.save_error = result.err().map(|e| format!("Changes could not be saved: {e}"));
-        let n = self.db.edits.len();
-        if let Some(info) = self.db.packages.iter_mut().find(|p| p.id == pkg.id) {
-            info.changes = n;
+        let mut toast = None;
+        match then {
+            Then::Open(id) => {
+                let draft = &mut self.db.draft;
+                self.db.addon_error = guarded(|| draft.open(&store, &id).map_err(text)).err();
+                if self.db.addon_error.is_some() {
+                    self.db.draft.clear();
+                    self.db.draft.addon = Some(id);
+                }
+            }
+            Then::New => self.db.draft.clear(),
+            Then::Load {
+                file,
+                name,
+                edits,
+                report,
+            } => {
+                self.db.draft.clear();
+                self.db.draft.edits = edits;
+                self.db.draft.name = Some(name);
+                self.db.addon_error = None;
+                let note = if report.format == "bin" && report.skipped.len() > 1 {
+                    Notification::warning(report_text(&report)).autohide(false)
+                } else {
+                    Notification::success(report_text(&report))
+                };
+                toast = Some(note.title(format!(
+                    "Opened {file} as a new addon. Review it, then Save as Addon."
+                )));
+                self.db_go(Nav::Changes, cx);
+            }
         }
-        self.db.pkg = Some(pkg);
+        self.db.seen = Some(self.db.draft.stamp);
+        self.db.errors.clear();
+        self.db.cell = None;
+        self.db.slots = Slots::default();
+        self.db_persist();
+        self.db.toasts.extend(toast);
+        let profile = self.library.profile.name.clone();
+        self.db.others = Arc::new(
+            guarded(|| package::enabled_changes(&self.store, &profile).map_err(text)).unwrap_or_default(),
+        );
+        self.db_changed(None, false, cx);
     }
 
-    /// Changes a package's manifest or edits with `f` and saves it; the editing
-    /// package goes through its in-memory copy.
-    pub(crate) fn db_update_package(
-        &mut self,
-        id: &str,
-        f: impl FnOnce(&mut Package) -> swofty_core::Result<()>,
-    ) -> Result<(), String> {
-        let catalog = self
-            .db
-            .catalog()
-            .cloned()
-            .ok_or("The game database is not loaded yet.")?;
-        let store = self.store.clone();
-        if self.db.editing.as_deref() != Some(id) {
-            return guarded(|| {
-                let mut pkg = Package::open(&store, id).map_err(text)?;
-                f(&mut pkg).map_err(text)?;
-                pkg.save(&store, &catalog).map_err(text)
-            });
-        }
-        self.db_sync_package_quiet();
-        let Some(mut pkg) = self.db.pkg.take() else {
-            return Err(self
-                .db
-                .pkg_error
-                .clone()
-                .unwrap_or_else(|| "The package could not be read.".into()));
-        };
-        pkg.edits = std::mem::take(&mut self.db.edits);
-        let result = guarded(|| {
-            f(&mut pkg).map_err(text)?;
-            pkg.save(&store, &catalog).map_err(text)
-        });
-        self.db.edits = std::mem::take(&mut pkg.edits);
-        self.db.stamp = guarded(|| Ok(package::modified(&store, &pkg.id))).ok().flatten();
-        self.db.pkg = Some(pkg);
-        self.db.reindex();
-        result
-    }
-
-    fn db_sync_package_quiet(&mut self) {
-        if !self.db_stale() {
-            return;
-        }
-        let Some(id) = self.db.editing.clone() else {
-            return;
-        };
-        let stamp = guarded(|| Ok(package::modified(&self.store, &id))).ok().flatten();
-        if let Ok(mut pkg) = guarded(|| Package::open(&self.store, &id).map_err(text)) {
-            self.db.edits = std::mem::take(&mut pkg.edits);
-            self.db.pkg = Some(pkg);
-            self.db.stamp = stamp;
-        }
-    }
-
-    /// "Also changed by …" for a key another enabled package changes.
+    /// "Also changed by …" for a key another enabled DB Editor addon changes.
     pub(crate) fn db_others(&self, key: u64) -> Option<String> {
-        let editing = self.db.editing.as_deref();
+        let editing = self.db.draft.addon.as_deref();
         let others: Vec<&(String, String)> = self
             .db
             .others
@@ -659,7 +674,7 @@ impl Shell {
             .collect();
         let last = others.last()?;
         let name = |id: &str| {
-            self.db_package(id)
+            self.db_addon(id)
                 .map_or_else(|| id.to_owned(), |p| p.name.clone())
         };
         let list: Vec<String> = others
@@ -669,12 +684,12 @@ impl Shell {
         let order: Vec<&str> = self.library.profile.enabled().collect();
         let at = |id: &str| order.iter().position(|o| *o == id);
         let mine = self.db.edit(key).is_some();
-        let wins = if mine
-            && editing
-                .and_then(at)
-                .is_some_and(|i| at(&last.0).is_none_or(|j| i > j))
-        {
-            Some("this package wins".to_owned())
+        let later = match editing {
+            Some(id) => at(id).is_some_and(|i| at(&last.0).is_none_or(|j| i > j)),
+            None => true,
+        };
+        let wins = if mine && later {
+            Some("your change wins".to_owned())
         } else if mine || others.len() > 1 {
             Some(format!("{} wins", name(&last.0)))
         } else {
@@ -688,7 +703,7 @@ impl Shell {
     }
 
     pub(crate) fn db_shared(&self, key: u64) -> bool {
-        let editing = self.db.editing.as_deref();
+        let editing = self.db.draft.addon.as_deref();
         self.db
             .others
             .get(&key)
@@ -751,6 +766,9 @@ impl Shell {
         {
             d.query.clear();
             d.input.update(cx, |s, cx| s.set_value("", window, cx));
+        }
+        if let Some(id) = self.db.pending_open.take() {
+            self.db_leave(Then::Open(id), window, cx);
         }
         self.db_apply_reveal(cx);
         self.sync_fields(window, cx);
@@ -918,7 +936,7 @@ impl Shell {
         self.db.rev += 1;
         self.db.reindex();
         if save {
-            self.db_save();
+            self.db_persist();
         }
         let edit = key.and_then(|k| self.db.edit(k).cloned());
         if let (Some(key), Some(catalog), Some(slot)) =
@@ -960,7 +978,7 @@ impl Shell {
             .as_ref()
             .filter(|v| v.module == id && v.scope == scope)
             .map(|v| v.choices.clone());
-        let edits = self.db.edits.clone();
+        let edits = self.db.draft.edits.clone();
         cx.spawn(async move |this, cx| {
             let (view, choices) = cx
                 .background_executor()
@@ -1221,7 +1239,7 @@ impl Shell {
         if !self.db_ready_to_edit(cx) {
             return false;
         }
-        let result = guarded(|| self.db.edits.set(&catalog, key, value));
+        let result = guarded(|| self.db.draft.edits.set(&catalog, key, value));
         match result {
             Ok(()) => {
                 self.db.errors.remove(&key);
@@ -1270,29 +1288,28 @@ impl Shell {
     pub(crate) fn db_revert(&mut self, key: u64, cx: &mut Context<Self>) {
         self.db.errors.remove(&key);
         self.db.slots.forget(key);
-        if self.db.editing.is_none() || !self.db_ready_to_edit(cx) {
+        if !self.db_ready_to_edit(cx) {
             return;
         }
-        if guarded(|| Ok(self.db.edits.revert(key))).unwrap_or(false) {
+        if guarded(|| Ok(self.db.draft.edits.revert(key))).unwrap_or(false) {
             self.db_changed(Some(key), true, cx);
         }
         cx.notify();
     }
 
     pub(crate) fn db_revert_all(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let n = self.db.edits.len();
+        let n = self.db.draft.edits.len();
         if n == 0 {
             return;
         }
         let shell = cx.entity().downgrade();
-        let name = self.db_editing().map(|p| p.name.clone()).unwrap_or_default();
         window.open_alert_dialog(cx, move |alert, _, _| {
             let shell = shell.clone();
             alert
                 .title(format!("Revert all {n} changes?"))
-                .description(format!(
-                    "Every change in {name} goes back to the stock value. This can't be undone."
-                ))
+                .description(
+                    "Every value goes back to the game's stock value. Save afterwards to keep that in the addon.",
+                )
                 .ok_text("Revert all")
                 .ok_variant(gpui_kit::component::button::ButtonVariant::Danger)
                 .show_cancel(true)
@@ -1302,7 +1319,7 @@ impl Shell {
                             if !s.db_ready_to_edit(cx) {
                                 return;
                             }
-                            s.db.edits.clear();
+                            s.db.draft.edits.clear();
                             s.db.errors.clear();
                             s.db.slots = Slots::default();
                             s.db_changed(None, true, cx);
@@ -1311,45 +1328,6 @@ impl Shell {
                     true
                 })
         });
-    }
-
-    pub(crate) fn db_export(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(id) = self.db.editing.clone() {
-            self.db_export_package(id, window, cx);
-        }
-    }
-
-    pub(crate) fn db_export_package(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(info) = self.db_package(&id).cloned() else {
-            return;
-        };
-        let file = format!("{}.zip", id.trim_start_matches("dbedit."));
-        let store = self.store.clone();
-        let export = move |path: PathBuf, window: &mut Window, cx: &mut App| match guarded(|| {
-            Package::export_zip(&store, &id, &path).map_err(text)
-        }) {
-            Ok(()) => window.push_notification(
-                Notification::success(format!(
-                    "{} saved to {}",
-                    crate::library::plural(info.changes, "change", "changes"),
-                    path.display()
-                ))
-                .title(format!("Exported {}", info.name)),
-                cx,
-            ),
-            Err(e) => window.push_notification(Notification::error(e).title("Export failed"), cx),
-        };
-        if let Some(dir) = debug_path("SWOFTY_DEBUG_EXPORT") {
-            export(dir.join(&file), window, cx);
-            return;
-        }
-        let rx = cx.prompt_for_new_path(&home(&self.store), Some(&file));
-        cx.spawn_in(window, async move |_, cx| {
-            if let Ok(Ok(Some(path))) = rx.await {
-                cx.update(|window, cx| export(path, window, cx)).ok();
-            }
-        })
-        .detach();
     }
 
     pub(crate) fn db_import(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1394,11 +1372,11 @@ impl Shell {
         cx.spawn_in(window, async move |this, cx| {
             let result = cx
                 .background_executor()
-                .spawn(async move { guarded(|| package::import(&store, &catalog, &path).map_err(text)) })
+                .spawn(async move { guarded(|| package::read(&store, &catalog, &path).map_err(text)) })
                 .await;
             this.update_in(cx, |s, window, cx| {
                 s.db.importing = false;
-                s.db_imported(result, &file, window, cx);
+                s.db_imported(result, file, window, cx);
                 cx.notify();
             })
             .ok();
@@ -1406,15 +1384,16 @@ impl Shell {
         .detach();
     }
 
+    // An addon .zip installs as a new addon and shows on Addons; other files open as a new draft.
     fn db_imported(
         &mut self,
-        result: Result<package::Imported, String>,
-        file: &str,
+        result: Result<Incoming, String>,
+        file: String,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         match result {
-            Ok(done) => {
+            Ok(Incoming::Addon(done)) => {
                 let mut body = report_text(&done.report);
                 if let Some(from) = &done.renamed_from {
                     body.push_str(&format!(
@@ -1422,15 +1401,24 @@ impl Shell {
                         done.package.id
                     ));
                 }
+                let id = done.package.id.clone();
+                let profile = self.library.profile.name.clone();
+                if !self.vanilla() && self.db_turn_on(&id).is_ok() {
+                    body.push_str(&format!("\nTurned on in {profile}"));
+                }
                 let title = format!("Imported {}", done.package.name);
-                let note = if done.report.format == "bin" && done.report.skipped.len() > 1 {
-                    Notification::warning(body).autohide(false)
-                } else {
-                    Notification::success(body)
-                };
-                window.push_notification(note.title(title), cx);
-                self.db.editing = Some(done.package.id);
+                window.push_notification(Notification::success(body).title(title), cx);
                 self.reload(cx);
+                self.show_addon(&id, cx);
+            }
+            Ok(Incoming::Changes { name, edits, report }) => {
+                let then = Then::Load {
+                    file,
+                    name,
+                    edits,
+                    report,
+                };
+                self.db_leave(then, window, cx);
             }
             Err(e) => window.push_notification(
                 Notification::error(e).title(format!("Could not import {file}")),
@@ -1450,11 +1438,11 @@ impl Shell {
         if !self.db_ready_to_edit(cx) {
             return Err(self
                 .db
-                .pkg_error
+                .addon_error
                 .clone()
-                .unwrap_or_else(|| "No package to save the key to.".into()));
+                .unwrap_or_else(|| "The draft can't be edited now.".into()));
         }
-        let key = guarded(|| self.db.edits.add(&catalog, path, tag, value))?;
+        let key = guarded(|| self.db.draft.edits.add(&catalog, path, tag, value))?;
         self.db_changed(Some(key), true, cx);
         Ok(())
     }

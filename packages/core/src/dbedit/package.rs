@@ -1,5 +1,6 @@
-//! DB Editor packages: named sets of edits installed as data addons
+//! DB Editor addons: named sets of edits installed as data addons
 //! (`<data>/addons/<id>/` with `swofty.json`, `database.json` and `dbedit.json`).
+//! The module keeps its old name, `package`.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::{Read, Write};
@@ -11,17 +12,19 @@ use swofty_formats::gvdb::{Gvdb, Record};
 
 use super::{Catalog, Edit, Edits, ImportReport, Origin};
 use crate::install::Game;
-use crate::manifest::{AddonManifest, MANIFEST_FILE, valid_id};
+use crate::manifest::{AddonManifest, Category, MANIFEST_FILE, valid_id};
 use crate::store::Store;
 use crate::{Error, Result, io_err};
 
-/// The DB Editor's source file; its presence marks an addon as a package.
+/// The DB Editor's source file; its presence marks a DB Editor addon.
 pub const MARKER: &str = "dbedit.json";
 /// The database operation file generated from the edits.
 pub const OPS_FILE: &str = "database.json";
 pub const FORMAT: &str = "swofty-db-package";
 pub const ID_PREFIX: &str = "dbedit.";
 pub const DEFAULT_AUTHOR: &str = "Unknown";
+/// `origin.tool` of every DB Editor addon.
+pub const ORIGIN_TOOL: &str = "db-editor";
 const GAME_BUILDS: &str = ">=25251167";
 /// The game database's file name, which a modded-database import looks for.
 pub const GVDB_NAME: &str = "gamedatabases.2025.bin";
@@ -61,7 +64,7 @@ pub struct Imported {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct GameExport {
     pub changes: usize,
-    /// Changes that no longer apply, each naming its package.
+    /// Changes that no longer apply, each naming its addon.
     pub skipped: Vec<String>,
     /// Size of the written zip.
     pub bytes: u64,
@@ -81,24 +84,24 @@ fn dir(store: &Store, id: &str) -> PathBuf {
 }
 
 fn not_a_package(id: &str) -> Error {
-    Error::Other(format!("{id} is not a DB Editor package"))
+    Error::Other(format!("{id} is not a DB Editor addon"))
 }
 
 pub fn is_package(store: &Store, id: &str) -> bool {
     id.starts_with(ID_PREFIX) && valid_id(id) && dir(store, id).join(MARKER).is_file()
 }
 
-/// Every installed package that reads, sorted by name; see [`scan`] for the
-/// ones that don't.
+/// Every installed DB Editor addon that reads, sorted by name; see [`scan`]
+/// for the ones that don't.
 pub fn list(store: &Store) -> Result<Vec<PackageInfo>> {
     Ok(scan(store)?.packages)
 }
 
 #[derive(Debug, Default)]
 pub struct Scan {
-    /// The packages that read, sorted by name.
+    /// The addons that read, sorted by name.
     pub packages: Vec<PackageInfo>,
-    /// (id, error) for each package whose files are damaged.
+    /// (id, error) for each addon whose files are damaged.
     pub damaged: Vec<(String, String)>,
 }
 
@@ -133,7 +136,7 @@ pub fn scan(store: &Store) -> Result<Scan> {
     })
 }
 
-/// `name`, or `name (2)`, `name (3)`… when another package already has it or
+/// `name`, or `name (2)`, `name (3)`… when another addon already has it or
 /// `renumber` is set.
 fn unique_name(store: &Store, name: &str, renumber: bool) -> Result<String> {
     let names: HashSet<String> = list(store)?.into_iter().map(|p| p.name.to_lowercase()).collect();
@@ -147,10 +150,10 @@ fn unique_name(store: &Store, name: &str, renumber: bool) -> Result<String> {
 }
 
 fn too_many(name: &str) -> Error {
-    Error::Other(format!("too many packages are named like {name}; rename one"))
+    Error::Other(format!("too many addons are named like {name}; rename one"))
 }
 
-/// The modified time of a package's `dbedit.json`.
+/// The modified time of an addon's `dbedit.json`.
 pub fn modified(store: &Store, id: &str) -> Option<SystemTime> {
     if !valid_id(id) {
         return None;
@@ -172,7 +175,7 @@ fn slug(name: &str) -> String {
     }
     out.truncate(40);
     match out.trim_end_matches('-') {
-        "" => "package".into(),
+        "" => "addon".into(),
         s => s.into(),
     }
 }
@@ -190,14 +193,23 @@ fn unique_id(store: &Store, name: &str) -> Result<String> {
         .ok_or_else(|| too_many(name))
 }
 
-/// The oldest launcher a new package accepts: the first with packages, or
-/// this one when it is older.
+/// The oldest launcher a new addon accepts: the first that reads a manifest's
+/// `category` and `origin`, or this one when it is older.
 fn launcher_floor(v: &semver::Version) -> semver::Version {
     let v = semver::Version {
         pre: v.pre.clone(),
         ..semver::Version::new(v.major, v.minor, v.patch)
     };
-    v.min(semver::Version::new(1, 2, 6))
+    v.min(semver::Version::new(1, 3, 0))
+}
+
+fn origin() -> crate::manifest::Origin {
+    crate::manifest::Origin {
+        tool: ORIGIN_TOOL.into(),
+        tool_version: Some(crate::update::current_version().to_string()),
+        file: None,
+        sha256: None,
+    }
 }
 
 fn manifest(id: &str, name: &str) -> Result<AddonManifest> {
@@ -211,8 +223,13 @@ fn manifest(id: &str, name: &str) -> Result<AddonManifest> {
         "kind": ["database"],
         "compat": { "game": crate::GAME_ID, "game_builds": [GAME_BUILDS], "launcher": format!(">={launcher}") },
         "operations": { "database": [OPS_FILE] },
+        "category": Category::Database,
     }))
     .map_err(|e| Error::Manifest(e.to_string()))?;
+    let m = AddonManifest {
+        origin: Some(origin()),
+        ..m
+    };
     m.validate()?;
     Ok(m)
 }
@@ -252,29 +269,60 @@ fn file_stem(file: &Path) -> String {
         .unwrap_or_else(|| "Imported".into())
 }
 
-/// `.zip` with `dbedit.json` installs as a package (a taken id gets a new one);
+/// What [`read`] found in a file.
+#[derive(Debug)]
+pub enum Incoming {
+    /// A DB Editor addon `.zip`, installed as a new addon.
+    Addon(Imported),
+    /// Changes without addon details, named after the file.
+    Changes {
+        name: String,
+        edits: Edits,
+        report: ImportReport,
+    },
+}
+
+/// `.zip` with `dbedit.json` installs as a new addon (a taken id gets a new one);
 /// a `.json` DB Editor or EGO export, a modded `gamedatabases.2025.bin`, or a
-/// `.zip` holding one and no `swofty.json` becomes a new package named after the file.
+/// `.zip` holding one and no `swofty.json` becomes a new addon named after the file.
 pub fn import(store: &Store, catalog: &Catalog, file: &Path) -> Result<Imported> {
+    match read(store, catalog, file)? {
+        Incoming::Addon(done) => Ok(done),
+        Incoming::Changes { name, edits, report } => {
+            let mut package = Package::create(store, &unique_name(store, &name, false)?)?;
+            package.edits = edits;
+            package.save(store, catalog)?;
+            Ok(Imported {
+                report,
+                package: package.info(),
+                renamed_from: None,
+            })
+        }
+    }
+}
+
+/// Like [`import`], but returns the changes of a `.json`, `.bin` or database
+/// `.zip` instead of making an addon of them.
+pub fn read(store: &Store, catalog: &Catalog, file: &Path) -> Result<Incoming> {
     let ext = file
         .extension()
         .map(|e| e.to_string_lossy().to_lowercase())
         .unwrap_or_default();
     match ext.as_str() {
         "zip" => import_any_zip(store, catalog, file),
-        "json" => import_json(store, catalog, file),
+        "json" => import_json(catalog, file),
         "bin" => {
             let bytes = std::fs::read(file).map_err(io_err(file))?;
-            import_bin(store, catalog, &bytes, &file_label(file), &file_stem(file))
+            import_bin(catalog, &bytes, &file_label(file), &file_stem(file))
         }
         _ => Err(Error::Other(format!(
-            "{} is not a .zip DB Editor package, a .json export or a .bin game database",
+            "{} is not a DB Editor addon .zip, a .json export or a .bin game database",
             file_label(file)
         ))),
     }
 }
 
-fn import_any_zip(store: &Store, catalog: &Catalog, file: &Path) -> Result<Imported> {
+fn import_any_zip(store: &Store, catalog: &Catalog, file: &Path) -> Result<Incoming> {
     let mut z = zip::ZipArchive::new(std::fs::File::open(file).map_err(io_err(file))?)?;
     let leaf = |n: &str| n.rsplit(['/', '\\']).next().unwrap_or(n).to_owned();
     let names = z
@@ -285,7 +333,7 @@ fn import_any_zip(store: &Store, catalog: &Catalog, file: &Path) -> Result<Impor
         let scratch = scratch_dir(store);
         let result = import_zip(store, file, &scratch);
         std::fs::remove_dir_all(&scratch).ok();
-        return result;
+        return result.map(Incoming::Addon);
     }
     let bins: Vec<&String> = names
         .iter()
@@ -296,7 +344,7 @@ fn import_any_zip(store: &Store, catalog: &Catalog, file: &Path) -> Result<Impor
         [one] => one.as_str(),
         [] => {
             return Err(Error::Other(format!(
-                "{label} is not a DB Editor package and holds no {GVDB_NAME}"
+                "{label} is not a DB Editor addon and holds no {GVDB_NAME}"
             )));
         }
         many => {
@@ -315,7 +363,7 @@ fn import_any_zip(store: &Store, catalog: &Catalog, file: &Path) -> Result<Impor
         .take(MAX_GVDB)
         .read_to_end(&mut bytes)
         .map_err(io_err(file))?;
-    import_bin(store, catalog, &bytes, &label, &file_stem(file))
+    import_bin(catalog, &bytes, &label, &file_stem(file))
 }
 
 fn import_zip(store: &Store, file: &Path, scratch: &Path) -> Result<Imported> {
@@ -323,7 +371,7 @@ fn import_zip(store: &Store, file: &Path, scratch: &Path) -> Result<Imported> {
     let root = crate::import::addon_root(scratch).unwrap_or_else(|| scratch.to_path_buf());
     if !root.join(MARKER).is_file() || !root.join(MANIFEST_FILE).is_file() {
         return Err(Error::Other(format!(
-            "{} is not a DB Editor package; install it on the Addons page",
+            "{} is not a DB Editor addon; install it on the Addons page",
             file_label(file)
         )));
     }
@@ -349,12 +397,14 @@ struct Details {
     author: String,
     #[serde(default)]
     description: Option<String>,
+    #[serde(default)]
+    category: Option<serde_json::Value>,
 }
 
-/// Installs the package in `root` as a new package: its name, version, author
-/// and description from `swofty.json`, its edits from `dbedit.json`, and
-/// nothing else. A taken id gets a new id and a numbered name, returning the
-/// id it asked for.
+/// Installs the addon in `root` as a new DB Editor addon: its name, version,
+/// author, description and category from `swofty.json`, its edits from
+/// `dbedit.json`, and nothing else. A taken id gets a new id and a numbered
+/// name, returning the id it asked for.
 pub fn install(store: &Store, root: &Path) -> Result<(Package, Option<String>)> {
     let source = read_file(&root.join(MARKER))?;
     let d: Details = crate::read_json(&root.join(MANIFEST_FILE))?;
@@ -362,7 +412,7 @@ pub fn install(store: &Store, root: &Path) -> Result<(Package, Option<String>)> 
         .map_err(|_| Error::Other(format!("{:?} is not a version like 1.0.0", d.version)))?;
     let base = d.name.trim();
     if base.is_empty() {
-        return Err(Error::Other("a package needs a name".into()));
+        return Err(Error::Other("an addon needs a name".into()));
     }
     let wanted = format!("{ID_PREFIX}{}", slug(base));
     let renamed_from = taken(store, &wanted)?.then_some(wanted);
@@ -376,6 +426,9 @@ pub fn install(store: &Store, root: &Path) -> Result<(Package, Option<String>)> 
             d.description.as_deref().unwrap_or_default(),
         )
         .and_then(|()| {
+            if let Some(c) = d.category.and_then(|v| serde_json::from_value(v).ok()) {
+                package.set_category(c);
+            }
             package.edits = Edits {
                 schema_version: 1,
                 edits: source.edits,
@@ -390,7 +443,7 @@ pub fn install(store: &Store, root: &Path) -> Result<(Package, Option<String>)> 
     Ok((package, renamed_from))
 }
 
-fn import_json(store: &Store, catalog: &Catalog, file: &Path) -> Result<Imported> {
+fn import_json(catalog: &Catalog, file: &Path) -> Result<Incoming> {
     let bytes = std::fs::read(file).map_err(io_err(file))?;
     let mut edits = Edits {
         schema_version: 1,
@@ -399,30 +452,24 @@ fn import_json(store: &Store, catalog: &Catalog, file: &Path) -> Result<Imported
     let report = edits
         .import(catalog, &bytes, &file_label(file))
         .map_err(Error::Other)?;
-    let mut package = Package::create(store, &unique_name(store, &file_stem(file), false)?)?;
-    package.edits = edits;
-    package.save(store, catalog)?;
-    Ok(Imported {
-        package: package.info(),
+    Ok(Incoming::Changes {
+        name: file_stem(file),
+        edits,
         report,
-        renamed_from: None,
     })
 }
 
-fn import_bin(store: &Store, catalog: &Catalog, bytes: &[u8], label: &str, name: &str) -> Result<Imported> {
+fn import_bin(catalog: &Catalog, bytes: &[u8], label: &str, name: &str) -> Result<Incoming> {
     let (edits, notes) = database_edits(catalog, bytes, label)?;
-    let mut package = Package::create(store, &unique_name(store, name, false)?)?;
-    package.edits = edits;
-    package.save(store, catalog)?;
-    Ok(Imported {
+    Ok(Incoming::Changes {
+        name: name.to_owned(),
         report: ImportReport {
             format: "bin",
-            imported: package.edits.len(),
+            imported: edits.len(),
             unchanged: 0,
             skipped: notes,
         },
-        package: package.info(),
-        renamed_from: None,
+        edits,
     })
 }
 
@@ -516,7 +563,7 @@ fn database_edits(catalog: &Catalog, bytes: &[u8], label: &str) -> Result<(Edits
     )];
     if !grown.is_empty() {
         out.push(format!(
-            "adds rows to {}; another package that adds rows to the same tables won't stack with this one",
+            "adds rows to {}; another addon that adds rows to the same tables won't stack with this one",
             grown.join(", ")
         ));
     }
@@ -533,7 +580,7 @@ fn database_edits(catalog: &Catalog, bytes: &[u8], label: &str) -> Result<(Edits
     ))
 }
 
-/// Ids of the packages enabled in `profile`, in load order.
+/// Ids of the DB Editor addons enabled in `profile`, in load order.
 pub fn enabled_packages(store: &Store, profile: &str) -> Result<Vec<String>> {
     let p = store.profile(profile)?;
     let order = match crate::resolver::resolve(&p, &store.addons()?) {
@@ -543,8 +590,8 @@ pub fn enabled_packages(store: &Store, profile: &str) -> Result<Vec<String>> {
     Ok(order.into_iter().filter(|id| is_package(store, id)).collect())
 }
 
-/// key → (package id, value) for each package enabled in `profile`, in load
-/// order; a removed key has an empty value. Packages that don't read are left out.
+/// key → (addon id, value) for each DB Editor addon enabled in `profile`, in
+/// load order; a removed key has an empty value. Addons that don't read are left out.
 pub fn enabled_changes(store: &Store, profile: &str) -> Result<HashMap<u64, Vec<(String, String)>>> {
     let mut out: HashMap<u64, Vec<(String, String)>> = HashMap::new();
     for id in enabled_packages(store, profile)? {
@@ -560,11 +607,11 @@ pub fn enabled_changes(store: &Store, profile: &str) -> Result<HashMap<u64, Vec<
     Ok(out)
 }
 
-/// Turns off every package enabled in `profile`; returns how many.
+/// Turns off every DB Editor addon enabled in `profile`; returns how many.
 pub fn turn_off_all(store: &Store, profile: &str) -> Result<usize> {
     if profile == crate::profile::VANILLA {
         return Err(Error::Other(format!(
-            "{profile} stays stock and has no packages on"
+            "{profile} stays stock and has no addons on"
         )));
     }
     let on = enabled_packages(store, profile)?;
@@ -576,21 +623,26 @@ pub fn turn_off_all(store: &Store, profile: &str) -> Result<usize> {
     })
 }
 
-/// Applies the packages `ids`, in order, to the stock game database and
+/// Applies the addons `ids`, in order, to the stock game database and
 /// writes it to a zip at its game-folder path, with a `README.txt`.
 pub fn export_game_files(store: &Store, game: &Game, ids: &[String], out: &Path) -> Result<GameExport> {
-    if ids.is_empty() {
-        return Err(Error::Other("pick at least one package to export".into()));
-    }
     let packages = ids
         .iter()
         .map(|id| Package::open(store, id))
         .collect::<Result<Vec<_>>>()?;
+    export_packages(store, game, &packages, out)
+}
+
+/// [`export_game_files`] of addons in memory, such as [`Package::unsaved`].
+pub fn export_packages(store: &Store, game: &Game, packages: &[Package], out: &Path) -> Result<GameExport> {
+    if packages.is_empty() {
+        return Err(Error::Other("pick at least one addon to export".into()));
+    }
     let src = super::stock_database(store, game)?;
     let stock = std::fs::read(&src).map_err(io_err(&src))?;
     let mut db = Gvdb::parse(&stock)?;
     let mut export = GameExport::default();
-    for p in &packages {
+    for p in packages {
         let ops = p.edits.to_ops();
         let (_, failed) = crate::ops::apply_db_ops_lenient(
             &mut db,
@@ -609,11 +661,11 @@ pub fn export_game_files(store: &Store, game: &Game, ids: &[String], out: &Path)
     let bytes = db.to_bytes();
     if bytes == stock {
         return Err(Error::Other(
-            "these packages change nothing in this game's database".into(),
+            "these addons change nothing in this game's database".into(),
         ));
     }
     let build = crate::baseline::sha256_bytes(&stock)[..16].to_owned();
-    let readme = readme(&packages, game, &build, export.skipped.len());
+    let readme = readme(packages, game, &build, export.skipped.len());
     let tmp = out.with_extension(format!("zip.{}.tmp", std::process::id()));
     let written = write_game_zip(&tmp, &bytes, &readme).and_then(|()| {
         std::fs::rename(&tmp, out).map_err(io_err(out))?;
@@ -638,9 +690,9 @@ fn write_game_zip(path: &Path, db: &[u8], readme: &str) -> Result<()> {
 }
 
 fn readme(packages: &[Package], game: &Game, build: &str, skipped: usize) -> String {
-    let mut out = String::from("F1 25 game database with DB Editor packages\n\n");
+    let mut out = String::from("F1 25 game database with DB Editor addons\n\n");
     out += &format!(
-        "This zip holds F1 25's game database, {}, with these Swofty Launcher DB Editor packages applied in this order. Where two change the same value, the later one wins.\n\n",
+        "This zip holds F1 25's game database, {}, with these Swofty Launcher DB Editor addons applied in this order. Where two change the same value, the later one wins.\n\n",
         crate::build::GVDB
     );
     for p in packages {
@@ -668,7 +720,7 @@ fn readme(packages: &[Package], game: &Game, build: &str, skipped: usize) -> Str
         In Steam, right-click F1 25 > Properties > Installed Files > Verify integrity of game files.\n\n\
         Swofty Launcher\n\
         Swofty Launcher refuses modded launches while this file is replaced.\n\
-        With Swofty Launcher, install the packages' .zip files in its DB Editor instead.\n";
+        With Swofty Launcher, install the addons' .zip files on its Addons page instead.\n";
     out
 }
 
@@ -676,10 +728,10 @@ impl Package {
     pub fn create(store: &Store, name: &str) -> Result<Package> {
         let name = name.trim();
         if name.is_empty() {
-            return Err(Error::Other("a package needs a name".into()));
+            return Err(Error::Other("an addon needs a name".into()));
         }
         let id = unique_id(store, name)?;
-        let package = Package {
+        let mut package = Package {
             manifest: manifest(&id, name)?,
             id,
             edits: Edits {
@@ -690,6 +742,16 @@ impl Package {
         };
         package.write(store)?;
         Ok(package)
+    }
+
+    /// Edits that are not installed, for [`export_packages`].
+    pub fn unsaved(name: &str, edits: Edits) -> Result<Package> {
+        Ok(Package {
+            id: format!("{ID_PREFIX}draft"),
+            manifest: manifest(&format!("{ID_PREFIX}draft"), name)?,
+            edits,
+            game_build: String::new(),
+        })
     }
 
     pub fn open(store: &Store, id: &str) -> Result<Package> {
@@ -728,8 +790,16 @@ impl Package {
         self.write(store)
     }
 
-    /// Writes the three files as they are, keeping `game_build`.
-    pub fn write(&self, store: &Store) -> Result<()> {
+    /// Writes the three files as they are, keeping `game_build`; an addon
+    /// from before 1.3.0 gains its origin and category.
+    pub fn write(&mut self, store: &Store) -> Result<()> {
+        let m = &mut self.manifest;
+        if m.origin.is_none() {
+            m.origin = Some(origin());
+            m.category.get_or_insert(Category::Database);
+            let floor = launcher_floor(&crate::update::current_version());
+            m.compat.launcher = semver::VersionReq::parse(&format!(">={floor}")).ok();
+        }
         let dir = dir(store, &self.id);
         crate::write_json_shared(&dir.join(OPS_FILE), &self.edits.to_ops())?;
         crate::write_json_shared(&dir.join(MANIFEST_FILE), &self.manifest)?;
@@ -747,7 +817,7 @@ impl Package {
     pub fn set_details(&mut self, name: &str, version: &str, author: &str, description: &str) -> Result<()> {
         let name = name.trim();
         if name.is_empty() {
-            return Err(Error::Other("a package needs a name".into()));
+            return Err(Error::Other("an addon needs a name".into()));
         }
         let version = semver::Version::parse(version.trim())
             .map_err(|_| Error::Other(format!("{version:?} is not a version like 1.0.0")))?;
@@ -760,6 +830,10 @@ impl Package {
         };
         self.manifest.description = (!description.is_empty()).then(|| description.into());
         Ok(())
+    }
+
+    pub fn set_category(&mut self, category: Category) {
+        self.manifest.category = Some(category);
     }
 
     /// Removes every change and returns how many; [`Package::save`] writes it.
@@ -836,7 +910,7 @@ mod tests {
     fn slugs_and_unique_ids() {
         assert_eq!(slug("  My Changes!! v2 "), "my-changes-v2");
         assert_eq!(slug("Équipe"), "quipe");
-        assert_eq!(slug("!!!"), "package");
+        assert_eq!(slug("!!!"), "addon");
         let s = store("ids");
         let a = Package::create(&s, "My changes").unwrap();
         let b = Package::create(&s, "My changes").unwrap();
@@ -883,12 +957,12 @@ mod tests {
     }
 
     #[test]
-    fn packages_accept_every_launcher_since_the_first_with_packages() {
+    fn addons_accept_every_launcher_since_the_first_with_categories() {
         let v = |s: &str| semver::Version::parse(s).unwrap();
         for (current, floor) in [
-            ("1.3.0", "1.2.6"),
-            ("1.2.6", "1.2.6"),
-            ("1.2.6-beta.1", "1.2.6-beta.1"),
+            ("1.3.1", "1.3.0"),
+            ("1.3.0", "1.3.0"),
+            ("1.3.0-beta.1", "1.3.0-beta.1"),
             ("1.2.5", "1.2.5"),
         ] {
             assert_eq!(launcher_floor(&v(current)), v(floor), "{current}");
@@ -1023,7 +1097,7 @@ mod tests {
         let e = import(&s, &cat, &plain).unwrap_err().to_string();
         assert_eq!(
             e,
-            "plain.zip is not a DB Editor package; install it on the Addons page"
+            "plain.zip is not a DB Editor addon; install it on the Addons page"
         );
         assert!(import(&s, &cat, &s.root.join("x.txt")).is_err());
         std::fs::remove_dir_all(&s.root).ok();
@@ -1400,7 +1474,7 @@ mod tests {
             got.report.skipped,
             [
                 "4 changed, 5 added and 1 removed key(s)",
-                "adds rows to entrants.drivers.driver; another package that adds rows to the same tables won't stack with this one",
+                "adds rows to entrants.drivers.driver; another addon that adds rows to the same tables won't stack with this one",
             ]
         );
         let p = Package::open(&s, &got.package.id).unwrap();
@@ -1494,12 +1568,12 @@ mod tests {
         };
         assert_eq!(
             zip_with("none.zip", &["readme.txt"]),
-            format!("none.zip is not a DB Editor package and holds no {GVDB_NAME}")
+            format!("none.zip is not a DB Editor addon and holds no {GVDB_NAME}")
         );
         assert!(zip_with("two.zip", &[GVDB_NAME, &format!("x/{GVDB_NAME}")]).contains("holds 2"));
         assert_eq!(
             zip_with("addon.zip", &[MANIFEST_FILE, GVDB_NAME]),
-            "addon.zip is not a DB Editor package; install it on the Addons page"
+            "addon.zip is not a DB Editor addon; install it on the Addons page"
         );
         assert!(list(&s).unwrap().is_empty());
         std::fs::remove_dir_all(&s.root).ok();
