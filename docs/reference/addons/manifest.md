@@ -28,10 +28,10 @@ Your addon needs a `swofty.json` at its root. This is where you give it a name, 
 | `name` | string | Display name. |
 | `version` | string | Semver, such as `1.0.0`. |
 | `author` | string | Display author. |
-| `description` | string? | One-line summary, shown on the Addons page. |
+| `description` | string? | One-line summary, shown on the Tools page. |
 | `license` | string? | SPDX identifier, such as `MIT`. |
 | `homepage` | string? | A URL. |
-| `icon` | string? | A path inside your addon, shown on the Addons page and your addon's sidebar pages. Use an `.svg` for a one-colour glyph in the launcher's icon style, or a square `.png`, `.jpg` or `.webp` to show the image as it is. |
+| `icon` | string? | A path inside your addon, shown on the Tools page and your addon's sidebar pages. Use an `.svg` for a one-colour glyph in the launcher's icon style, or a square `.png`, `.jpg` or `.webp` to show the image as it is. |
 | `kind` | string[] | Optional categories: `database`, `erp`, `ui`, `files`, `native`. |
 
 ## saves
@@ -155,7 +155,7 @@ To add sidebar pages, an importer, a build hook and commands, name a [launcher p
 | Field | Type | Value |
 |---|---|---|
 | `program` | `{ os: path }` | Give the plugin's path inside your addon for each OS. Keys are `linux`, `windows`, `macos`; supply at least one. |
-| `sections` | `[{ id, title, icon }]` | Each entry adds a sidebar page. Choose an `icon` from the launcher's [icon set](./launcher-api#views). |
+| `sections` | `[{ id, title, icon }]` | Each entry adds a sidebar page. Choose an `icon` from the launcher's [icon set](./launcher-api#views). To give a page an icon of your own, ship a one-colour `sections/<id>.svg`: the sidebar and the page's rows without art show it. A page with the id `tracks` is listed in the sidebar's ADDONS group, beside Tools and Database, rather than under your addon. |
 | `imports` | string[] | List file extensions without the dot. When someone drops a file with one of these extensions, the launcher routes it to your plugin. |
 | `build` | boolean | Set to `true` when your plugin answers the `build` call. Defaults to `false`. |
 | `commands` | `[CommandSpec]` | `swofty` subcommands — `{ name, about, args, subcommands }`. |

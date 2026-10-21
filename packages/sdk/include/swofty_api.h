@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-#define SWOFTY_API_VERSION 7
+#define SWOFTY_API_VERSION 8
 
 enum {
     SWOFTY_MIXIN_WRAP = 1,
@@ -334,6 +334,115 @@ typedef struct SwoftyPopup {
     int (*show)(const char *title, const char *body);
 } SwoftyPopup;
 
+/* Runtime string overrides (API v8): the localised text a lng_* key resolves to, changed while the
+   game runs. language NULL or "*" means every language; otherwise a language code (eng, fre, ...)
+   that applies while it is the game's current language and wins over "*". The text is UTF-8 and is
+   copied. A change shows wherever the game looks the key up next; refresh() re-sends the current
+   language to the game's language listeners so bound labels read their text again (game thread). */
+typedef struct SwoftyLang {
+    int (*available)(void);
+    int (*override_set)(const char *language, const char *key, const char *text);
+    int (*override_clear)(const char *language, const char *key);
+    int (*override_clear_all)(void);
+    int (*refresh)(void);
+} SwoftyLang;
+
+/* Extra career contents (no API version of its own: the table is read only when the core exports
+   SwoftyCoreCareerContent, see swofty/career_content.hpp). A content is a tile on the career
+   content select after the stock 2025 and 2026 ones, with its own save slots (its data group). The
+   core builds the tile, presses it, routes it, passes its mode through the driver-career gate and
+   answers the save-slot predicate for it. Strings are copied. */
+#define SWOFTY_EVENT_CAREER_CONTENT_PRESSED "career.content.pressed"
+
+enum {
+    SWOFTY_CAREER_CONTENT_MODEL_2026 = 0,
+    SWOFTY_CAREER_CONTENT_MODEL_2025 = 1,
+};
+
+enum {
+    SWOFTY_CAREER_CONTENT_QUEUED = 0,
+    SWOFTY_CAREER_CONTENT_LIVE = 1,
+    SWOFTY_CAREER_CONTENT_OFF = 2,
+};
+
+typedef struct SwoftyCareerContentDesc {
+    uint32_t size;
+    uint32_t model;
+    const char *id;
+    const char *title;
+    const char *description;
+    const char *data_group;
+    const char *suffix;
+    const char *mode;
+    const char *entitlement;
+    int32_t car_group;
+    uint32_t badge;
+} SwoftyCareerContentDesc;
+
+typedef struct SwoftyCareerContentInfo {
+    uint32_t index;
+    uint32_t state;
+    int64_t mode_stat_id;
+    int64_t data_group_index;
+    uint32_t tiles;
+    uint32_t presses;
+    char id[64];
+    char data_group[64];
+    char why[192];
+} SwoftyCareerContentInfo;
+
+typedef struct SwoftyCareerContent {
+    int (*available)(void);
+    int (*add)(const SwoftyCareerContentDesc *desc);
+    int (*info)(const char *id, SwoftyCareerContentInfo *out);
+    int (*data_group)(const void *career, char *out, size_t cap);
+    int (*pressed)(char *out, size_t cap);
+} SwoftyCareerContent;
+
+/* Per-career character overrides (swofty/characters.hpp). Present on cores that have them, NULL
+   otherwise; SWOFTY_API_CHARACTERS marks a header that declares the table. Every entry is keyed by
+   a career data group (the CareerSetupComponent data group, e.g. f1_career_2026) and applies only
+   while the loaded career's data group is that one. swap() builds the character's UI ref (portrait,
+   names, job) from another entrants.characters row under the character's own stat_id; replacement
+   NULL drops the swap. mute() plays a speaker's lines at speech volume 0. string_set() and
+   strings_json() hold runtime string overrides (SwoftyLang) that are set while the group's career
+   is loaded; text NULL drops one. clear() drops every entry of the group that the calling module
+   made. refresh() rebuilds the character list now (game thread). */
+#define SWOFTY_API_CHARACTERS 1
+typedef struct SwoftyCharacters {
+    int (*available)(void);
+    int (*career_group)(char *out, size_t cap);
+    int (*swap)(const char *group, const char *character, const char *replacement);
+    int (*mute)(const char *group, const char *speaker, int on);
+    int (*string_set)(const char *group, const char *language, const char *key, const char *text);
+    int (*strings_json)(const char *group, const char *json, size_t len);
+    int (*clear)(const char *group);
+    int (*refresh)(void);
+} SwoftyCharacters;
+
+/* Career wizard control (swofty/career_wizard.hpp). Present on cores that have it, NULL otherwise;
+   SWOFTY_API_CAREER_WIZARD marks a header that declares the table. Every entry is keyed by the data
+   group of the career content tile the wizard was opened from (wizard state +0x128). starts_in_f1()
+   answers yes for the group (no F2 choice, no team-icons step). tile_route() makes the tile open
+   route `to` instead of `from` (NULL or "" for any route); the route must exist in the front end's
+   routes. replace_step() pushes step `with` where the wizard would push `step`; force_option()
+   records option `with` where the player picked `option`. confirm_route() makes the confirm step
+   open `to` instead of `from`. hide_driver_tab() drops a Choose Driver header tab. Passing the
+   stock value back (on 0, with == step, to NULL) drops an entry. clear() drops every entry of the
+   group that the calling module made. group() names the data group of the last career tile. */
+#define SWOFTY_API_CAREER_WIZARD 1
+typedef struct SwoftyCareerWizard {
+    int (*available)(void);
+    int (*group)(char *out, size_t cap);
+    int (*starts_in_f1)(const char *group, int on);
+    int (*tile_route)(const char *group, const char *from, const char *to);
+    int (*replace_step)(const char *group, uint32_t step, uint32_t with);
+    int (*force_option)(const char *group, uint32_t option, uint32_t with);
+    int (*confirm_route)(const char *group, const char *from, const char *to);
+    int (*hide_driver_tab)(const char *group, const char *tab, int on);
+    int (*clear)(const char *group);
+} SwoftyCareerWizard;
+
 typedef struct SwoftyApi {
     uint32_t version;
     void (*log)(const char *fmt, ...);
@@ -352,6 +461,10 @@ typedef struct SwoftyApi {
     const SwoftyStorage *storage;
     const SwoftyCareer *career;
     const SwoftyPopup *popup;
+    const SwoftyLang *lang;
+    const SwoftyCareerContent *career_content;
+    const SwoftyCharacters *characters;
+    const SwoftyCareerWizard *career_wizard;
 } SwoftyApi;
 
 typedef int (*SwoftyAddonInitFn)(const SwoftyApi *api);
