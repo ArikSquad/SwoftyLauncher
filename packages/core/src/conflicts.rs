@@ -32,6 +32,8 @@ pub struct Pair {
     pub database: usize,
     pub resources: usize,
     pub files: usize,
+    #[serde(default)]
+    pub strings: usize,
     /// Readable names of the overridden items, such as `tracks.Track_3.laps`.
     pub items: Vec<String>,
 }
@@ -98,7 +100,7 @@ impl Pair {
             database: self.database,
             resources: self.resources,
             files: self.files,
-            strings: self.items.iter().filter(|i| i.starts_with(TEXT)).count(),
+            strings: self.strings,
             tracks: 0,
         };
         format!(
@@ -149,7 +151,8 @@ pub(crate) fn summarise(
                 Target::Record(_) => pair.database += 1,
                 Target::Resource { .. } => pair.resources += 1,
                 Target::File(_) => pair.files += 1,
-                Target::String { .. } | Target::Group(_) => {}
+                Target::String { .. } => pair.strings += 1,
+                Target::Group(_) => {}
             }
             if pair.items.len() < MAX_ITEMS {
                 pair.items

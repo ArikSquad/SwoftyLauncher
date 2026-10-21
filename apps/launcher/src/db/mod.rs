@@ -609,12 +609,6 @@ impl Shell {
         cx.notify();
     }
 
-    /// The old name of [`Self::db_edit_addon`], until the Addons page calls the new one.
-    #[allow(dead_code)]
-    pub(crate) fn db_edit_package(&mut self, id: &str, cx: &mut Context<Self>) {
-        self.db_edit_addon(id, cx);
-    }
-
     pub(crate) fn db_then(&mut self, then: Then, cx: &mut Context<Self>) {
         let store = self.store.clone();
         let mut toast = None;

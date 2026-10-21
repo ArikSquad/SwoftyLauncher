@@ -23,8 +23,6 @@ pub struct AddonItem {
     pub source: Source,
 }
 
-pub const DB_EDITOR_TOOL: &str = "db-editor";
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Source {
     Builtin,
@@ -58,7 +56,7 @@ impl Source {
         let tool = m.origin.as_ref().map(|o| o.tool.as_str());
         if store.is_builtin(&m.id) {
             Self::Builtin
-        } else if package || tool == Some(DB_EDITOR_TOOL) {
+        } else if package || tool == Some(swofty_core::dbedit::package::ORIGIN_TOOL) {
             Self::DbEditor
         } else if tool == Some(swofty_core::managed::ID) {
             Self::Importer

@@ -557,6 +557,7 @@ mod tests {
             database: 1,
             resources: 0,
             files: 1,
+            strings: 0,
             items: vec!["rules.laps".into(), "x/a.dds".into()],
         });
         assert_eq!(

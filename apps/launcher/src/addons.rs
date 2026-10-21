@@ -224,7 +224,7 @@ fn matches_query(m: &AddonItem, query: &str) -> bool {
 }
 
 fn pair_counts(pair: &Pair) -> String {
-    let strings = pair.items.iter().filter(|i| i.starts_with("text ")).count();
+    let strings = pair.strings;
     let parts: Vec<String> = [
         (pair.database, "database value", "database values"),
         (pair.resources, "archive resource", "archive resources"),
