@@ -774,7 +774,7 @@ List your file extensions in `imports` to claim dropped files that match. The la
 
 1. The launcher claims addons first: a folder with `swofty.json`, a `.swoftyaddon` file (or a legacy `.swoftymod`), or a zip that holds an addon. Those install as addons.
 2. It checks every plugin with `imports` or `claims`, in registry order. A plugin with `imports` claims a file when its extension matches. A plugin with `claims` decides for itself (see below).
-3. A claimed file goes to that plugin's `import`. An unclaimed one is reported: `No addon imports <file>`.
+3. A claimed file goes to that plugin's `import`. An unclaimed one opens a dialog that names it, with **Go to Mod Importer** and **Read the addon docs**.
 
 Matching extensions can't tell a mod's zip from any other zip, and can't claim a folder. To decide for yourself, set `claims` to `true`. The launcher then runs your program on its own for each drop, as `<program> claims <path>`, and reads one line: `yes`, `maybe` or `no`. A `maybe` wins only when no other plugin says `yes` or `maybe`. Answer within 5 seconds, without the protocol: there is no `hello` and no profile. If your program fails, stalls or prints anything else, the launcher falls back to `imports`. A Rust helper that uses `swofty_addon::helper::run_helper` answers from its `Importer::claims` for you.
 
