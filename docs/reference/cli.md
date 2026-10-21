@@ -132,45 +132,48 @@ These commands come from the built-in Team Simplified addon. Use them to manage 
 
 ## `swofty db`
 
-These commands work on DB Editor packages. A package is a named set of game database changes installed as a data addon in `$DATA/addons/<id>/`. Package ids start with `dbedit.`.
+These commands work on DB Editor addons. A DB Editor addon is a data addon of game database changes in `$DATA/addons/<id>/`, with its changes in `dbedit.json`. Its id starts with `dbedit.`.
 
 | Command | Purpose |
 |---|---|
-| `swofty db packages` | List the packages and whether each is on in the profile |
-| `swofty db new <name>` | Create an empty package |
-| `swofty db delete <id>` | Delete a package and take it out of every profile |
-| `swofty db export <id> <file.zip>` | Write a package to a zip |
-| `swofty db import <file>` | Add a package from a DB Editor `.zip`, a DB Editor `.json` export, an EGO GameDatabases Editor export, a modded `gamedatabases.2025.bin` or a mod `.zip` that holds one |
-| `swofty db export-game <file.zip> [--package <id>]…` | Write the game database with packages applied to a zip that players without the launcher extract into the game folder |
-| `swofty db off-all` | Turn off every package that is on in the profile |
-| `swofty db details <id> [--name <name>] [--version <version>] [--author <author>] [--description <text>]` | Show a package's details, or change the ones you pass |
+| `swofty db addons` | List the DB Editor addons and whether each is on in the profile |
+| `swofty db new <name>` | Create an empty DB Editor addon |
+| `swofty db delete <id>` | Delete a DB Editor addon and take it out of every profile |
+| `swofty db export <id> <file.zip>` | Write a DB Editor addon to a zip |
+| `swofty db import <file>` | Add a DB Editor addon from a DB Editor `.zip`, a DB Editor `.json` export, an EGO GameDatabases Editor export, a modded `gamedatabases.2025.bin` or a mod `.zip` that holds one |
+| `swofty db export-game <file.zip> [--addon <id>]…` | Write the game database with DB Editor addons applied to a zip that players without the launcher extract into the game folder |
+| `swofty db off-all` | Turn off every DB Editor addon that is on in the profile |
+| `swofty db details <id> [--name <name>] [--version <version>] [--author <author>] [--description <text>] [--category <category>]` | Show a DB Editor addon's details, or change the ones you pass |
 | `swofty db search <query> [--limit <n>]` | Search names, tables, keys, values and English text |
-| `swofty db get <path> [--package <id>]` | Show a key's value, or what a table, row or container holds |
-| `swofty db set <path> <value> --package <id>` | Change a key's value in the package |
-| `swofty db add <path> <type> <value> --package <id>` | Add a key the game database lacks; `<type>` is the record type number |
-| `swofty db revert <path> --package <id>` | Put a key back to its stock value in the package |
-| `swofty db revert --all --package <id>` | Remove every change from the package |
-| `swofty db list --package <id>` | List the package's changes |
+| `swofty db get <path> [--addon <id>]` | Show a key's value, or what a table, row or container holds |
+| `swofty db set <path> <value> --addon <id>` | Change a key's value in the addon |
+| `swofty db add <path> <type> <value> --addon <id>` | Add a key the game database lacks; `<type>` is the record type number |
+| `swofty db revert <path> --addon <id>` | Put a key back to its stock value in the addon |
+| `swofty db revert --all --addon <id>` | Remove every change from the addon |
+| `swofty db list --addon <id>` | List the addon's changes |
 
 A `<path>` is a dotted path, a selector path such as `entrants.drivers.driver[_metadata_=max_verstappen].car_number`, or `0x` and 16 hex digits.
-`swofty db get` without `--package` shows stock values.
-`swofty db import` of a DB Editor package zip creates a new package with the zip's name, version, author, description and changes, and copies no other file.
-The new package's id comes from its name.
-When that id is taken, the new package gets a new id and a number after its name.
-`swofty addons install` of a DB Editor package folder or zip does the same, and never replaces an installed package.
-`swofty db import` of a `.json` file creates a new package named after the file.
-`swofty db import` of a `.bin`, or of a zip that holds a `gamedatabases.2025.bin` and no `swofty.json`, creates a package of its differences from the stock database, named after the file.
+`swofty db get` without `--addon` shows stock values.
+A `<category>` is one of `tracks`, `liveries`, `cars`, `drivers-teams`, `seasons`, `database`, `gameplay`, `ui`, `audio`, `tools` and `other`.
+A new DB Editor addon has the category `database` and the origin tool `db-editor` in its `swofty.json`.
+`swofty db import` of a DB Editor addon zip creates a new addon with the zip's name, version, author, description, category and changes, and copies no other file.
+The new addon's id comes from its name.
+When that id is taken, the new addon gets a new id and a number after its name.
+`swofty addons install` of a DB Editor addon folder or zip does the same, and never replaces an installed addon.
+`swofty db import` of a `.json` file creates a new addon named after the file.
+`swofty db import` of a `.bin`, or of a zip that holds a `gamedatabases.2025.bin` and no `swofty.json`, creates an addon of its differences from the stock database, named after the file.
 It refuses a file that is the same as the stock database or is not a game database.
 It prints how many keys the file changes, adds and removes, and the tables it adds rows to.
-A zip with `swofty.json` and without `dbedit.json` is not a DB Editor package; install it with `swofty addons install`.
-`swofty db export-game` applies the packages you name with `--package`, in that order, or else the packages that are on in the profile, in load order.
+A zip with `swofty.json` and without `dbedit.json` is not a DB Editor addon; install it with `swofty addons install`.
+`swofty db export-game` applies the addons you name with `--addon`, in that order, or else the DB Editor addons that are on in the profile, in load order.
 It starts from the game's stock database and writes `game_package/gamedatabases/gamedatabases.2025.bin` and a `README.txt` to the zip.
 It prints each change that no longer matches the game database, and leaves it out.
 `swofty db off-all` refuses `vanilla`.
-Turn a package on or off with `swofty addons enable <id>` and `swofty addons disable <id>`.
-Packages load in the profile's addon order, and a later package wins.
-The build skips a package change that no longer matches the game database and prints a warning naming the package.
+Turn a DB Editor addon on or off with `swofty addons enable <id>` and `swofty addons disable <id>`.
+DB Editor addons load in the profile's addon order, and a later addon wins.
+The build skips a DB Editor addon's change that no longer matches the game database and prints a warning naming the addon.
 Commands that read the game database take `--game <dir>` after `db`.
+`--package <id>` and `swofty db packages` still work, as older names of `--addon <id>` and `swofty db addons`.
 
 ## `swofty offline`
 
