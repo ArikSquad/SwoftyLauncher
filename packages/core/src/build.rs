@@ -18,7 +18,7 @@ use crate::asset::{
 use crate::baseline::{Baseline, Objects, hex, sha256_file, sha256_opt};
 use crate::builtin::{CORE_ID, LOADER_ENV, loader_dir, loader_files};
 use crate::conflicts::Report;
-use crate::erpbuild::{ErpBuild, Resized, reads, unsupported};
+use crate::erpbuild::{ErpBuild, Resized, SliceMerge, reads, unsupported};
 use crate::install::{Game, LOADER_DIR, Plan};
 use crate::launcher::BuildCx;
 use crate::manifest::{AddonManifest, relative_inside};
@@ -788,7 +788,8 @@ pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
         // Every origin that writes, in load order: the later wins.
         let mut ranks: Vec<String> = Vec::new();
         let mut prebuilt: Vec<Prebuilt> = Vec::new();
-        for op in &erp_ops {
+        let slices = slice_merges(&erp_ops);
+        for (at, op) in erp_ops.iter().enumerate() {
             let id = &op.origin.addon;
             let resolve = |s: &Source| Ok(s.resolve(&source_dir(store, id, s.root))?);
             let origin = op.origin.to_string();
@@ -801,7 +802,11 @@ pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
                     source,
                 }) if runtime_route => {
                     let path = resolve(source)?;
-                    match overlay_fits(&path, targets, &base)? {
+                    let fits = match merged_later(&slices, at, targets, &path)? {
+                        Some(why) => Err(why),
+                        None => overlay_fits(&path, targets, &base)?,
+                    };
+                    match fits {
                         Ok(resources) => prebuilt.push(Prebuilt {
                             origin,
                             path,
@@ -824,9 +829,13 @@ pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
                         }
                     }
                 }
-                AssetOp::Erp(erp) => erps
-                    .apply_for(erp, &op.origin.to_string(), &resolve)
-                    .map_err(|e| Error::Other(format!("applying {}: {e}", op.origin)))?,
+                AssetOp::Erp(erp) => {
+                    erps.apply_for(erp, &op.origin.to_string(), &resolve)
+                        .map_err(|e| Error::Other(format!("applying {}: {e}", op.origin)))?;
+                    for m in erps.take_merges() {
+                        record_merge(&mut built, &mut planner, &op.origin, m);
+                    }
+                }
                 AssetOp::Warn { message } => built.warnings.push(format!("{}: {message}", op.origin)),
                 _ => {}
             }
@@ -1023,6 +1032,70 @@ fn left_over(store: &Store, game: &Game, rel: &str) -> bool {
     };
     let stock = Baseline::load_or_new(&store.root, &game.identity).is_ok_and(|b| b.files.contains_key(rel));
     !stock && sha256_opt(&game.dir.join(rel)).ok().flatten().as_deref() == Some(p.sha256.as_str())
+}
+
+fn slice_merges(ops: &[Op]) -> Vec<(usize, &str, &str)> {
+    ops.iter()
+        .enumerate()
+        .filter_map(|(i, op)| match &op.op {
+            AssetOp::Erp(crate::ops::ErpOp::MergeSlices { erp, resource, .. }) => {
+                Some((i, erp.as_str(), resource.as_str()))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+// A ready overlay loads apart from the build's archives, so a later merge-slices
+// into one of its resources needs it to go in resource by resource.
+fn merged_later(
+    slices: &[(usize, &str, &str)],
+    at: usize,
+    targets: &[String],
+    path: &Path,
+) -> Result<Option<String>> {
+    let later: Vec<_> = slices
+        .iter()
+        .filter(|(i, erp, _)| *i > at && targets.iter().any(|t| t == erp))
+        .collect();
+    if later.is_empty() {
+        return Ok(None);
+    }
+    let names = crate::erpbuild::overlay_names(path)?;
+    Ok(later
+        .iter()
+        .find(|(_, _, uri)| names.iter().any(|n| n == uri))
+        .map(|(_, erp, uri)| format!("a later erp.merge-slices merges into {uri} in {erp}")))
+}
+
+fn record_merge(built: &mut Built, planner: &mut Planner, origin: &Origin, m: SliceMerge) {
+    built
+        .warnings
+        .extend(m.notes.iter().map(|n| format!("erp: {origin}: {n}")));
+    let slice = |slice: usize| Target::Slice {
+        erp: m.erp.clone(),
+        uri: m.resource.clone(),
+        slice,
+    };
+    match (m.whole, m.slices) {
+        (true, 0) => planner.replaced(
+            Target::Resource {
+                erp: m.erp.clone(),
+                uri: m.resource.clone(),
+            },
+            origin,
+        ),
+        (true, n) => (0..n).for_each(|i| planner.replaced(slice(i), origin)),
+        (false, n) => {
+            built.lines.push(format!(
+                "erp: {origin}: {} of {n} slice(s) of {} merged into {}",
+                m.changed.len(),
+                m.resource,
+                m.erp
+            ));
+            m.changed.iter().for_each(|&i| planner.replaced(slice(i), origin));
+        }
+    }
 }
 
 fn stage_erps(built: &mut Built, staged: &BTreeMap<String, PathBuf>, rels: Vec<String>) -> Result<()> {
@@ -1342,6 +1415,146 @@ mod tests {
             .is_empty()
         );
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    fn logo_archive(name: &str, slices: &[u8]) -> Vec<u8> {
+        use swofty_formats::erp::{Erp, Fragment, HEADER_LEN, MAGIC, Resource, STORED};
+        let mut head = vec![0u8; 40];
+        head[12..16].copy_from_slice(&2u32.to_le_bytes());
+        head[28..32].copy_from_slice(&(slices.len() as u32).to_le_bytes());
+        let pixels: Vec<u8> = slices.iter().flat_map(|&b| [b; 4]).collect();
+        let fragment = |raw: Vec<u8>| Fragment {
+            name: *b"temp",
+            offset: 0,
+            size: raw.len() as u64,
+            flags: 0x10,
+            compression: STORED,
+            packed: raw.len() as u64,
+            raw,
+        };
+        let mut header = [0u8; HEADER_LEN];
+        header[..4].copy_from_slice(MAGIC);
+        header[4..8].copy_from_slice(&3u32.to_le_bytes());
+        Erp {
+            header,
+            version: 3,
+            resources: vec![Resource {
+                name: name.into(),
+                kind: swofty_formats::erp::kind("GfxSurfaceRes").unwrap(),
+                unk: vec![0; 4],
+                fragments: vec![fragment(head), fragment(pixels)],
+                hash: [0; 16],
+            }],
+        }
+        .to_bytes()
+    }
+
+    #[test]
+    fn merged_slices_conflict_one_slice_at_a_time() {
+        use swofty_formats::gvdb::Record;
+        if loader_dir().is_some() {
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("swofty-build-slices-{}", std::process::id()));
+        std::fs::remove_dir_all(&root).ok();
+        let dir = root.join("game");
+        let ui = "2025_asset_groups/ui_package/common_front_end.erp";
+        let logos = "eaid://ui_package/art/texture_arrays/t.texarray.image";
+        std::fs::create_dir_all(dir.join("game_package/gamedatabases")).unwrap();
+        std::fs::create_dir_all(dir.join("2025_asset_groups/ui_package")).unwrap();
+        std::fs::write(dir.join(crate::GAME_EXE), "exe").unwrap();
+        let records = vec![Record::new("entrants.teams._team_instancecount_", 0, "0")];
+        std::fs::write(dir.join(GVDB), Gvdb { records }.to_bytes()).unwrap();
+        std::fs::write(dir.join(ui), logo_archive(logos, &[0, 1, 2, 3])).unwrap();
+        let game = Game {
+            identity: Identity::detect(&dir, Some(1)).unwrap(),
+            dir: dir.clone(),
+            user_reg: None,
+        };
+        let store = Store::new(root.join("data"));
+        for (id, slices) in [
+            ("t.a", [0, 9, 2, 3]),
+            ("t.b", [0, 1, 2, 8]),
+            ("t.c", [0, 7, 2, 3]),
+        ] {
+            let src = root.join("src").join(id);
+            std::fs::create_dir_all(&src).unwrap();
+            std::fs::write(
+                src.join("swofty.json"),
+                format!(
+                    r#"{{ "schema_version": 1, "id": "{id}", "name": "{id}", "version": "1.0.0", "author": "t",
+                         "compat": {{ "game": "f1_25" }}, "operations": {{ "assets": ["ops.json"] }} }}"#
+                ),
+            )
+            .unwrap();
+            std::fs::write(
+                src.join("ops.json"),
+                format!(
+                    r#"{{ "schema_version": 1, "ops": [{{ "op": "erp.merge-slices", "erp": "{ui}", "resource": "{logos}", "source": "logos.erp" }}] }}"#
+                ),
+            )
+            .unwrap();
+            std::fs::write(src.join("logos.erp"), logo_archive(logos, &slices)).unwrap();
+            store.install_addon(&src).unwrap();
+            store
+                .update_profile("default", |p| p.set_enabled(id, true))
+                .unwrap();
+        }
+        let built = build(&store, "default", &game).unwrap();
+        let conflicts: Vec<String> = built.conflicts.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            conflicts,
+            [format!("slice 1 of {logos} in {ui}: t.c overrides t.a")]
+        );
+        for (id, n) in [("t.a", 1), ("t.b", 1), ("t.c", 1)] {
+            let line = format!("erp: {id}: {n} of 4 slice(s) of {logos} merged into {ui}");
+            assert!(built.lines.contains(&line), "{line}: {:?}", built.lines);
+        }
+        let file = swofty_formats::erp::ErpFile::open(&built.plan.data[ui]).unwrap();
+        let merged = file.load(&file.erp.resources[0]).unwrap();
+        let slices: Vec<u8> = merged.fragments[1]
+            .data()
+            .unwrap()
+            .chunks(4)
+            .map(|c| c[0])
+            .collect();
+        assert_eq!(slices, [0, 7, 2, 8]);
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn overlays_go_in_resource_by_resource_before_a_later_merge_into_them() {
+        let root = std::env::temp_dir().join(format!("swofty-build-merged-later-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("ready.erp");
+        let logos = "eaid://ui_package/t.texarray.image";
+        std::fs::write(&path, logo_archive(logos, &[1, 2])).unwrap();
+        let op = |op: &str| Op {
+            op: serde_json::from_str(op).unwrap(),
+            origin: Origin {
+                addon: "t".into(),
+                item: None,
+            },
+        };
+        let ops = [
+            op(r#"{"op":"erp.overlay","erps":["a.erp","b.erp"],"source":"ready.erp"}"#),
+            op(&format!(
+                r#"{{"op":"erp.merge-slices","erp":"b.erp","resource":"{logos}","source":"x.erp"}}"#
+            )),
+            op(&format!(
+                r#"{{"op":"erp.merge-slices","erp":"c.erp","resource":"{logos}","source":"x.erp"}}"#
+            )),
+        ];
+        let slices = slice_merges(&ops);
+        assert_eq!(slices, [(1, "b.erp", logos), (2, "c.erp", logos)]);
+        let targets = ["a.erp".to_owned(), "b.erp".to_owned()];
+        assert_eq!(
+            merged_later(&slices, 0, &targets, &path).unwrap(),
+            Some(format!("a later erp.merge-slices merges into {logos} in b.erp"))
+        );
+        assert_eq!(merged_later(&slices, 1, &targets, &path).unwrap(), None);
+        assert_eq!(merged_later(&slices, 0, &targets[..1], &path).unwrap(), None);
+        std::fs::remove_dir_all(&root).ok();
     }
 
     #[test]

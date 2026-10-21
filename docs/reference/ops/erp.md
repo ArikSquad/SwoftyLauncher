@@ -46,6 +46,7 @@ python3 tools/erp.py <archive> '*'
 | `add-mipmaps` | `source`, `target` | Copy a mip file, or a folder of them, to a game-relative path |
 | `patch-pkg` | `erp`, `resource`, `fragment`, `edits` | Run `clone-entry` and `set-value` edits on a `!pkg` resource |
 | `overlay` | `erps`, `source` | Put every resource in a ready archive into each of `erps`, replacing or adding it. On the runtime route the archive loads as it is ([Asset API](/reference/addons/asset-api)) |
+| `merge-slices` | `erp`, `resource`, `source` | Write the slices of a texture array that differ from the game's over the array already in `erp` ([Texture arrays](#texture-arrays)) |
 | `warn` | `message` | Print a message when the addon is built |
 
 ## Raw resources
@@ -64,6 +65,42 @@ python3 tools/erp.py <archive> '*'
   "sources": ["erp/sponsor.head.bin", "erp/sponsor.pixels.bin"]
 }
 ```
+
+## Texture arrays
+
+A texture array, such as `overrides.team_logos.f1_2026.texarray.image`, is a `GfxSurfaceRes` whose fragment 1 holds every slice, one after another, all the same size. Fragment 0 gives the slice count at offset 28. `merge-slices` reads `resource` from the archive `source` in your addon and writes only its changed slices:
+
+```json
+{
+  "op": "merge-slices",
+  "erp": "2025_asset_groups/vfx_package/common.erp",
+  "resource": "eaid://ui_package/art/texture_arrays/overrides.uidb/overrides.team_logos.f1_2026.texarray.image",
+  "source": "logos/ui_textures.erp"
+}
+```
+
+- Each slice of `source` that differs from the game's stock slice replaces that slice of the array already in `erp`. That array is the stock one, or the one earlier addons in the load order wrote.
+- The game's stock array is the one in `erp`. When `erp` has none, it is the one in the first archive, by name, directly in `2025_asset_groups/<package>/`, where `<package>` follows `eaid://` in `resource`. The merged array is then added to `erp`.
+- An array with fewer slices than the game's, in the same format and slice size, merges the slices it has. Slices past the game's count are left out with a warning.
+- An array of another format or slice size, a resource that is not a texture array, or a resource the game has no stock array for replaces the whole resource, with a warning.
+- When the array in `erp` has another layout from an earlier addon, the slices merge over the game's array instead, with a warning.
+- A `merge-slices` that changes no slice leaves `erp` as it is.
+
+The build prints one line per op:
+
+```text
+erp: example.logos: 2 of 12 slice(s) of eaid://ui_package/art/texture_arrays/overrides.uidb/overrides.team_logos.f1_2026.texarray.image merged into 2025_asset_groups/vfx_package/common.erp
+```
+
+Conflicts count per slice. Two addons that change different slices of one array do not conflict. Two that change the same slice print `conflict: slice <n> of <resource> in <erp>`, and the later one in the load order wins. A `merge-slices` that replaces the whole resource overrides every slice an earlier `merge-slices` wrote.
+
+On the runtime route the merged array goes into the overlay archive of the last addon that changed it. An `overlay` op whose archive holds a resource that a later `merge-slices` changes in one of its `erps` goes in resource by resource, and the build prints:
+
+```text
+erp: example.pack: its overlay archive goes in resource by resource; a later erp.merge-slices merges into <resource> in <erp>
+```
+
+A whole replacement that changes the layout of a stock entry in `erp` rewrites that archive into the game files and prints `erp: <erp> built into the game files; ...`, as for any other [layout change](#editing-pkg-resources).
 
 ## Removing resources
 

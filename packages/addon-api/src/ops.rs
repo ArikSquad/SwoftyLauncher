@@ -144,6 +144,13 @@ pub enum ErpOp {
         erps: Vec<String>,
         source: Source,
     },
+    // Each slice of the texture array `resource` in `source` that differs from the
+    // game's stock slice goes over the array already in `erp`.
+    MergeSlices {
+        erp: String,
+        resource: String,
+        source: Source,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

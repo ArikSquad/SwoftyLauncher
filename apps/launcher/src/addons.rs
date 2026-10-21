@@ -51,7 +51,7 @@ impl Type {
         match kind {
             Kind::Database => Self::Database,
             Kind::Erp => Self::Archives,
-            Kind::Ui => Self::Text,
+            Kind::Text | Kind::Ui => Self::Text,
             Kind::Files => Self::Files,
             Kind::Native => Self::Code,
         }

@@ -105,6 +105,7 @@ pub struct Runtime {
     resources: usize,
     pub files: BTreeMap<String, PathBuf>,
     tables: BTreeMap<String, Lng>,
+    defaults: BTreeMap<String, BTreeMap<String, String>>,
 }
 
 fn argument_len(erp: &Erp) -> usize {
@@ -241,6 +242,12 @@ impl Runtime {
                     .entry(language.clone())
                     .or_default()
                     .set(key, value.clone());
+            }
+            AssetOp::Lang(LangOp::Default { language, key, value }) => {
+                self.defaults
+                    .entry(language.clone())
+                    .or_default()
+                    .insert(key.clone(), value.clone());
             }
             AssetOp::Lang(LangOp::Table { language, source }) => {
                 let path = resolve(&op, source)?;
@@ -385,6 +392,14 @@ impl Runtime {
     }
 
     pub fn finish(mut self, out: &Path) -> Result<Option<Self>> {
+        for (language, defaults) in std::mem::take(&mut self.defaults) {
+            let table = self.tables.entry(language).or_default();
+            for (key, value) in defaults {
+                if table.get(&key).is_none() {
+                    table.set(&key, value);
+                }
+            }
+        }
         for (language, table) in std::mem::take(&mut self.tables) {
             let rel = lang_file(&language);
             let path = out.join(SWOFTY).join(&rel);
@@ -608,6 +623,69 @@ mod tests {
         );
         assert_eq!(rt.files["swofty/overlay/livery/s.dds"], addon.join("two.dds"));
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_default_applies_before_every_set_and_never_conflicts() {
+        use crate::planner::{Features, Planner};
+        let out = std::env::temp_dir().join(format!("swofty-runtime-default-{}", std::process::id()));
+        std::fs::remove_dir_all(&out).ok();
+        let features = Features {
+            stable: BTreeSet::from([Kind::Lang]),
+            ..Features::default()
+        };
+        let opt_in = BTreeSet::new();
+        let mut planner = Planner::new(&features, &opt_in);
+        for (id, json) in [
+            (
+                "a",
+                r#"{"op":"lang.set","language":"eng","key":"lng_a","value":"set by a"}"#,
+            ),
+            (
+                "b",
+                r#"{"op":"lang.default","language":"eng","key":"lng_a","value":"default from b"}"#,
+            ),
+            (
+                "b",
+                r#"{"op":"lang.default","language":"eng","key":"lng_b","value":"default from b"}"#,
+            ),
+            (
+                "c",
+                r#"{"op":"lang.default","language":"eng","key":"lng_b","value":"default from c"}"#,
+            ),
+            (
+                "c",
+                r#"{"op":"lang.default","language":"*","key":"lng_c","value":"every language"}"#,
+            ),
+            (
+                "c",
+                r#"{"op":"lang.default","language":"eng","key":"lng_d","value":"default from c"}"#,
+            ),
+            (
+                "d",
+                r#"{"op":"lang.set","language":"eng","key":"lng_d","value":"set by d"}"#,
+            ),
+        ] {
+            planner.push(op(id, json));
+        }
+        let planned = planner.finish();
+        assert!(planned.conflicts.is_empty(), "{:?}", planned.conflicts);
+        let mut rt = Runtime::new(Vec::new());
+        for op in planned.runtime {
+            rt.push(op, &|_: &Op, s: &Source| Ok(PathBuf::from(&s.path)))
+                .unwrap();
+        }
+        rt.finish(&out).unwrap().unwrap();
+        let table = |name: &str| {
+            Lng::parse(&std::fs::read(out.join("swofty/assets/lang").join(name)).unwrap()).unwrap()
+        };
+        let eng = table("eng.lng");
+        assert_eq!(
+            ["lng_a", "lng_b", "lng_d"].map(|k| eng.get(k)),
+            [Some("set by a"), Some("default from c"), Some("set by d")]
+        );
+        assert_eq!(table("all.lng").get("lng_c"), Some("every language"));
+        std::fs::remove_dir_all(&out).ok();
     }
 
     #[test]

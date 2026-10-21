@@ -7,6 +7,7 @@ pub mod lz4;
 pub mod nefs;
 pub mod pe;
 pub mod pkg;
+pub mod texarray;
 pub mod texture;
 
 mod bytes;

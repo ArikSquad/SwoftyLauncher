@@ -52,7 +52,7 @@ impl Changes {
     pub(crate) fn count(&mut self, target: &Target) {
         match target {
             Target::Record(_) => self.database += 1,
-            Target::Resource { .. } => self.resources += 1,
+            Target::Resource { .. } | Target::Slice { .. } => self.resources += 1,
             Target::File(_) => self.files += 1,
             Target::String { .. } => self.strings += 1,
             Target::Group(_) => {}
@@ -116,6 +116,7 @@ fn item(target: &Target, record: &dyn Fn(u64) -> Option<String>) -> String {
     match target {
         Target::Record(key) => record(*key).unwrap_or_else(|| format!("{key:#018x}")),
         Target::Resource { erp, uri } => format!("{erp}:{uri}"),
+        Target::Slice { erp, uri, slice } => format!("{erp}:{uri} slice {slice}"),
         Target::File(rel) => rel.clone(),
         Target::String { language, key } if language == "*" => format!("{TEXT}{key}"),
         Target::String { language, key } => format!("{TEXT}{key} ({language})"),
@@ -149,7 +150,7 @@ pub(crate) fn summarise(
                 });
             match c.target {
                 Target::Record(_) => pair.database += 1,
-                Target::Resource { .. } => pair.resources += 1,
+                Target::Resource { .. } | Target::Slice { .. } => pair.resources += 1,
                 Target::File(_) => pair.files += 1,
                 Target::String { .. } => pair.strings += 1,
                 Target::Group(_) => {}

@@ -169,7 +169,7 @@ pub fn for_profile(data: &Path, game: &crate::install::Game, profile: &str) -> R
 }
 
 /// A data addon that is only tracks: its ops add one or more tracks and give
-/// them names (`lang.set`, `db.set` on a `TrackNameData` field), and it has no
+/// them names (`lang.set`, `lang.default`, `db.set` on a `TrackNameData` field), and it has no
 /// code, screens, files, settings, launcher pages or other edits. The launcher
 /// lists these on the Tracks page instead of the Addons page. An op file that
 /// doesn't read makes the addon an ordinary one.
@@ -198,7 +198,7 @@ pub fn is_track_addon(dir: &Path, m: &AddonManifest) -> bool {
         for op in file.ops {
             match op {
                 AssetOp::Track(TrackOp::Add { .. }) => tracks += 1,
-                AssetOp::Lang(LangOp::Set { .. }) | AssetOp::Warn { .. } => {}
+                AssetOp::Lang(LangOp::Set { .. } | LangOp::Default { .. }) | AssetOp::Warn { .. } => {}
                 AssetOp::Db(DbOp::Set { field, .. }) if field.starts_with("TrackNameData") => {}
                 _ => return false,
             }
