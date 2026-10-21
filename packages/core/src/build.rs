@@ -366,6 +366,12 @@ impl Saved {
 }
 
 pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
+    build_as(store, profile, game, false)
+}
+
+/// A `checking` build gives addon build hooks a host that lists addons but
+/// cannot install, remove, turn on or move them.
+pub(crate) fn build_as(store: &Store, profile: &str, game: &Game, checking: bool) -> Result<Built> {
     let registry = store.registry()?;
     let addons = registry.manifests();
     let p = store.profile(profile)?;
@@ -471,7 +477,7 @@ pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
             });
         }
         if let Some(entry) = registry.get(id).filter(|e| !e.declared) {
-            let host = Host::new(store, id, &p, Some(game))?;
+            let host = Host::new(store, id, &p, Some(game))?.read_only(checking);
             let options = m.options.iter().map(|o| (o.id.clone(), p.option(m, o))).collect();
             let batch = entry
                 .addon
@@ -1335,7 +1341,18 @@ mod tests {
                         origin,
                     },
                 ],
-                lines: vec![format!("profile {}", cx.cx.profile.name)],
+                lines: vec![
+                    format!("profile {}", cx.cx.profile.name),
+                    match cx
+                        .cx
+                        .addons()
+                        .map(|a| (a.list(), a.set_enabled(cx.cx.addon, true)))
+                    {
+                        Some((Ok(_), Ok(()))) => "turned on".to_owned(),
+                        Some((listed, turned)) => format!("{:?} {:?}", listed.err(), turned.err()),
+                        None => "no addons".to_owned(),
+                    },
+                ],
                 ..AssetBatch::default()
             })
         }
@@ -1595,9 +1612,19 @@ mod tests {
             locked: false,
             default_on: true,
         }]);
+        let checked = build_as(&store, "default", &game, true).unwrap();
+        assert!(
+            checked.lines.contains(
+                &"t.hook: None Some(Other(\"addons can't be changed while conflicts are checked\"))"
+                    .to_owned()
+            ),
+            "{:?}",
+            checked.lines
+        );
         let built = build(&store, "default", &game).unwrap();
         assert_eq!(built.order, [CORE_ID, "t.hook"]);
         assert!(built.lines.contains(&"t.hook: profile default".to_owned()));
+        assert!(built.lines.contains(&"t.hook: turned on".to_owned()));
         assert!(built.warnings.contains(&"t.hook: 22 cars".to_owned()));
         assert!(
             built

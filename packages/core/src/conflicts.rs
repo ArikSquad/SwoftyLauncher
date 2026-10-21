@@ -202,7 +202,7 @@ pub fn last(store: &Store, profile: &str) -> Option<Report> {
 
 /// Plans the profile's build without installing it and returns its conflicts.
 pub fn check(store: &Store, profile: &str, game: &Game) -> Result<Report> {
-    Ok(crate::build::build(store, profile, game)?.report)
+    Ok(crate::build::build_as(store, profile, game, true)?.report)
 }
 
 #[cfg(test)]
