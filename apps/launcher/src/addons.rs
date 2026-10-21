@@ -14,7 +14,7 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use swofty_core::conflicts::{self, Pair, Report};
 use swofty_core::import::{self, Route};
-use swofty_core::manifest::{Category, Kind};
+use swofty_core::manifest::{Category, Kind, MANIFEST_FILE};
 use swofty_core::profile::VANILLA;
 use swofty_core::updater::Part;
 
@@ -313,6 +313,14 @@ impl Shell {
             .filter(move |p| p.winner == id || p.loser == id)
     }
 
+    fn changed_since(&self, id: &str, built_at: f64) -> bool {
+        std::fs::metadata(self.store.addons_dir().join(id).join(MANIFEST_FILE))
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .is_some_and(|t| t.as_secs_f64() > built_at)
+    }
+
     fn addon_name(&self, id: &str) -> String {
         self.library
             .addons
@@ -385,15 +393,17 @@ impl Shell {
             return None;
         }
         if self.addons.seen != Some(at) {
-            self.addons.seen = Some(at);
-            self.addons.scroll_pending = true;
-            self.open_addon = Some(id.clone());
             let item = self.library.listed().find(|a| a.manifest.id == id);
-            if item.is_some_and(|m| !self.passes(m, query, None)) {
-                self.addons.facets.clear();
-                if !query.is_empty() {
-                    query.clear();
-                    self.addons.clear_search(cx);
+            if let Some(hidden) = item.map(|m| !self.passes(m, query, None)) {
+                self.addons.seen = Some(at);
+                self.addons.scroll_pending = true;
+                self.open_addon = Some(id.clone());
+                if hidden {
+                    self.addons.facets.clear();
+                    if !query.is_empty() {
+                        query.clear();
+                        self.addons.clear_search(cx);
+                    }
                 }
             }
             self.animate_highlight(cx);
@@ -1547,8 +1557,13 @@ impl Shell {
         let note = match report {
             _ if self.vanilla() => format!("{VANILLA} has no addons to conflict"),
             None => "Not checked yet. Checking plans this profile's build without installing it.".to_owned(),
+            Some(r) if self.changed_since(id, r.built_at) => format!(
+                "Checked {}, before this addon last changed. Check again to include it.",
+                ago(r.built_at)
+            ),
             Some(r) => format!("Checked {}", ago(r.built_at)),
         };
+        let stale = report.is_some_and(|r| self.changed_since(id, r.built_at));
         let pairs: Vec<&Pair> = self.pairs_of(id).collect();
         let rows: Vec<AnyElement> = pairs
             .iter()
@@ -1570,7 +1585,7 @@ impl Shell {
                     .text_color(p.text_placeholder)
                     .child(note),
             )
-            .when(report.is_some() && pairs.is_empty(), |d| {
+            .when(report.is_some() && !stale && pairs.is_empty(), |d| {
                 d.child(
                     h_flex()
                         .gap(px(6.))
