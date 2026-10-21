@@ -1,5 +1,81 @@
+use std::path::Path;
+
+const SITE: &str = "https://f1.swofty.net";
+
+fn front_matter(text: &str) -> Vec<(String, String)> {
+    let mut lines = text.lines();
+    if lines.next().map(str::trim) != Some("---") {
+        return Vec::new();
+    }
+    lines
+        .take_while(|l| l.trim() != "---")
+        .filter_map(|l| l.split_once(':'))
+        .map(|(k, v)| {
+            let v = v.trim();
+            let v = v
+                .strip_prefix('"')
+                .and_then(|v| v.strip_suffix('"'))
+                .or_else(|| v.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')))
+                .unwrap_or(v);
+            (k.trim().to_owned(), v.replace("\\\"", "\""))
+        })
+        .collect()
+}
+
+// Mirrors docs/scripts/news.mjs, which publishes the same feed as news.json.
+fn posts(dir: &Path, kind: &str, out: &mut Vec<serde_json::Value>) {
+    println!("cargo:rerun-if-changed={}", dir.display());
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for path in entries.flatten().map(|e| e.path()) {
+        let Some(slug) = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .filter(|s| *s != "index" && path.extension().is_some_and(|e| e == "md"))
+        else {
+            continue;
+        };
+        let text = std::fs::read_to_string(&path).unwrap_or_default();
+        let fm = front_matter(&text);
+        let get = |key: &str| fm.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone());
+        if get("draft").as_deref() == Some("true") {
+            continue;
+        }
+        let title = get("title").unwrap_or_else(|| slug.to_owned());
+        let title = if kind == "release" && title.starts_with(|c: char| c.is_ascii_digit()) {
+            format!("Swofty Launcher {title}")
+        } else {
+            title
+        };
+        let image = get("image").map(|i| {
+            if i.starts_with('/') {
+                format!("{SITE}{i}")
+            } else {
+                i
+            }
+        });
+        out.push(serde_json::json!({
+            "id": format!("{kind}/{slug}"),
+            "kind": kind,
+            "title": title,
+            "date": get("date").unwrap_or_default(),
+            "summary": get("description").unwrap_or_default(),
+            "image": image,
+            "url": format!("{SITE}/{}/{slug}", if kind == "release" { "releases" } else { "news" }),
+        }));
+    }
+}
+
 fn main() {
     println!("cargo:rerun-if-changed=assets/icon.ico");
+    let docs = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs");
+    let mut feed = Vec::new();
+    posts(&docs.join("news"), "news", &mut feed);
+    posts(&docs.join("releases"), "release", &mut feed);
+    let out = Path::new(&std::env::var("OUT_DIR").expect("OUT_DIR")).join("news.json");
+    let json = serde_json::json!({ "posts": feed });
+    std::fs::write(&out, json.to_string()).expect("failed to write the embedded news feed");
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         let mut res = winresource::WindowsResource::new();
         res.set_icon("assets/icon.ico");

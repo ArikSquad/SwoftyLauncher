@@ -7150,6 +7150,7 @@ version = "1.2.5"
 dependencies = [
  "gpui-kit",
  "semver",
+ "serde",
  "serde_json",
  "swofty-builtins",
  "swofty-core",

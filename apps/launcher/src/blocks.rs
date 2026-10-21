@@ -22,7 +22,7 @@ use swofty_core::view::{
 
 use crate::pages::label;
 use crate::sections::{art, icon, tone};
-use crate::shell::{Page, Shell};
+use crate::shell::Shell;
 use crate::theme::Palette;
 
 const GAP: f32 = 16.;
@@ -466,9 +466,7 @@ pub(crate) fn search_id(search: &Search, fallback: &str) -> String {
 
 impl Shell {
     fn current_view(&self) -> Option<(String, String, View, u64)> {
-        let Page::Section(i) = self.page else {
-            return None;
-        };
+        let i = self.open_section()?;
         let s = self.library.sections.get(i)?;
         let key = format!("{}/{}", s.addon, s.spec.id);
         let view = self.views.get(&key)?.as_ref().ok()?.clone();

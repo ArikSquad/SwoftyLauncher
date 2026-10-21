@@ -204,7 +204,7 @@ Use a modded profile to enable your addon; the `vanilla` profile takes no addons
 
 ## 7. See it
 
-Open the **Game** tile under **My First Addon** in the launcher's sidebar. This starts your helper and calls `view`, giving you a page like this:
+Open **Game** under **ADDON PANELS** in the launcher's sidebar. This starts your helper and calls `view`, giving you a page like this:
 
 ```
 INSTALLED GAME

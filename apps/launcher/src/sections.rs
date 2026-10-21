@@ -24,7 +24,7 @@ use crate::blocks::{At, search_id};
 use crate::game::Install;
 use crate::library::{AddonIcon, SectionItem, plural};
 use crate::pages::{GUTTER, badge, chevron, fact, label, monogram, names, stat, tag, tile};
-use crate::shell::{Page, Shell};
+use crate::shell::Shell;
 use crate::theme::Palette;
 
 pub(crate) type Shared = Arc<Mutex<Option<(f32, String)>>>;
@@ -152,10 +152,7 @@ impl Shell {
         let registry = library.registry.clone();
         let profile = library.profile.clone();
         let install = self.install.clone();
-        let open = match self.page {
-            Page::Section(i) => Some(i),
-            _ => None,
-        };
+        let open = self.open_section();
         let keys: HashSet<String> = library.sections.iter().map(section_key).collect();
         if self.views_profile != profile.name {
             self.views_profile = profile.name.clone();
@@ -240,10 +237,7 @@ impl Shell {
     }
 
     fn refresh_stale(&mut self, cx: &mut Context<Self>) {
-        let open = match self.page {
-            Page::Section(i) => Some(i),
-            _ => None,
-        };
+        let open = self.open_section();
         let mut due = Vec::new();
         let mut seen = HashSet::new();
         for s in &self.library.sections {
@@ -272,7 +266,7 @@ impl Shell {
     }
 
     fn tick(&mut self, cx: &mut Context<Self>) {
-        let Page::Section(i) = self.page else {
+        let Some(i) = self.open_section() else {
             return;
         };
         let Some(s) = self.library.sections.get(i) else {

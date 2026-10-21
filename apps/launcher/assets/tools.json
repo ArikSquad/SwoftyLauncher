@@ -1,0 +1,57 @@
+{
+  "tools": [
+    {
+      "name": "DB Editor",
+      "maker": "Swofty",
+      "icon": "database",
+      "about": "Edit F1 25's database tables and save your changes as an addon.",
+      "open": "page:database"
+    },
+    {
+      "name": "Mod Importer",
+      "maker": "Team Simplified",
+      "icon": "folder-input",
+      "about": "Turns mods made for the game folder into Swofty addons.",
+      "open": "page:importer"
+    },
+    {
+      "name": "Swofty UI",
+      "maker": "Swofty",
+      "icon": "app-window",
+      "about": "View and edit F1 25's menu scenes and export them for an addon.",
+      "open": "program:swofty-ui",
+      "get": "https://f1.swofty.net/reference/ui/swofty-ui"
+    },
+    {
+      "name": "Career Mode Editor",
+      "maker": "Swofty",
+      "icon": "user-pen",
+      "about": "Edits the career loaded in F1 25 while the game runs.",
+      "open": "addon:swofty.career-editor",
+      "get": "https://f1.swofty.net/using/career-editor"
+    },
+    {
+      "name": "Driver Manager",
+      "maker": "Swofty",
+      "icon": "users",
+      "about": "Creates new drivers with their own rows in the game database.",
+      "open": "addon:swofty.driver-manager",
+      "get": "https://www.overtake.gg/downloads/driver-manager-addon.87734/"
+    },
+    {
+      "name": "Simplified Suite",
+      "maker": "Team Simplified",
+      "icon": "package",
+      "about": "Team Simplified's mod tools. Mods made with them import with the Mod Importer.",
+      "get": "https://github.com/TeamSimplified/simplified-suite",
+      "more": { "label": "Team Simplified", "url": "https://github.com/TeamSimplified" }
+    },
+    {
+      "name": "EGO GameDatabases Editor",
+      "maker": "PavelGames",
+      "icon": "table",
+      "about": "A standalone editor for F1 25's game database: drivers, teams, tracks, points and the calendar.",
+      "get": "https://www.overtake.gg/downloads/ego-gamedatabases-editor.84903/"
+    }
+  ]
+}
