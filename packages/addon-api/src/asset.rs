@@ -71,6 +71,11 @@ pub enum LangOp {
         language: String,
         source: Source,
     },
+    Default {
+        language: String,
+        key: String,
+        value: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -426,6 +431,38 @@ mod tests {
         assert_eq!(op.kind(), None);
         assert!(op.sources().is_empty());
         assert_eq!(serde_json::to_value(&op).unwrap(), doc);
+    }
+
+    #[test]
+    fn merge_slices_and_lang_default_round_trip() {
+        let doc: Value = serde_json::from_str(
+            r#"[{ "op": "erp.merge-slices", "erp": "2025_asset_groups/vfx_package/common.erp",
+                  "resource": "eaid://ui_package/a.texarray.image", "source": "logos/ui_textures.erp" },
+                { "op": "lang.default", "language": "eng", "key": "lng_a", "value": "A" }]"#,
+        )
+        .unwrap();
+        let ops: Vec<AssetOp> = serde_json::from_value(doc.clone()).unwrap();
+        assert!(matches!(
+            &ops[0],
+            AssetOp::Erp(ErpOp::MergeSlices { erp, source, .. })
+                if erp == "2025_asset_groups/vfx_package/common.erp" && *source == Source::addon("logos/ui_textures.erp")
+        ));
+        assert_eq!(ops[0].sources(), [&Source::addon("logos/ui_textures.erp")]);
+        assert_eq!(
+            ops[1],
+            AssetOp::Lang(LangOp::Default {
+                language: "eng".into(),
+                key: "lng_a".into(),
+                value: "A".into()
+            })
+        );
+        assert_eq!(ops[1].kind(), Some(Kind::Lang));
+        assert_eq!(serde_json::to_value(&ops).unwrap(), doc);
+        let erp: Value = serde_json::from_str(
+            r#"{"schema_version":1,"ops":[{"op":"merge-slices","erp":"a.erp","resource":"r","source":"s.erp","fragment":1}]}"#,
+        )
+        .unwrap();
+        assert!(OpFile::from_value(erp, FileKind::Erp).is_err());
     }
 
     #[test]

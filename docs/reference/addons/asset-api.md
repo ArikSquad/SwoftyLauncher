@@ -50,6 +50,7 @@ Inside each file, the prefix on an op names its kind:
 | `db.remove-record` | `key` | Remove one record |
 | `lang.set` | `language` (a code, or `*` for every language), `key`, `value` | Set one string |
 | `lang.table` | `language`, `source` (an `.lng` file) | Set every string in a table |
+| `lang.default` | `language`, `key`, `value` | Set one string before every `lang.set` and `lang.table`, which win over it ([In-game text](/reference/data/text)) |
 | `file.put` | `source`, `target` (a path in the game folder) | Replace or add a loose game file |
 | `track.add` | `source` (a folder holding an unpacked track package) | Activate a track before every database op ([A track with its own name](/reference/data/track-names)) |
 | `item.show` | `id`, `name`, optional `author`, `version`, `description` | Show a read-only tile in the in-game **ADDON SETTINGS** screen, such as one per mod a build hook merges |

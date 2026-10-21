@@ -172,7 +172,7 @@ fn target(op: &AssetOp) -> Option<(Target, bool)> {
         )),
         AssetOp::File(FileOp::Put { target, .. }) => Some((Target::File(target.clone()), true)),
         AssetOp::Db(_)
-        | AssetOp::Lang(LangOp::Table { .. })
+        | AssetOp::Lang(LangOp::Table { .. } | LangOp::Default { .. })
         | AssetOp::Track(_)
         | AssetOp::Item(_)
         | AssetOp::Warn { .. } => None,

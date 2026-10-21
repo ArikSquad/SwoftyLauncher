@@ -29,6 +29,7 @@ Put your `lang` operations in an `operations.assets` file. swofty_core adds the 
 |---|---|---|
 | `lang.set` | `language` (a code, or `*` for every language), `key`, `value` | Set one string |
 | `lang.table` | `language`, `source` (a `.lng` file in the addon) | Set every string in a table |
+| `lang.default` | `language` (a code, or `*`), `key`, `value` | Set one string unless an addon sets it |
 
 ```json [assets/text.json]
 {
@@ -49,6 +50,12 @@ List the file in the manifest:
 ```
 
 A key the game doesn't have gets added. Point a `_loc_tag` field at it to show your text. When two addons set the same key, the one later in the load order wins and the build prints the conflict.
+
+`lang.default` applies before every addon's `lang.set` and `lang.table`, whatever the load order. A `lang.set` or `lang.table` entry for the same language and key wins over it, including one from an addon earlier in the load order. When two addons give a default for the same language and key, the later one in the load order wins. Defaults never count as conflicts.
+
+```json
+{ "op": "lang.default", "language": "*", "key": "lng_my_track_title", "value": "Test Ring" }
+```
 
 `.serps` mods with language files add strings the same way: the importer turns every changed or new key into a `lang.set` ([`.serps` packages](/reference/mods/serps#what-the-importer-applies)).
 
