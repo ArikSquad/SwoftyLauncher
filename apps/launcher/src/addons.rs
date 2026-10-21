@@ -24,7 +24,7 @@ use crate::shell::{Page, Shell};
 use crate::theme::{Palette, palette};
 
 const FADE: Duration = Duration::from_secs(4);
-const FILTERS_W: f32 = 212.;
+const FILTERS_W: f32 = 226.;
 const DETAIL_W: f32 = 380.;
 const SPLIT_AT: f32 = 1000.;
 const ITEMS_SHOWN: usize = 40;
@@ -811,14 +811,12 @@ impl Shell {
                 }))
         });
         v_flex()
-            .id("addon-filters")
             .w(px(FILTERS_W))
             .flex_shrink_0()
             .h_full()
-            .overflow_y_scroll()
-            .gap(px(16.))
+            .gap(px(14.))
             .child(
-                Input::new(&self.addons.search).small().cleanable(true).prefix(
+                Input::new(&self.addons.search).cleanable(true).prefix(
                     Icon::new(IconName::Search)
                         .size(px(14.))
                         .text_color(p.text_placeholder),
@@ -842,10 +840,19 @@ impl Shell {
                     )
                     .children(clear),
             )
-            .child(group("CATEGORY", categories, cx))
-            .child(group("TYPE", types, cx))
-            .child(group("SOURCE", sources, cx))
-            .child(group("STATE", states, cx))
+            .child(
+                v_flex()
+                    .id("addon-filters")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .gap(px(16.))
+                    .pb(px(8.))
+                    .child(group("CATEGORY", categories, cx))
+                    .child(group("TYPE", types, cx))
+                    .child(group("SOURCE", sources, cx))
+                    .child(group("STATE", states, cx)),
+            )
     }
 
     fn filter_row(&self, f: Facet, count: usize, p: Palette, cx: &mut Context<Self>) -> AnyElement {
@@ -937,7 +944,11 @@ impl Shell {
         }
         if let Some(ix) = scroll_to {
             self.addons.scroll_pending = false;
-            self.addons.scroll.scroll_to_item(ix);
+            if split {
+                self.addons.scroll.scroll_to_item(ix);
+            } else {
+                self.addons.scroll.scroll_to_top_of_item(ix);
+            }
         }
         let header = h_flex()
             .h(px(28.))
@@ -991,7 +1002,6 @@ impl Shell {
                 .into_any_element()
         } else {
             div()
-                .flex_1()
                 .min_h_0()
                 .flex()
                 .flex_col()
@@ -1082,7 +1092,7 @@ impl Shell {
             .border_color(p.border_variant)
             .cursor_pointer()
             .map(|d| match (fade, selected) {
-                (Some(k), _) => d.bg(p.warning.opacity(0.08 + 0.22 * k)),
+                (Some(k), _) => d.bg(p.warning.opacity(0.06 + 0.3 * k)),
                 (None, true) => d.bg(p.selected),
                 (None, false) => d.hover(move |s| s.bg(p.hover)),
             })
@@ -1475,20 +1485,19 @@ impl Shell {
                         .child(text),
                 )
             })
-            .child(facts)
-            .child(what)
-            .child(conflicts)
-            .children(settings)
             .when(!actions.is_empty() || remove.is_some(), |d| {
                 d.child(
                     h_flex()
                         .flex_wrap()
                         .gap(px(8.))
-                        .children(actions)
-                        .child(div().flex_1())
+                        .when(!actions.is_empty(), |d| d.children(actions).child(div().flex_1()))
                         .children(remove),
                 )
             })
+            .child(facts)
+            .child(what)
+            .child(conflicts)
+            .children(settings)
             .into_any_element()
     }
 
