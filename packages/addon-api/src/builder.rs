@@ -141,6 +141,9 @@ impl AddonBuilder {
             ops.insert("erp".into(), serde_json::json!([ERP_FILE]));
             kind.push("erp");
         }
+        if !self.text.is_empty() {
+            kind.push("text");
+        }
         let assets: Vec<&str> = [
             (TEXT_FILE, self.text.is_empty()),
             (TRACKS_FILE, self.tracks.is_empty()),
@@ -377,6 +380,7 @@ fn copy(from: &Path, to: &Path, depth: usize) -> Result<()> {
 mod tests {
     use super::*;
     use crate::asset::{FileKind, OpFile};
+    use crate::manifest::Kind;
 
     fn tmp(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("swofty-builder-{name}-{}", std::process::id()));
@@ -431,6 +435,7 @@ mod tests {
             format!(">={}", launcher_floor())
         );
         assert!(launcher_floor() <= Version::new(1, 3, 0));
+        assert_eq!(m.kind, [Kind::Database, Kind::Erp, Kind::Text, Kind::Files]);
         assert_eq!(m.operations.database, [DATABASE_FILE]);
         assert_eq!(m.operations.erp, [ERP_FILE]);
         assert_eq!(m.operations.assets, [TEXT_FILE, TRACKS_FILE]);
