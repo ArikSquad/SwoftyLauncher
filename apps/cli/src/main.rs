@@ -50,6 +50,13 @@ enum Command {
         #[arg(long, help = "Game folder (default: discovered from Steam)")]
         game: Option<PathBuf>,
     },
+    #[command(about = "Show which addons override which in the profile's last build")]
+    Conflicts {
+        #[arg(long, help = "Build the profile without installing it and show its conflicts")]
+        check: bool,
+        #[arg(long, help = "Game folder (default: discovered from Steam)")]
+        game: Option<PathBuf>,
+    },
     #[command(
         about = "Build the profile and install it into the game folder (database, tracks); swofty restore undoes it"
     )]
@@ -372,6 +379,7 @@ fn dispatch(store: &Store, cli: Cli) -> Result<ExitCode> {
     match cli.command {
         Command::Run(args) => run::run(&store, &profile, args),
         Command::Build { game } => build::build(&store, &profile, game),
+        Command::Conflicts { check, game } => build::conflicts(&store, &profile, check, game),
         Command::Apply { game } => build::apply(&store, &profile, game),
         Command::Verify { game } => build::verify(&store, game),
         Command::Restore { game } => build::restore(&store, game),

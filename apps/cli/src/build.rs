@@ -89,6 +89,50 @@ fn report(profile: &str, built: &swofty_core::build::Built) {
     }
 }
 
+pub fn conflicts(store: &Store, profile: &str, check: bool, game: Option<PathBuf>) -> Result<ExitCode> {
+    let report = match check {
+        true => swofty_core::conflicts::check(store, profile, &self::game(store, game)?)?,
+        false => match swofty_core::conflicts::last(store, profile) {
+            Some(report) => report,
+            None => {
+                println!("{profile} has not been built yet; run swofty conflicts --check");
+                return Ok(ExitCode::SUCCESS);
+            }
+        },
+    };
+    let names: std::collections::BTreeMap<String, String> = store
+        .registry()?
+        .manifests()
+        .into_iter()
+        .map(|(id, m)| (id, m.name))
+        .collect();
+    print!("{}", conflicts_text(&report, &names));
+    Ok(ExitCode::SUCCESS)
+}
+
+fn conflicts_text(
+    report: &swofty_core::conflicts::Report,
+    names: &std::collections::BTreeMap<String, String>,
+) -> String {
+    if report.pairs.is_empty() {
+        return format!("{}: no addon overrides another\n", report.profile);
+    }
+    let name = |id: &str| names.get(id).cloned().unwrap_or_else(|| id.to_owned());
+    let mut out = String::new();
+    for pair in &report.pairs {
+        out.push_str(&pair.line(&name));
+        out.push('\n');
+        for item in &pair.items {
+            out.push_str(&format!("  {item}\n"));
+        }
+        let more = (pair.database + pair.resources + pair.files).saturating_sub(pair.items.len());
+        if more > 0 && pair.items.len() >= swofty_core::conflicts::MAX_ITEMS {
+            out.push_str(&format!("  and {more} more\n"));
+        }
+    }
+    out
+}
+
 fn common_root<'a>(paths: impl Iterator<Item = &'a String>) -> String {
     let mut roots: Vec<&str> = paths.filter_map(|p| p.split('/').next()).collect();
     roots.sort();
@@ -257,6 +301,7 @@ pub fn restore(store: &Store, game: Option<PathBuf>) -> Result<ExitCode> {
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
+    use std::collections::BTreeMap;
     use std::sync::Arc;
 
     use swofty_core::asset::{AssetBatch, AssetOp, FileOp, Op, Origin, Root, Source};
@@ -491,5 +536,32 @@ mod tests {
         let log = RefCell::new(Vec::new());
         h.install(&log).unwrap();
         assert_eq!(h.mip(), "mip-ferrari");
+    }
+
+    #[test]
+    fn prints_each_pair_then_its_items() {
+        use swofty_core::conflicts::{Pair, Report};
+        let mut report = Report {
+            profile: "default".into(),
+            built_at: 1.0,
+            pairs: Vec::new(),
+        };
+        let names = BTreeMap::from([("t.b".to_owned(), "Second".to_owned())]);
+        assert_eq!(
+            conflicts_text(&report, &names),
+            "default: no addon overrides another\n"
+        );
+        report.pairs.push(Pair {
+            winner: "t.b".into(),
+            loser: "t.a".into(),
+            database: 1,
+            resources: 0,
+            files: 1,
+            items: vec!["rules.laps".into(), "x/a.dds".into()],
+        });
+        assert_eq!(
+            conflicts_text(&report, &names),
+            "Second overrides t.a on 1 database value and 1 file\n  rules.laps\n  x/a.dds\n"
+        );
     }
 }

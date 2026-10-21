@@ -613,6 +613,50 @@ mod tests {
     }
 
     #[test]
+    fn category_and_origin_are_optional_and_round_trip() {
+        let m = AddonManifest::parse(GRID24).unwrap();
+        assert_eq!((m.category, &m.origin), (None, &None));
+        let json = serde_json::to_value(&m).unwrap();
+        assert!(json.get("category").is_none() && json.get("origin").is_none());
+        let with = GRID24.replace(
+            r#""author": "swofty","#,
+            r#""author": "swofty", "category": "drivers-teams",
+               "origin": { "tool": "teamsimplified.mods", "tool_version": "2.0.0", "file": "grid.zip", "sha256": "ab" },"#,
+        );
+        let m = AddonManifest::parse(&with).unwrap();
+        assert_eq!(m.category, Some(Category::DriversTeams));
+        assert_eq!(m.category.unwrap().label(), "Drivers & teams");
+        let origin = m.origin.as_ref().unwrap();
+        assert_eq!(
+            (origin.tool.as_str(), origin.file.as_deref()),
+            ("teamsimplified.mods", Some("grid.zip"))
+        );
+        let json = serde_json::to_value(&m).unwrap();
+        assert_eq!(json["category"], "drivers-teams");
+        assert_eq!(AddonManifest::parse(&json.to_string()).unwrap(), m);
+        let bare = with.replace(
+            r#", "tool_version": "2.0.0", "file": "grid.zip", "sha256": "ab""#,
+            "",
+        );
+        let json = serde_json::to_value(AddonManifest::parse(&bare).unwrap()).unwrap();
+        assert_eq!(
+            json["origin"],
+            serde_json::json!({ "tool": "teamsimplified.mods" })
+        );
+        for c in Category::ALL {
+            let v = serde_json::to_value(c).unwrap();
+            assert_eq!(serde_json::from_value::<Category>(v).unwrap(), c);
+        }
+        for bad in [
+            r#""category": "maps","#,
+            r#""origin": { "tool": "x", "extra": 1 },"#,
+        ] {
+            let bad = GRID24.replace(r#""author": "swofty","#, &format!(r#""author": "swofty", {bad}"#));
+            assert!(AddonManifest::parse(&bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
     fn rejects_unknown_fields() {
         let bad = GRID24.replace("\"kind\"", "\"kinds\"");
         assert!(AddonManifest::parse(&bad).is_err());

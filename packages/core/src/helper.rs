@@ -11,7 +11,8 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use swofty_addon::asset::{AssetBatch, Op, Origin};
 use swofty_addon::helper::{
-    ADDON_CALLS, API_VERSION, Built, Call, Hello, HostCall, Incoming, RESTART, Reply, Request, Welcome,
+    ADDON_CALLS, API_VERSION, Built, Call, Hello, HostCall, Incoming, MOVE_ADDON, RESTART, Reply, Request,
+    Welcome,
 };
 use swofty_addon::launcher::{
     Addon, BuildCx, Claim, CommandSpec, Cx, Importer, ProfileInfo, Progress, Summary,
@@ -343,10 +344,7 @@ impl HelperAddon {
             cache_dir: cx.cache_dir.to_path_buf(),
             profile: cx.profile.clone(),
             launcher: Some(env!("CARGO_PKG_VERSION").into()),
-            host_calls: match cx.addons() {
-                Some(_) => ADDON_CALLS.map(String::from).to_vec(),
-                None => Vec::new(),
-            },
+            host_calls: host_calls(cx),
         });
         let welcome = self
             .exchange(&mut live, cx, hello, self.timeouts.quick, None)?
@@ -461,6 +459,17 @@ fn to_value(v: impl Serialize) -> Result<Value> {
     serde_json::to_value(v).map_err(|e| swofty_addon::Error::Other(e.to_string()))
 }
 
+fn host_calls(cx: &Cx) -> Vec<String> {
+    match cx.addons() {
+        Some(_) => ADDON_CALLS
+            .into_iter()
+            .chain([MOVE_ADDON])
+            .map(String::from)
+            .collect(),
+        None => Vec::new(),
+    }
+}
+
 fn host_call(cx: &Cx, call: HostCall) -> std::result::Result<Value, String> {
     let game = || {
         cx.game
@@ -513,6 +522,9 @@ fn host_call(cx: &Cx, call: HostCall) -> std::result::Result<Value, String> {
             Err(swofty_addon::Error::Other(format!("{id} can't remove itself")))
         }
         HostCall::RemoveAddon { id } => addons().and_then(|a| a.remove(&id)).map(|()| Value::Null),
+        HostCall::MoveAddon { id, delta } => addons()
+            .and_then(|a| a.move_addon(&id, delta))
+            .map(|()| Value::Null),
         HostCall::Progress { .. } => Err(swofty_addon::Error::Other("progress takes no id".into())),
         HostCall::Invalidate(_) => Err(swofty_addon::Error::Other("invalidate takes no id".into())),
     }
@@ -983,6 +995,69 @@ read -r l
         .unwrap_err();
         assert!(e.contains("itself"), "{e}");
         std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[derive(Default)]
+    struct Moves(Mutex<Vec<(String, isize)>>);
+
+    impl swofty_addon::launcher::AddonStore for Moves {
+        fn list(&self) -> Result<Vec<swofty_addon::launcher::AddonInfo>> {
+            Ok(Vec::new())
+        }
+
+        fn install(&self, _: &std::path::Path) -> Result<swofty_addon::launcher::AddonInfo> {
+            Err(swofty_addon::Error::Other("no".into()))
+        }
+
+        fn set_enabled(&self, _: &str, _: bool) -> Result<()> {
+            Ok(())
+        }
+
+        fn remove(&self, _: &str) -> Result<()> {
+            Ok(())
+        }
+
+        fn move_addon(&self, id: &str, delta: isize) -> Result<()> {
+            self.0.lock().unwrap().push((id.into(), delta));
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn lists_and_answers_move_addon_beside_the_addon_calls() {
+        let root = tmp("move");
+        let (data, cache) = (root.join("data"), root.join("cache"));
+        let state = Memory::default();
+        let p = profile("default");
+        let moves = Moves::default();
+        let none = Cx::new("t.helper", &p, &data, &cache, None, &state);
+        assert!(host_calls(&none).is_empty());
+        let e = host_call(
+            &none,
+            HostCall::MoveAddon {
+                id: "t.a".into(),
+                delta: 1,
+            },
+        )
+        .unwrap_err();
+        assert!(e.contains("can't be managed"), "{e}");
+        let cx = Cx::new("t.helper", &p, &data, &cache, None, &state).with_addons(&moves);
+        assert_eq!(
+            host_calls(&cx),
+            [
+                "addons",
+                "install_addon",
+                "set_addon_enabled",
+                "remove_addon",
+                "move_addon"
+            ]
+        );
+        let call: HostCall = serde_json::from_value(
+            serde_json::json!({"method": "move_addon", "params": {"id": "t.a", "delta": -3}}),
+        )
+        .unwrap();
+        assert_eq!(host_call(&cx, call).unwrap(), Value::Null);
+        assert_eq!(*moves.0.lock().unwrap(), [("t.a".to_owned(), -3)]);
     }
 
     #[test]

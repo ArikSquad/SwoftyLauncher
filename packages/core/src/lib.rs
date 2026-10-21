@@ -1,4 +1,4 @@
-pub use swofty_addon::{GAME_ID, asset, launcher, manifest, ops, view};
+pub use swofty_addon::{GAME_ID, asset, builder, launcher, manifest, ops, view};
 
 pub mod activation;
 pub mod baseline;

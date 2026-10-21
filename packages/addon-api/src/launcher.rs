@@ -165,6 +165,12 @@ pub trait AddonStore: Send + Sync {
     fn install(&self, path: &Path) -> Result<AddonInfo>;
     fn set_enabled(&self, id: &str, on: bool) -> Result<()>;
     fn remove(&self, id: &str) -> Result<()>;
+    /// Moves an addon `delta` places in the active profile's load order; later loads win.
+    fn move_addon(&self, _id: &str, _delta: isize) -> Result<()> {
+        Err(Error::Other(
+            "this launcher can't reorder addons; it needs 1.3.0".into(),
+        ))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

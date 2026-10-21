@@ -7,12 +7,15 @@
 
 use std::io::{BufRead, Write};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::helper::{ADDON_CALLS, API_VERSION, Built, Call, HostCall, Invalidate, Reply, Request, Welcome};
+use crate::helper::{
+    ADDON_CALLS, API_VERSION, Built, Call, HostCall, Invalidate, MOVE_ADDON, Reply, Request, Welcome,
+};
 use crate::launcher::{
     Addon, AddonInfo, AddonStore, BuildCx, Claim, Cx, GameFiles, GameStatus, ProfileInfo, ProfileTracks,
     Progress, StateStore,
@@ -61,6 +64,10 @@ fn dispatch(
     call: Call,
 ) -> std::result::Result<Value, String> {
     if let Call::Hello(hello) = call {
+        host.moves.store(
+            hello.host_calls.iter().any(|h| h == MOVE_ADDON),
+            Ordering::Relaxed,
+        );
         *session = Some(Session {
             addon: hello.addon,
             data_dir: hello.data_dir,
@@ -167,6 +174,7 @@ impl Io {
 
 struct Host {
     io: Mutex<Io>,
+    moves: AtomicBool,
 }
 
 impl Host {
@@ -177,6 +185,7 @@ impl Host {
                 stdout: std::io::stdout(),
                 next: 0,
             }),
+            moves: AtomicBool::new(false),
         }
     }
 
@@ -328,6 +337,17 @@ impl AddonStore for Host {
 
     fn remove(&self, id: &str) -> Result<()> {
         self.call(HostCall::RemoveAddon { id: id.into() })
+            .map_err(Error::Other)?;
+        Ok(())
+    }
+
+    fn move_addon(&self, id: &str, delta: isize) -> Result<()> {
+        if !self.moves.load(Ordering::Relaxed) {
+            return Err(Error::Other(
+                "this launcher can't reorder addons; it needs 1.3.0".into(),
+            ));
+        }
+        self.call(HostCall::MoveAddon { id: id.into(), delta })
             .map_err(Error::Other)?;
         Ok(())
     }
