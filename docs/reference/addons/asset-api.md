@@ -137,10 +137,10 @@ Scuderia AlphaTauri: 412 database values, 3 archive resources, 2 files, 5 text s
 Scuderia AlphaTauri overrides Example Livery on 12 database values and 1 file
 ```
 
-A conflict between two items of one addon, such as two mods in the Team Simplified library, prints the target and both origins, each an addon id with the item in brackets:
+A conflict between two items of one addon, from ops its build hook returns, prints the target and both origins, each an addon id with the item in brackets:
 
 ```text
-conflict: text lng_team_tor_hashtag (eng): teamsimplified.mods (rm-designs.scuderia-alphatauri-orlen) overrides teamsimplified.mods (example.livery)
+conflict: text lng_team_tor_hashtag (eng): example.pack (alphatauri) overrides example.pack (base)
 ```
 
 Each build also writes the pairs, with the overridden items, to `$DATA/cache/overlay/<profile>/conflicts.json` ([`swofty conflicts`](/reference/cli#swofty-conflicts)).

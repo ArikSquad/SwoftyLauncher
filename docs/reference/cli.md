@@ -84,7 +84,7 @@ Example Livery overrides Grid 24 on 1 database value and 1 file
 |---|---|
 | `profile` | The profile. |
 | `built_at` | When the build ran, in Unix seconds. |
-| `pairs` | `{ winner, loser, database, resources, files, items }` per pair: the addon ids, how many database values, archive resources and game files the winner overrides, and up to 1000 item names. |
+| `pairs` | `{ winner, loser, database, resources, files, strings, items }` per pair: the addon ids, how many database values, archive resources, game files and text strings the winner overrides, and up to 1000 item names. |
 | `order` | The profile's turned-on addon ids in load order at the build. |
 
 A database value shows as its path in the DB Editor's catalogue, or as a `0x…` key when the catalogue doesn't name it. An archive resource shows as `<archive>:<resource>`, a file as its game path, a text string as `text <key>`.
