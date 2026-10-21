@@ -147,6 +147,7 @@ export default defineConfigWithTheme<DocsThemeConfig>({
               { text: "Playing in VR", link: "/using/vr" },
               { text: "Career Mode Editor", link: "/using/career-editor" },
               { text: "Driver Manager", link: "/using/driver-manager" },
+              { text: "DB Editor", link: "/using/db-editor" },
               { text: "Restoring the game", link: "/using/profiles-and-restoring" },
               { text: "Updating", link: "/using/updating" },
               { text: "Sending your logs", link: "/using/send-logs" },

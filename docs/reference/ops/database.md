@@ -102,6 +102,6 @@ Changing a `db` option marks the profile for a rebuild. The next launch, or `swo
 
 ## Applying changes
 
-Track activation runs first, then operations run in addon load order. A later change to a field replaces the earlier value, and the build prints the conflict ([Order and conflicts](/reference/data/operations#order-and-conflicts)). With the in-game loader, the changed records reach the game through `swofty/assets.json` ([Build route and runtime route](/reference/data/operations#build-route-and-runtime-route)).
+Track activation runs first, then operations run in addon load order. [DB Editor](/using/db-editor) packages are addons and run in the same order; a package change that no longer applies is skipped with a warning instead of failing the build. A later change to a field replaces the earlier value, and the build prints the conflict ([Order and conflicts](/reference/data/operations#order-and-conflicts)). With the in-game loader, the changed records reach the game through `swofty/assets.json` ([Build route and runtime route](/reference/data/operations#build-route-and-runtime-route)).
 
 See [Game database (GVDB)](/reference/gamedb) for the file format, how the game reads it and the table catalogue. [Modding recipes](/reference/gamedb/recipes) covers adding rows, grid size and tracks.
