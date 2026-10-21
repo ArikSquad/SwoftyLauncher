@@ -62,9 +62,31 @@ The build also prepares addon ERP files and prints their warnings. Files with a 
 
 Some assets go into `swofty/assets.json` instead. This applies to each asset kind that `swofty_core` lists as `stable` in `swofty/addons/core/features.json`, or as `experimental` and named in `config.json` `"runtime_assets"`. These assets are asset groups, changed ERP resources, database records that differ from the game file, one language table per language and overlay files. For `group` and `lang` operations, this is the only delivery route: without the feature, they wait, and the build lists them. To keep `erp`, `db` or `file` kinds on the build route, list them in `config.json` `"build_assets"`.
 
-You'll also see each conflict in the build output: a target that a later addon replaced after an earlier one wrote it.
+The output has a line per addon with what it writes, such as `Example Livery: 412 database values, 3 archive resources, 2 files`. Each pair of addons in conflict, where a later addon replaced what an earlier one wrote, prints a warning such as `Example Livery overrides Grid 24 on 12 database values and 1 file`.
 
 When the game exits, `swofty run` merges any settings you changed in game into your profile. Choose **APPLY & RESTART** and it rebuilds the profile, then starts the game again.
+
+## `swofty conflicts`
+
+```sh
+swofty conflicts [--profile <name>] [--check] [--game <dir>]
+```
+
+Prints the conflicts of the profile's last build, from `$DATA/cache/overlay/<profile>/conflicts.json`: a line per pair of addons, the winner first, then the overridden items. With `--check`, it builds the profile without installing it and prints that build's conflicts.
+
+```text
+Example Livery overrides Grid 24 on 1 database value and 1 file
+  entrants.teams.team[_metadata_=mclaren_26].stat_id
+  livery_package_shared/sponsor.dds
+```
+
+| Field in `conflicts.json` | Value |
+|---|---|
+| `profile` | The profile. |
+| `built_at` | When the build ran, in Unix seconds. |
+| `pairs` | `{ winner, loser, database, resources, files, items }` per pair: the addon ids, how many database values, archive resources and game files the winner overrides, and up to 1000 item names. |
+
+A database value shows as its path in the DB Editor's catalogue, or as a `0x…` key when the catalogue doesn't name it. An archive resource shows as `<archive>:<resource>`, a file as its game path, a text string as `text <key>`.
 
 ## `swofty apply`
 
