@@ -254,6 +254,19 @@ impl Store {
         if self.is_builtin(&m.id) {
             return Err(Error::Other(format!("{} is built in", m.id)));
         }
+        let prefix = crate::dbedit::package::ID_PREFIX;
+        if crate::dbedit::package::is_package(self, &m.id) {
+            return Err(Error::Other(format!(
+                "{} is a DB Editor addon you have; installing over it would delete its edits",
+                m.id
+            )));
+        }
+        if m.id.starts_with(prefix) {
+            return Err(Error::Other(format!(
+                "{}: the {prefix} prefix is kept for addons the DB Editor saves",
+                m.id
+            )));
+        }
         if let Some(why) = crate::resolver::launcher_refusal(&m, &crate::update::current_version()) {
             return Err(Error::Other(why));
         }

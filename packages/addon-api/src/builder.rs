@@ -16,6 +16,8 @@ pub const ERP_FILE: &str = "erp.json";
 pub const TEXT_FILE: &str = "text.json";
 pub const TRACKS_FILE: &str = "tracks.json";
 const CODE: [&str; 6] = ["dll", "exe", "asi", "so", "dylib", "bat"];
+/// `swofty.` for the launcher's own addons, `dbedit.` for the DB Editor's.
+const RESERVED: [&str; 2] = ["swofty.", "dbedit."];
 const MAX_DEPTH: usize = 64;
 
 #[derive(Debug, Clone)]
@@ -194,8 +196,8 @@ impl AddonBuilder {
         if !valid_id(&self.id) {
             return fail("id must be lowercase dotted [a-z0-9._-] with at least two parts".into());
         }
-        if self.id.starts_with("swofty.") {
-            return fail("the swofty. prefix is reserved".into());
+        if let Some(prefix) = RESERVED.iter().find(|p| self.id.starts_with(*p)) {
+            return fail(format!("the {prefix} prefix is reserved"));
         }
         if self.name.trim().is_empty() {
             return fail("the addon needs a name".into());
@@ -475,7 +477,7 @@ mod tests {
             assert!(!out.exists(), "{e}");
             e
         };
-        for id in ["Okayama", "single", "swofty.okayama"] {
+        for id in ["Okayama", "single", "swofty.okayama", "dbedit.okayama"] {
             let mut b = base.clone();
             b.id = id.into();
             refused(&b);
