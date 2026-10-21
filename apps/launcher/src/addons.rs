@@ -224,10 +224,12 @@ fn matches_query(m: &AddonItem, query: &str) -> bool {
 }
 
 fn pair_counts(pair: &Pair) -> String {
+    let strings = pair.items.iter().filter(|i| i.starts_with("text ")).count();
     let parts: Vec<String> = [
         (pair.database, "database value", "database values"),
         (pair.resources, "archive resource", "archive resources"),
         (pair.files, "file", "files"),
+        (strings, "text string", "text strings"),
     ]
     .into_iter()
     .filter(|(n, ..)| *n > 0)
@@ -343,13 +345,13 @@ impl Shell {
     /// The profile's enabled addons in load order, then the rest; and how many
     /// are in the load order.
     fn ordered(&self) -> (Vec<&AddonItem>, usize) {
-        let find = |id: &str| self.library.addons.iter().find(|a| a.manifest.id == id);
+        let find = |id: &str| self.library.listed().find(|a| a.manifest.id == id);
         if self.vanilla() {
-            return (self.library.addons.iter().collect(), 0);
+            return (self.library.listed().collect(), 0);
         }
         let mut out: Vec<&AddonItem> = self.library.profile.enabled().filter_map(find).collect();
         let loaded = out.len();
-        for m in &self.library.addons {
+        for m in self.library.listed() {
             if !out.iter().any(|o| o.manifest.id == m.manifest.id) {
                 out.push(m);
             }
@@ -386,7 +388,7 @@ impl Shell {
             self.addons.seen = Some(at);
             self.addons.scroll_pending = true;
             self.open_addon = Some(id.clone());
-            let item = self.library.addons.iter().find(|a| a.manifest.id == id);
+            let item = self.library.listed().find(|a| a.manifest.id == id);
             if item.is_some_and(|m| !self.passes(m, query, None)) {
                 self.addons.facets.clear();
                 if !query.is_empty() {
@@ -530,7 +532,7 @@ impl Shell {
         let registry = self.library.registry.clone();
         let profile = &self.library.profile;
         let (mut off, mut kept) = (Vec::new(), Vec::new());
-        for m in self.library.addons.iter().filter(|m| m.enabled && !m.locked) {
+        for m in self.library.listed().filter(|m| m.enabled && !m.locked) {
             match registry.turn_off_warning(profile, &m.manifest.id) {
                 Some(_) => kept.push(m.manifest.name.clone()),
                 None => off.push(m.manifest.id.clone()),
@@ -589,19 +591,19 @@ impl Shell {
         cx.notify();
     }
 
-    fn edit_in_db(&mut self, id: &str, cx: &mut Context<Self>) {
-        self.db_edit_package(id, cx);
-    }
-
     pub(crate) fn addons_page(&mut self, p: Palette, cx: &mut Context<Self>) -> AnyElement {
         self.sync_addons();
         let mut query = self.addons.search.read(cx).value().trim().to_lowercase();
         let highlight = self.sync_highlight(&mut query, cx);
-        let installed = plural(self.library.addons.len(), "addon installed", "addons installed");
+        let installed = plural(
+            self.library.listed().count(),
+            "addon installed",
+            "addons installed",
+        );
         let subtitle = if self.vanilla() {
             format!("{installed} · {VANILLA} plays the game without them")
         } else {
-            let on = self.library.addons.iter().filter(|m| self.addon_on(m)).count();
+            let on = self.library.listed().filter(|m| self.addon_on(m)).count();
             format!("{installed} · {on} on in {}", self.library.profile.name)
         };
         let actions = (!self.vanilla()).then(|| {
@@ -634,11 +636,35 @@ impl Shell {
                     self.library.profile.name
                 ))
         });
+        let hidden = self.library.addons.len() - self.library.listed().count();
+        let tracks = self.library.tracks_page.filter(|_| hidden > 0).map(|i| {
+            h_flex()
+                .px(px(GUTTER))
+                .pb(px(12.))
+                .gap(px(8.))
+                .flex_shrink_0()
+                .items_center()
+                .text_size(px(13.))
+                .text_color(p.text_muted)
+                .child(Icon::new(IconName::Map).size(px(14.)))
+                .child(format!(
+                    "{} {} on the Tracks page",
+                    plural(hidden, "track addon", "track addons"),
+                    if hidden == 1 { "is" } else { "are" }
+                ))
+                .child(
+                    Button::new("open-tracks")
+                        .ghost()
+                        .small()
+                        .label("Open Tracks")
+                        .on_click(cx.listener(move |this, _, _, cx| this.open_page(Page::Section(i), cx))),
+                )
+        });
         let split = self.content_width >= SPLIT_AT;
         let selected = self
             .open_addon
             .clone()
-            .filter(|id| self.library.addons.iter().any(|a| &a.manifest.id == id));
+            .filter(|id| self.library.listed().any(|a| &a.manifest.id == id));
         let list = self.addon_list(&query, highlight.as_ref(), split, p, cx);
         let detail = selected
             .filter(|_| split)
@@ -647,6 +673,7 @@ impl Shell {
             .size_full()
             .child(self.header(Page::Addons.label(), subtitle, div().children(actions), p))
             .children(pending)
+            .children(tracks)
             .child(self.install_cards(p, cx))
             .child(
                 h_flex()
@@ -753,7 +780,7 @@ impl Shell {
                 } else {
                     "Mod Importer"
                 })
-                .on_click(cx.listener(|this, _, _, cx| this.go(Page::Importer, cx))),
+                .on_click(cx.listener(|this, _, _, cx| this.open_page(Page::Importer, cx))),
         );
         h_flex()
             .px(px(GUTTER))
@@ -765,7 +792,7 @@ impl Shell {
     }
 
     fn filters(&self, query: &str, p: Palette, cx: &mut Context<Self>) -> impl IntoElement {
-        let items = &self.library.addons;
+        let items: Vec<&AddonItem> = self.library.listed().collect();
         let active = !self.addons.facets.is_empty() || !query.is_empty();
         let group = |title: &'static str, facets: Vec<Facet>, cx: &mut Context<Self>| {
             let rows: Vec<AnyElement> = facets
@@ -935,7 +962,7 @@ impl Shell {
                 scroll_to = Some(children.len());
             }
             let position = (*i < loaded && !vanilla).then_some(*i + 1);
-            if let Some(m) = self.library.addons.iter().find(|a| &a.manifest.id == id) {
+            if let Some(m) = self.library.listed().find(|a| &a.manifest.id == id) {
                 children.push(self.list_row(m, position, fade, p, cx));
             }
             if !split && self.open_addon.as_ref() == Some(id) {
@@ -1420,7 +1447,7 @@ impl Shell {
                     .small()
                     .icon(IconName::Database)
                     .label("Edit in DB Editor")
-                    .on_click(cx.listener(move |this, _, _, cx| this.edit_in_db(&id, cx)))
+                    .on_click(cx.listener(move |this, _, _, cx| this.db_edit_addon(&id, cx)))
                     .into_any_element(),
             );
         }
@@ -1431,7 +1458,7 @@ impl Shell {
                     .small()
                     .icon(IconName::FolderInput)
                     .label("Open in Mod Importer")
-                    .on_click(cx.listener(|this, _, _, cx| this.go(Page::Importer, cx)))
+                    .on_click(cx.listener(|this, _, _, cx| this.open_page(Page::Importer, cx)))
                     .into_any_element(),
             );
         }
