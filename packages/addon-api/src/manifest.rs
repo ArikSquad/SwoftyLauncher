@@ -162,6 +162,7 @@ impl Launcher {
 pub enum Kind {
     Database,
     Erp,
+    Text,
     Ui,
     Files,
     Native,
@@ -494,6 +495,21 @@ mod tests {
         assert!(newer.accepts_launcher(&Version::new(1, 0, 9)));
         assert!(!newer.accepts_launcher(&Version::new(1, 0, 8)));
         assert_eq!(m.options[0].binds, Binds::Db);
+    }
+
+    #[test]
+    fn kind_takes_text_beside_the_older_values() {
+        assert_eq!(AddonManifest::parse(GRID24).unwrap().kind, [Kind::Database]);
+        let m = AddonManifest::parse(&GRID24.replace(
+            r#""kind": ["database"]"#,
+            r#""kind": ["database", "erp", "text", "ui", "files", "native"]"#,
+        ))
+        .unwrap();
+        assert_eq!(m.kind[2], Kind::Text);
+        assert_eq!(serde_json::to_value(&m).unwrap()["kind"][2], "text");
+        assert!(
+            AddonManifest::parse(&GRID24.replace(r#""kind": ["database"]"#, r#""kind": ["lang"]"#)).is_err()
+        );
     }
 
     #[test]

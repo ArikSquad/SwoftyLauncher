@@ -210,6 +210,7 @@ pub fn kind_label(kind: Kind) -> &'static str {
     match kind {
         Kind::Database => "Database",
         Kind::Erp => "ERP",
+        Kind::Text => "Text",
         Kind::Ui => "UI",
         Kind::Files => "Files",
         Kind::Native => "Native",
