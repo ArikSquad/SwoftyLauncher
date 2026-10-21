@@ -598,7 +598,7 @@ impl Shell {
     /// Opens the DB Editor addon `id` as the draft. Unsaved changes in the
     /// draft ask Save / Discard / Cancel first.
     pub(crate) fn db_edit_addon(&mut self, id: &str, cx: &mut Context<Self>) {
-        self.go(Page::Database, cx);
+        self.open_page(Page::Database, cx);
         if self.db.draft.addon.as_deref() == Some(id) {
             self.db_retry(cx);
         } else if self.db.draft.is_dirty() {
@@ -1495,7 +1495,7 @@ impl Shell {
         };
         let section = self.library.sections[i].spec.id.clone();
         self.db.pending_tab = link.tab.clone().map(|t| (addon, section, t));
-        self.go(Page::Section(i), cx);
+        self.open_page(Page::Section(i), cx);
     }
 
     pub(crate) fn career_link() -> LinkSpec {
