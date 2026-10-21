@@ -331,7 +331,7 @@ impl Shell {
 
     fn matches_facet(&self, m: &AddonItem, f: Facet) -> bool {
         match f {
-            Facet::Category(c) => m.manifest.category == c,
+            Facet::Category(c) => m.category() == c,
             Facet::Type(t) => m.manifest.kind.iter().any(|k| Type::of(*k) == t),
             Facet::Source(s) => m.source == s,
             Facet::State(State::On) => self.addon_on(m),
@@ -1123,7 +1123,7 @@ impl Shell {
                     .text_color(p.text_placeholder),
             )
         });
-        let category = man.category.map_or("Uncategorised", Category::label);
+        let category = m.category().map_or("Uncategorised", Category::label);
         let row = h_flex()
             .id(SharedString::from(format!("addon-{id}")))
             .relative()
@@ -1204,7 +1204,7 @@ impl Shell {
                             .child(
                                 div()
                                     .flex_shrink_0()
-                                    .text_color(if man.category.is_some() {
+                                    .text_color(if m.category().is_some() {
                                         p.text_muted
                                     } else {
                                         p.text_placeholder
@@ -1399,7 +1399,7 @@ impl Shell {
             .when_some(order_line, |d, line| d.child(fact("Load order", line, p)))
             .child(fact(
                 "Category",
-                man.category.map_or("Uncategorised", Category::label),
+                m.category().map_or("Uncategorised", Category::label),
                 p,
             ))
             .child(fact("Source", source, p))
