@@ -1,8 +1,10 @@
 use std::sync::Arc;
+use std::time::Instant;
 
 use gpui_kit::{Image, ImageFormat};
+use swofty_core::asset::{AssetOp, OpFile};
 use swofty_core::launcher::Summary;
-use swofty_core::manifest::{AddonManifest, Kind};
+use swofty_core::manifest::AddonManifest;
 use swofty_core::profile::{Profile, VANILLA};
 use swofty_core::registry::{Host, Registry};
 use swofty_core::store::Store;
@@ -18,6 +20,119 @@ pub struct AddonItem {
     pub track: bool,
     /// Built from the DB Editor (see [`swofty_core::dbedit::package::is_package`]).
     pub package: bool,
+    pub source: Source,
+}
+
+pub const DB_EDITOR_TOOL: &str = "db-editor";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Source {
+    Builtin,
+    DbEditor,
+    Importer,
+    Installed,
+}
+
+impl Source {
+    pub const ALL: [Source; 4] = [Self::Builtin, Self::DbEditor, Self::Importer, Self::Installed];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Builtin => "Built in",
+            Self::DbEditor => "Built from DB Editor",
+            Self::Importer => "Imported by Mod Importer",
+            Self::Installed => "Installed",
+        }
+    }
+
+    pub fn tag(self) -> &'static str {
+        match self {
+            Self::Builtin => "Built in",
+            Self::DbEditor => "DB Editor",
+            Self::Importer => "Mod Importer",
+            Self::Installed => "Installed",
+        }
+    }
+
+    fn of(store: &Store, m: &AddonManifest, package: bool) -> Self {
+        let tool = m.origin.as_ref().map(|o| o.tool.as_str());
+        if store.is_builtin(&m.id) {
+            Self::Builtin
+        } else if package || tool == Some(DB_EDITOR_TOOL) {
+            Self::DbEditor
+        } else if tool == Some(swofty_core::managed::ID) {
+            Self::Importer
+        } else {
+            Self::Installed
+        }
+    }
+}
+
+/// What an addon's op files change, counted by kind.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Changes {
+    pub database: usize,
+    pub resources: usize,
+    pub text: usize,
+    pub files: usize,
+    pub tracks: usize,
+    pub screens: usize,
+    pub plugins: usize,
+    pub unreadable: Vec<String>,
+}
+
+impl Changes {
+    pub fn read(store: &Store, item: &AddonItem) -> Self {
+        let m = &item.manifest;
+        let dir = store.addons_dir().join(&m.id);
+        let mut c = Self {
+            screens: m.operations.ui.len() + m.operations.screens.len(),
+            plugins: m.operations.native.len(),
+            ..Self::default()
+        };
+        let ops = m.operations.op_files().flat_map(|(kind, rel)| {
+            let file = std::fs::read(dir.join(rel))
+                .ok()
+                .and_then(|b| serde_json::from_slice(&b).ok())
+                .and_then(|v| OpFile::from_value(v, kind).ok());
+            if file.is_none() {
+                c.unreadable.push(rel.to_owned());
+            }
+            file.map(|f| f.ops).unwrap_or_default()
+        });
+        let ops: Vec<AssetOp> = ops.chain(m.operations.file_ops()).collect();
+        for op in &ops {
+            match op {
+                AssetOp::Db(_) => c.database += 1,
+                AssetOp::Erp(_) => c.resources += 1,
+                AssetOp::Lang(_) => c.text += 1,
+                AssetOp::File(_) => c.files += 1,
+                AssetOp::Track(_) => c.tracks += 1,
+                AssetOp::Group(_) | AssetOp::Item(_) | AssetOp::Warn { .. } => {}
+            }
+        }
+        if item.track && c.tracks == 0 {
+            c.tracks = 1;
+        }
+        c
+    }
+
+    /// Each non-zero count as "3 database values", in a fixed order.
+    pub fn parts(&self) -> Vec<String> {
+        [
+            (self.database, "database value", "database values"),
+            (self.resources, "archive resource", "archive resources"),
+            (self.text, "text entry", "text entries"),
+            (self.files, "file", "files"),
+            (self.tracks, "track", "tracks"),
+            (self.screens, "UI screen", "UI screens"),
+            (self.plugins, "code plugin", "code plugins"),
+        ]
+        .into_iter()
+        .filter(|(n, ..)| *n > 0)
+        .map(|(n, one, many)| plural(n, one, many))
+        .collect()
+    }
 }
 
 #[derive(Clone)]
@@ -96,6 +211,7 @@ pub struct Library {
     /// track packages and track addons together.
     pub tracks_page: Option<usize>,
     pub error: Option<String>,
+    pub loaded: Instant,
 }
 
 impl Library {
@@ -117,14 +233,18 @@ impl Library {
         let enabled: Vec<&str> = profile.enabled().collect();
         let mut addons: Vec<AddonItem> = manifests
             .values()
-            .map(|m| AddonItem {
-                enabled: enabled.contains(&m.id.as_str()),
-                locked: registry.get(&m.id).is_some_and(|e| e.locked),
-                icon: addon_icon(store, &registry, m),
-                track: !m.is_builtin()
-                    && swofty_core::tracks::is_track_addon(&store.addons_dir().join(&m.id), m),
-                package: !m.is_builtin() && swofty_core::dbedit::package::is_package(store, &m.id),
-                manifest: m.clone(),
+            .map(|m| {
+                let package = !m.is_builtin() && swofty_core::dbedit::package::is_package(store, &m.id);
+                AddonItem {
+                    enabled: enabled.contains(&m.id.as_str()),
+                    locked: registry.get(&m.id).is_some_and(|e| e.locked),
+                    icon: addon_icon(store, &registry, m),
+                    track: !m.is_builtin()
+                        && swofty_core::tracks::is_track_addon(&store.addons_dir().join(&m.id), m),
+                    package,
+                    source: Source::of(store, m, package),
+                    manifest: m.clone(),
+                }
             })
             .collect();
         addons.sort_by_key(|m| {
@@ -169,6 +289,7 @@ impl Library {
             sections,
             registry,
             error,
+            loaded: Instant::now(),
         }
     }
 
@@ -177,10 +298,6 @@ impl Library {
     pub fn listed(&self) -> impl Iterator<Item = &AddonItem> {
         let tracks = self.tracks_page.is_some();
         self.addons.iter().filter(move |m| !(m.track && tracks))
-    }
-
-    pub fn enabled_addons(&self) -> usize {
-        self.listed().filter(|m| m.enabled).count()
     }
 
     pub fn active(&self) -> Option<&ProfileItem> {
@@ -204,14 +321,4 @@ fn summaries(store: &Store, registry: &Registry, profile: &Profile) -> Vec<Summa
 
 pub fn plural(n: usize, one: &str, many: &str) -> String {
     format!("{n} {}", if n == 1 { one } else { many })
-}
-
-pub fn kind_label(kind: Kind) -> &'static str {
-    match kind {
-        Kind::Database => "Database",
-        Kind::Erp => "ERP",
-        Kind::Ui => "UI",
-        Kind::Files => "Files",
-        Kind::Native => "Native",
-    }
 }

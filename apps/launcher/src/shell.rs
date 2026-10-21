@@ -122,6 +122,7 @@ pub struct Shell {
     pub(crate) live_n: u64,
     /// The addon the Addons page highlights, and since when.
     pub(crate) highlight: Option<(String, Instant)>,
+    pub(crate) addons: crate::addons::AddonsPage,
     pub(crate) db: crate::db::Db,
     _console_closed: Subscription,
     _poll: Task<()>,
@@ -371,6 +372,7 @@ impl Shell {
             painted: Instant::now(),
             live_n: 0,
             highlight: None,
+            addons: crate::addons::AddonsPage::new(window, cx),
             db: crate::db::Db::new(),
             _console_closed: console_closed,
             _poll: poll,
