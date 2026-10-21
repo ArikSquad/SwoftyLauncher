@@ -107,7 +107,6 @@ pub struct Shell {
     pub(crate) open_row: Option<String>,
     pub(crate) progress: Option<(f32, String)>,
     pub(crate) dropping: bool,
-    pub(crate) sidebar_list: bool,
     pub(crate) vr_profiles: BTreeSet<String>,
     pub(crate) start_steam: bool,
     pub(crate) updates: crate::update::Updates,
@@ -123,6 +122,7 @@ pub struct Shell {
     /// The addon the Addons page highlights, and since when.
     pub(crate) highlight: Option<(String, Instant)>,
     pub(crate) db: crate::db::Db,
+    pub(crate) news: crate::news::News,
     _console_closed: Subscription,
     _poll: Task<()>,
     _live: Task<()>,
@@ -324,8 +324,9 @@ impl Shell {
             Err(e) => library.error = Some(e.to_string()),
         }
         let config = store.config();
-        let (sidebar_list, vr_profiles) = (config.sidebar_list, config.vr_profiles);
+        let vr_profiles = config.vr_profiles;
         let start_steam = config.launch.start_steam;
+        let news = crate::news::News::load(&store.root);
         let mut shell = Self {
             library,
             store,
@@ -357,7 +358,6 @@ impl Shell {
             open_row: None,
             progress: None,
             dropping: false,
-            sidebar_list,
             vr_profiles,
             start_steam,
             updates: crate::update::Updates::new(),
@@ -372,12 +372,14 @@ impl Shell {
             live_n: 0,
             highlight: None,
             db: crate::db::Db::new(),
+            news,
             _console_closed: console_closed,
             _poll: poll,
             _live: live,
             _updates: updates,
         };
         shell.refresh_views(cx);
+        shell.fetch_news(cx);
         shell.db_profile_changed(cx);
         shell
     }
@@ -957,191 +959,185 @@ impl Shell {
         )
     }
 
-    fn nav_item(
-        &self,
-        page: Page,
-        title: SharedString,
-        art: TileArt,
-        count: Option<usize>,
-        p: Palette,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let active = self.page == page;
-        if self.sidebar_list {
-            return h_flex()
-                .id(SharedString::from(format!("nav-{title}")))
-                .h(px(46.))
-                .px(px(8.))
-                .gap(px(10.))
-                .rounded(px(8.))
-                .border_1()
-                .cursor_pointer()
-                .text_size(px(13.))
-                .font_weight(FontWeight::MEDIUM)
-                .map(|d| {
-                    if active {
-                        d.bg(p.selected).border_color(p.accent).text_color(p.text)
-                    } else {
-                        d.bg(p.surface)
-                            .border_color(p.border_variant)
-                            .text_color(p.text_muted)
-                            .hover(move |s| s.bg(p.hover).border_color(p.border).text_color(p.text))
-                    }
-                })
-                .child(tile_art(art, 30., active, p))
-                .child(div().flex_1().truncate().child(title))
-                .children(count.map(|n| {
-                    div()
-                        .text_size(px(12.))
-                        .text_color(p.text_placeholder)
-                        .child(n.to_string())
-                }))
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.page = page;
-                    cx.notify();
-                }))
-                .into_any_element();
+    pub(crate) fn open_page(&mut self, page: Page, cx: &mut Context<Self>) {
+        self.page = page;
+        if let Some(i) = self.open_section().filter(|i| !self.section_loaded(*i)) {
+            self.fetch_views(Some(i), cx);
         }
-        v_flex()
-            .id(SharedString::from(format!("nav-{title}")))
-            .relative()
-            .w(px(95.))
-            .h(px(92.))
-            .items_center()
-            .justify_center()
-            .gap(px(8.))
-            .rounded(px(10.))
+        cx.notify();
+    }
+
+    fn section_loaded(&self, i: usize) -> bool {
+        self.library
+            .sections
+            .get(i)
+            .is_some_and(|s| self.views.contains_key(&format!("{}/{}", s.addon, s.spec.id)))
+    }
+
+    fn big_nav(&self, page: Page, count: Option<usize>, p: Palette, cx: &mut Context<Self>) -> AnyElement {
+        let active = self.page == page;
+        h_flex()
+            .id(SharedString::from(format!("nav-{}", page.label())))
+            .h(px(40.))
+            .flex_shrink_0()
+            .pl(px(6.))
+            .pr(px(10.))
+            .gap(px(10.))
+            .rounded(px(8.))
             .border_1()
             .cursor_pointer()
-            .text_size(px(13.))
+            .text_size(px(14.))
             .font_weight(FontWeight::MEDIUM)
             .map(|d| {
                 if active {
                     d.bg(p.selected).border_color(p.accent).text_color(p.text)
                 } else {
-                    d.bg(p.surface)
-                        .border_color(p.border_variant)
+                    d.border_color(transparent_black())
                         .text_color(p.text_muted)
-                        .hover(move |s| s.bg(p.hover).border_color(p.border).text_color(p.text))
+                        .hover(move |s| s.bg(p.hover).text_color(p.text))
                 }
             })
-            .child(tile_art(art, 40., active, p))
-            .child(div().max_w_full().px(px(6.)).truncate().child(title))
+            .child(nav_art(NavArt::Icon(page.icon()), 28., active, p))
+            .child(div().flex_1().truncate().child(page.label()))
             .children(count.map(|n| {
                 div()
-                    .absolute()
-                    .top(px(6.))
-                    .right(px(8.))
+                    .text_size(px(12.))
+                    .text_color(if active { p.text_muted } else { p.text_placeholder })
+                    .child(n.to_string())
+            }))
+            .on_click(cx.listener(move |this, _, _, cx| this.open_page(page, cx)))
+            .into_any_element()
+    }
+
+    fn panel_nav(
+        &self,
+        page: Page,
+        title: SharedString,
+        art: NavArt,
+        count: Option<usize>,
+        p: Palette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let active = self.page == page;
+        h_flex()
+            .id(SharedString::from(format!("panel-{title}")))
+            .h(px(32.))
+            .flex_shrink_0()
+            .px(px(8.))
+            .gap(px(10.))
+            .rounded(px(6.))
+            .border_1()
+            .cursor_pointer()
+            .text_size(px(13.))
+            .map(|d| {
+                if active {
+                    d.bg(p.selected).border_color(p.accent).text_color(p.text)
+                } else {
+                    d.border_color(transparent_black())
+                        .text_color(p.text_muted)
+                        .hover(move |s| s.bg(p.hover).text_color(p.text))
+                }
+            })
+            .child(panel_art(art, active, p))
+            .child(div().flex_1().truncate().child(title))
+            .children(count.map(|n| {
+                div()
                     .text_size(px(11.))
                     .text_color(p.text_placeholder)
                     .child(n.to_string())
             }))
-            .on_click(cx.listener(move |this, _, _, cx| {
-                this.page = page;
-                cx.notify();
-            }))
+            .on_click(cx.listener(move |this, _, _, cx| this.open_page(page, cx)))
             .into_any_element()
     }
 
-    fn core_nav(&self, page: Page, count: usize, p: Palette, cx: &mut Context<Self>) -> AnyElement {
-        self.nav_item(
-            page,
-            page.label().into(),
-            TileArt::Icon(page.icon()),
-            Some(count),
-            p,
-            cx,
-        )
-    }
-
-    fn sidebar(&self, p: Palette, cx: &mut Context<Self>) -> impl IntoElement {
-        let list = self.sidebar_list;
-        let wrap = move |items: Vec<AnyElement>| -> AnyElement {
-            if list {
-                v_flex().gap(px(6.)).children(items).into_any_element()
-            } else {
-                h_flex()
-                    .flex_wrap()
-                    .gap(px(8.))
-                    .children(items)
-                    .into_any_element()
-            }
-        };
-        // ADDONS: Tools (the addons), the Tracks page and Database, above the addons'
-        // own groups. The Tracks page moves here from its addon's group.
-        let mut add_ons = vec![self.core_nav(Page::Addons, self.library.listed().count(), p, cx)];
-        let mut groups: Vec<(String, Vec<AnyElement>)> = Vec::new();
-        let mut last_group: Option<&str> = None;
-        for (i, s) in self.library.sections.iter().enumerate() {
-            let addon = self.library.addons.iter().find(|a| a.manifest.id == s.addon);
-            let tracks = s.spec.id == TRACKS_SECTION;
-            if !tracks && last_group != Some(s.addon.as_str()) {
-                let name = addon.map_or_else(|| s.addon.clone(), |a| a.manifest.name.clone());
-                groups.push((name, Vec::new()));
-                last_group = Some(s.addon.as_str());
-            }
-            let tile = self.nav_item(
-                Page::Section(i),
-                s.spec.title.clone().into(),
-                match s.icon.clone().or_else(|| addon.and_then(|a| a.icon.clone())) {
-                    Some(AddonIcon::Glyph(data)) => TileArt::Glyph(data),
-                    Some(AddonIcon::Image(image)) => TileArt::Image(image),
-                    None => TileArt::Icon(crate::sections::icon(s.spec.icon)),
-                },
-                self.section_count(i),
-                p,
-                cx,
-            );
-            if tracks {
-                add_ons.push(tile);
-            } else if let Some((_, items)) = groups.last_mut() {
-                items.push(tile);
-            }
-        }
-        let database = Page::Database;
-        add_ons.push(self.nav_item(
-            database,
-            database.label().into(),
-            TileArt::Icon(database.icon()),
+    /// The addon panels the sidebar lists: the DB Editor, then every addon
+    /// page except the Mod Importer's own pages.
+    fn panels(&self, p: Palette, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let importer = self.importer_section();
+        let db = Page::Database;
+        let mut rows = vec![self.panel_nav(
+            db,
+            db.label().into(),
+            NavArt::Icon(db.icon()),
             Some(self.db_count()),
             p,
             cx,
-        ));
-        groups.insert(0, ("Addons".into(), add_ons));
+        )];
+        for (i, s) in self.library.sections.iter().enumerate() {
+            let simplified = s.addon == swofty_core::managed::ID;
+            if Some(i) == importer || (simplified && s.spec.id == TRACKS_SECTION) {
+                continue;
+            }
+            let addon = self.library.addons.iter().find(|a| a.manifest.id == s.addon);
+            let art = match s.icon.clone().or_else(|| addon.and_then(|a| a.icon.clone())) {
+                Some(AddonIcon::Glyph(data)) => NavArt::Glyph(data),
+                Some(AddonIcon::Image(image)) => NavArt::Image(image),
+                None => NavArt::Icon(crate::sections::icon(s.spec.icon)),
+            };
+            rows.push(self.panel_nav(
+                Page::Section(i),
+                s.spec.title.clone().into(),
+                art,
+                self.section_count(i),
+                p,
+                cx,
+            ));
+        }
+        rows
+    }
+
+    fn sidebar(&self, p: Palette, short: bool, cx: &mut Context<Self>) -> impl IntoElement {
+        let big = [
+            (Page::News, None),
+            (Page::Addons, Some(self.library.listed().count())),
+            (Page::Importer, None),
+            (Page::Tools, None),
+            (Page::Profiles, Some(self.library.profiles.len())),
+        ];
         v_flex()
             .w(px(220.))
             .h_full()
             .flex_shrink_0()
             .px(px(10.))
+            .pt(px(4.))
             .pb(px(10.))
             .gap(px(8.))
             .bg(p.chrome)
-            .pt(px(4.))
             .child(
                 h_flex()
+                    .flex_shrink_0()
                     .justify_center()
                     .pt(px(2.))
-                    .pb(px(16.))
-                    .child(crate::pages::wordmark(148.)),
+                    .pb(px(if short { 6. } else { 14. }))
+                    .child(crate::pages::wordmark(if short { 112. } else { 148. })),
             )
-            .child(wrap(vec![self.core_nav(
-                Page::Profiles,
-                self.library.profiles.len(),
-                p,
-                cx,
-            )]))
-            .children(groups.into_iter().map(|(name, items)| {
+            .child(
                 v_flex()
+                    .flex_shrink_0()
+                    .gap(px(2.))
+                    .children(big.map(|(page, count)| self.big_nav(page, count, p, cx))),
+            )
+            .child(
+                v_flex()
+                    .flex_1()
+                    .min_h_0()
+                    .pt(px(if short { 4. } else { 12. }))
                     .gap(px(6.))
-                    .pt(px(6.))
-                    .child(label(name.to_uppercase(), p).px(px(4.)))
-                    .child(wrap(items))
-            }))
-            .child(div().flex_1())
-            .child(self.discord_button(p))
+                    .child(label("ADDON PANELS", p).px(px(8.)))
+                    .child(
+                        v_flex()
+                            .id("panels")
+                            .flex_1()
+                            .min_h_0()
+                            .overflow_y_scroll()
+                            .gap(px(1.))
+                            .children(self.panels(p, cx)),
+                    ),
+            )
             .child(self.send_logs_button(p, cx))
             .child(
                 v_flex()
+                    .flex_shrink_0()
                     .gap(px(6.))
                     .pt(px(4.))
                     .pb(px(2.))
@@ -1151,13 +1147,13 @@ impl Shell {
     }
 }
 
-enum TileArt {
+enum NavArt {
     Icon(IconName),
     Glyph(Arc<[u8]>),
     Image(Arc<Image>),
 }
 
-fn tile_art(art: TileArt, size: f32, active: bool, p: Palette) -> Div {
+fn nav_art(art: NavArt, size: f32, active: bool, p: Palette) -> Div {
     let color = if active { p.on_accent } else { p.text_muted };
     let frame = || {
         div()
@@ -1167,12 +1163,31 @@ fn tile_art(art: TileArt, size: f32, active: bool, p: Palette) -> Div {
             .items_center()
             .justify_center()
             .rounded(px(size * 0.25))
-            .bg(if active { p.accent } else { p.hover })
+            .bg(if active { p.accent } else { p.surface })
     };
     match art {
-        TileArt::Image(image) => addon_icon(&AddonIcon::Image(image), size, p),
-        TileArt::Glyph(data) => frame().child(svg().data(&data).size(px(size * 0.5)).text_color(color)),
-        TileArt::Icon(icon) => frame().child(Icon::new(icon).size(px(size * 0.5)).text_color(color)),
+        NavArt::Image(image) => addon_icon(&AddonIcon::Image(image), size, p),
+        NavArt::Glyph(data) => frame().child(svg().data(&data).size(px(size * 0.55)).text_color(color)),
+        NavArt::Icon(icon) => frame().child(Icon::new(icon).size(px(size * 0.55)).text_color(color)),
+    }
+}
+
+fn panel_art(art: NavArt, active: bool, p: Palette) -> Div {
+    let color = if active {
+        p.accent_hover
+    } else {
+        p.text_placeholder
+    };
+    let frame = div()
+        .size(px(18.))
+        .flex_shrink_0()
+        .flex()
+        .items_center()
+        .justify_center();
+    match art {
+        NavArt::Image(image) => frame.child(addon_icon(&AddonIcon::Image(image), 18., p)),
+        NavArt::Glyph(data) => frame.child(svg().data(&data).size(px(16.)).text_color(color)),
+        NavArt::Icon(icon) => frame.child(Icon::new(icon).size(px(16.)).text_color(color)),
     }
 }
 
@@ -1181,6 +1196,7 @@ impl Render for Shell {
         self.painted = Instant::now();
         let p = palette(cx);
         let wide = window.viewport_size().width > px(1500.);
+        let short = window.viewport_size().height < px(760.);
         self.content_width =
             (f32::from(window.viewport_size().width) - 220. - 2. * crate::pages::GUTTER).max(320.);
         self.sync_sliders(window, cx);
@@ -1227,7 +1243,7 @@ impl Render for Shell {
                     .min_h_0()
                     .items_start()
                     .bg(p.chrome)
-                    .child(self.sidebar(p, cx))
+                    .child(self.sidebar(p, short, cx))
                     .child(
                         v_flex()
                             .flex_1()
