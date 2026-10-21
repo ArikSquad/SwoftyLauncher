@@ -292,8 +292,11 @@ The addon calls let a plugin install, list, turn on and off, reorder and remove 
 
 ```json
 [ { "id": "yourname.okayama-named", "name": "Okayama with its own name", "version": "1.0.0", "author": "Your Name",
-    "dir": "/home/you/.local/share/swofty/addons/yourname.okayama-named", "enabled": true } ]
+    "dir": "/home/you/.local/share/swofty/addons/yourname.okayama-named", "enabled": true, "position": 3 } ]
 ```
+
+- *(1.3.0)* The list is in the active profile's load order: the addons that are on, in the order a build loads them, then the rest by id.
+- *(1.3.0)* `position` is the addon's index in the active profile's addon list, from `0`, or `null` when the profile doesn't list it. An addon that is off keeps its place in that list. Launchers before 1.3.0 list the addons by id and send no `position`, which `AddonInfo::position` reads as `None`.
 
 - `install_addon` installs the addon at `path` as a drop on the window does: a `.swoftyaddon`, a zip that holds an addon, or a folder with `swofty.json`. It replaces an installed copy with the same id and returns the addon in the shape above. It doesn't turn the addon on.
 - `set_addon_enabled` turns an addon on or off in the active profile. It refuses to turn off an addon that is always on, or one that [keeps data in the saves](./manifest#saves), since only the **Addons** page warns about that.

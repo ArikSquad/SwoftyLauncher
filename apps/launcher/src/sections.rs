@@ -1,7 +1,7 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants};
@@ -397,16 +397,28 @@ impl Shell {
         let reporter = Reporter(shared.clone());
         self.follow_progress(shared, cx);
         cx.spawn_in(window, async move |this, cx| {
-            let (done, failed) = cx
+            let (mut done, failed, fresh) = cx
                 .background_executor()
                 .spawn(async move {
-                    let result = import_all(&store, &registry, &profile, install.as_ref(), &paths, &reporter);
+                    let before = installed(&store);
+                    let (done, failed) =
+                        import_all(&store, &registry, &profile, install.as_ref(), &paths, &reporter);
+                    let fresh = installed_since(&before, &installed(&store));
                     if let Ok(mut p) = reporter.0.lock() {
                         *p = None;
                     }
-                    result
+                    (done, failed, fresh)
                 })
                 .await;
+            if fresh.len() > 1 {
+                done.insert(
+                    0,
+                    format!(
+                        "Installed {}; Addons highlights the newest",
+                        plural(fresh.len(), "addon", "addons")
+                    ),
+                );
+            }
             this.update_in(cx, |s, window, cx| {
                 if !done.is_empty() {
                     window.push_notification(Notification::success(done.join("\n")), cx);
@@ -416,6 +428,9 @@ impl Shell {
                 }
                 s.rediscover = true;
                 s.reload(cx);
+                if let Some(id) = fresh.first() {
+                    s.show_addon(id, cx);
+                }
             })
             .ok();
         })
@@ -1110,6 +1125,35 @@ impl Shell {
     }
 }
 
+// When each installed addon's folder last changed, by addon id.
+fn installed(store: &Store) -> BTreeMap<String, SystemTime> {
+    let Ok(dirs) = std::fs::read_dir(store.addons_dir()) else {
+        return BTreeMap::new();
+    };
+    dirs.flatten()
+        .filter(|e| e.path().join(swofty_core::manifest::MANIFEST_FILE).is_file())
+        .filter_map(|e| {
+            Some((
+                e.file_name().into_string().ok()?,
+                e.metadata().ok()?.modified().ok()?,
+            ))
+        })
+        .collect()
+}
+
+// The addons installed or replaced between two snapshots, newest first.
+fn installed_since(
+    before: &BTreeMap<String, SystemTime>,
+    after: &BTreeMap<String, SystemTime>,
+) -> Vec<String> {
+    let mut fresh: Vec<(&String, &SystemTime)> = after
+        .iter()
+        .filter(|(id, at)| before.get(*id) != Some(at))
+        .collect();
+    fresh.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+    fresh.into_iter().map(|(id, _)| id.clone()).collect()
+}
+
 fn import_all(
     store: &Store,
     registry: &Registry,
@@ -1153,4 +1197,40 @@ fn import_all(
         }
     }
     (done, failed)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+    use std::time::{Duration, SystemTime};
+
+    use swofty_core::store::Store;
+
+    use super::{installed, installed_since};
+
+    #[test]
+    fn an_import_shows_what_it_installed_or_replaced_newest_first() {
+        let t = |s: u64| SystemTime::UNIX_EPOCH + Duration::from_secs(s);
+        let snap = |v: &[(&str, u64)]| -> BTreeMap<String, SystemTime> {
+            v.iter().map(|(id, s)| ((*id).to_owned(), t(*s))).collect()
+        };
+        let before = snap(&[("a.kept", 1), ("a.replaced", 2), ("a.removed", 3)]);
+        let after = snap(&[("a.kept", 1), ("a.replaced", 9), ("b.new", 8), ("c.new", 9)]);
+        assert_eq!(installed_since(&before, &after), ["a.replaced", "c.new", "b.new"]);
+        assert!(installed_since(&before, &before).is_empty());
+    }
+
+    #[test]
+    fn snapshots_list_only_folders_with_a_manifest() {
+        let root = std::env::temp_dir().join(format!("swofty-launcher-installed-{}", std::process::id()));
+        std::fs::remove_dir_all(&root).ok();
+        let store = Store::new(&root);
+        let addon = store.addons_dir().join("t.one");
+        std::fs::create_dir_all(&addon).unwrap();
+        std::fs::create_dir_all(store.addons_dir().join(".importing")).unwrap();
+        std::fs::write(addon.join(swofty_core::manifest::MANIFEST_FILE), "{}").unwrap();
+        let before = BTreeMap::new();
+        assert_eq!(installed_since(&before, &installed(&store)), ["t.one"]);
+        std::fs::remove_dir_all(&root).ok();
+    }
 }

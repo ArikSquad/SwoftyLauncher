@@ -170,15 +170,26 @@ impl ProfileState {
             author: m.author.clone(),
             dir: self.store.addons_dir().join(&m.id),
             enabled: p.enabled().any(|on| on == m.id),
+            position: p.addons.iter().position(|a| a.id == m.id),
         }
     }
 }
 
 impl AddonStore for ProfileState {
+    // The enabled addons in the order a build loads them, then the rest by id.
     fn list(&self) -> swofty_addon::Result<Vec<AddonInfo>> {
         let p = self.store.profile(&self.profile).map_err(other)?;
-        let addons = self.store.addons().map_err(other)?;
-        Ok(addons.values().map(|m| self.info(m, &p)).collect())
+        let mut addons = self.store.addons().map_err(other)?;
+        let order = crate::resolver::resolve(&p, &addons)
+            .map(|plan| plan.order)
+            .unwrap_or_else(|_| p.enabled().map(str::to_owned).collect());
+        let mut out: Vec<AddonInfo> = order
+            .iter()
+            .filter_map(|id| addons.remove(id))
+            .map(|m| self.info(&m, &p))
+            .collect();
+        out.extend(addons.values().map(|m| self.info(m, &p)));
+        Ok(out)
     }
 
     fn install(&self, path: &Path) -> swofty_addon::Result<AddonInfo> {
@@ -528,7 +539,31 @@ mod tests {
         let listed = addons.list().unwrap();
         let okayama = listed.iter().find(|a| a.id == "t.okayama").unwrap();
         assert!(okayama.enabled && okayama.dir.join(crate::manifest::MANIFEST_FILE).is_file());
+        let ids = |l: &[AddonInfo]| -> Vec<(String, Option<usize>)> {
+            l.iter().map(|a| (a.id.clone(), a.position)).collect()
+        };
+        let at = |id: &str, n: Option<usize>| (id.to_owned(), n);
+        assert_eq!(
+            ids(&listed),
+            [
+                at(CORE_ID, Some(0)),
+                at("t.okayama", Some(1)),
+                at("t.a", Some(2)),
+                at("t.saves", None)
+            ]
+        );
         assert!(listed.iter().any(|a| a.id == CORE_ID && a.enabled));
+        addons.set_enabled("t.okayama", false).unwrap();
+        assert_eq!(
+            ids(&addons.list().unwrap()),
+            [
+                at(CORE_ID, Some(0)),
+                at("t.a", Some(2)),
+                at("t.okayama", Some(1)),
+                at("t.saves", None)
+            ]
+        );
+        addons.set_enabled("t.okayama", true).unwrap();
         assert!(addons.set_enabled("t.missing", true).is_err());
         addons.set_enabled("t.saves", true).unwrap();
         let e = addons.set_enabled("t.saves", false).unwrap_err();
