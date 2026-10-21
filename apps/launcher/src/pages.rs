@@ -36,7 +36,7 @@ pub(crate) fn tag(label: impl Into<SharedString>, p: Palette) -> Div {
         .child(label.into())
 }
 
-fn tile(size: f32, p: Palette) -> Div {
+pub(crate) fn tile(size: f32, p: Palette) -> Div {
     div()
         .size(px(size))
         .flex_shrink_0()
@@ -389,6 +389,41 @@ impl Shell {
         self.library.profile.is_vanilla()
     }
 
+    // On every page in the Addons group.
+    pub(crate) fn install_addon_button(&self, cx: &mut Context<Self>) -> Button {
+        Button::new("install-addon")
+            .outline()
+            .icon(IconName::Plus)
+            .label("Install addon…")
+            .on_click(cx.listener(|this, _, window, cx| this.install_addon(window, cx)))
+    }
+
+    // Turns off every addon the Tools page lists, except those that are always on and
+    // those whose turning off warns about saves, which keep their own switch.
+    fn disable_all_addons(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let registry = self.library.registry.clone();
+        let profile = &self.library.profile;
+        let (mut off, mut kept) = (Vec::new(), Vec::new());
+        for m in self.library.listed().filter(|m| m.enabled && !m.locked) {
+            match registry.turn_off_warning(profile, &m.manifest.id) {
+                Some(_) => kept.push(m.manifest.name.clone()),
+                None => off.push(m.manifest.id.clone()),
+            }
+        }
+        self.update_profile(window, cx, |p| {
+            off.iter().try_for_each(|id| registry.set_enabled(p, id, false))
+        });
+        if !kept.is_empty() {
+            window.push_notification(
+                Notification::info(format!(
+                    "Left on: {}. Turning it off warns about your saves, so use its own switch.",
+                    kept.join(", ")
+                )),
+                cx,
+            );
+        }
+    }
+
     fn install_addon(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.prompt(
             Prompt {
@@ -439,11 +474,16 @@ impl Shell {
                 self.library.profile.name
             )
         };
-        let actions = Button::new("install-addon")
-            .outline()
-            .icon(IconName::Plus)
-            .label("Install addon…")
-            .on_click(cx.listener(|this, _, window, cx| this.install_addon(window, cx)));
+        let actions = h_flex()
+            .gap(px(8.))
+            .child(
+                Button::new("disable-all-addons")
+                    .outline()
+                    .label("Disable all")
+                    .disabled(self.vanilla())
+                    .on_click(cx.listener(|this, _, window, cx| this.disable_all_addons(window, cx))),
+            )
+            .child(self.install_addon_button(cx));
         let rows: Vec<AnyElement> = self
             .library
             .listed()

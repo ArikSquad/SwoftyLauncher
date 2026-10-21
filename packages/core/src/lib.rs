@@ -31,6 +31,7 @@ pub mod quarantine;
 pub mod recovery;
 pub mod registry;
 pub mod resolver;
+pub mod rowkeys;
 pub mod runtime;
 pub mod saves;
 pub mod send_logs;

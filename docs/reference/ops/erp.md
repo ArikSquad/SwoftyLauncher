@@ -45,6 +45,7 @@ python3 tools/erp.py <archive> '*'
 | `remove-resource` | `erp`, `resource` | Remove a resource |
 | `add-mipmaps` | `source`, `target` | Copy a mip file, or a folder of them, to a game-relative path |
 | `patch-pkg` | `erp`, `resource`, `fragment`, `edits` | Run `clone-entry` and `set-value` edits on a `!pkg` resource |
+| `overlay` | `erps`, `source` | Put every resource in a ready archive into each of `erps`, replacing or adding it. On the runtime route the archive loads as it is ([Asset API](/reference/addons/asset-api)) |
 | `warn` | `message` | Print a message when the addon is built |
 
 ## Raw resources

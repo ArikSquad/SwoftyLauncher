@@ -25,7 +25,7 @@ use swofty_core::store::Store;
 use swofty_core::view::View;
 
 use crate::game::{self, Install, Launch, Probe};
-use crate::library::{AddonIcon, Library};
+use crate::library::{AddonIcon, Library, TRACKS_SECTION};
 use crate::pages::{addon_icon, label};
 use crate::theme::{Palette, palette};
 
@@ -1067,17 +1067,23 @@ impl Shell {
                     .into_any_element()
             }
         };
+        // ADDONS: Tools (the addons), the Tracks page and Database, above the addons'
+        // own groups. The Tracks page moves here from its addon's group.
+        let mut add_ons = vec![self.core_nav(Page::Addons, self.library.listed().count(), p, cx)];
         let mut groups: Vec<(String, Vec<AnyElement>)> = Vec::new();
+        let mut last_group: Option<&str> = None;
         for (i, s) in self.library.sections.iter().enumerate() {
             let addon = self.library.addons.iter().find(|a| a.manifest.id == s.addon);
-            if i == 0 || self.library.sections[i - 1].addon != s.addon {
+            let tracks = s.spec.id == TRACKS_SECTION;
+            if !tracks && last_group != Some(s.addon.as_str()) {
                 let name = addon.map_or_else(|| s.addon.clone(), |a| a.manifest.name.clone());
                 groups.push((name, Vec::new()));
+                last_group = Some(s.addon.as_str());
             }
             let tile = self.nav_item(
                 Page::Section(i),
                 s.spec.title.clone().into(),
-                match addon.and_then(|a| a.icon.clone()) {
+                match s.icon.clone().or_else(|| addon.and_then(|a| a.icon.clone())) {
                     Some(AddonIcon::Glyph(data)) => TileArt::Glyph(data),
                     Some(AddonIcon::Image(image)) => TileArt::Image(image),
                     None => TileArt::Icon(crate::sections::icon(s.spec.icon)),
@@ -1086,10 +1092,22 @@ impl Shell {
                 p,
                 cx,
             );
-            if let Some((_, items)) = groups.last_mut() {
+            if tracks {
+                add_ons.push(tile);
+            } else if let Some((_, items)) = groups.last_mut() {
                 items.push(tile);
             }
         }
+        let database = Page::Database;
+        add_ons.push(self.nav_item(
+            database,
+            database.label().into(),
+            TileArt::Icon(database.icon()),
+            Some(self.db_count()),
+            p,
+            cx,
+        ));
+        groups.insert(0, ("Addons".into(), add_ons));
         v_flex()
             .w(px(220.))
             .h_full()
@@ -1106,11 +1124,12 @@ impl Shell {
                     .pb(px(16.))
                     .child(crate::pages::wordmark(148.)),
             )
-            .child(wrap(vec![
-                self.core_nav(Page::Profiles, self.library.profiles.len(), p, cx),
-                self.core_nav(Page::Addons, self.library.listed().count(), p, cx),
-                self.core_nav(Page::Database, self.db_count(), p, cx),
-            ]))
+            .child(wrap(vec![self.core_nav(
+                Page::Profiles,
+                self.library.profiles.len(),
+                p,
+                cx,
+            )]))
             .children(groups.into_iter().map(|(name, items)| {
                 v_flex()
                     .gap(px(6.))

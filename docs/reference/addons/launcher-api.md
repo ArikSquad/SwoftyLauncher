@@ -75,7 +75,7 @@ Tell the launcher where to find your plugin with `launcher.program`. It maps eac
 | Field | Type | What it does |
 |---|---|---|
 | `program` | `{ os: path }` | Where to find your plugin inside the addon folder for each OS. Use at least one of `linux`, `windows`, `macos` as a key. |
-| `sections` | `[{ id, title, icon }]` | Each entry adds a sidebar page. The launcher lists these without starting your plugin. |
+| `sections` | `[{ id, title, icon }]` | Each entry adds a sidebar page. The launcher lists these without starting your plugin. A `sections/<id>.svg` in your addon replaces the page's icon in the sidebar and on rows without art. |
 | `imports` | `[string]` | Extensions your plugin claims when a file is dropped. Leave out the dot. |
 | `build` | `bool` | Set to `true` if your plugin answers `build`. |
 | `commands` | `[CommandSpec]` | `swofty` subcommands. |
