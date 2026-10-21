@@ -317,6 +317,7 @@ b.write(&cx.cache_dir.join("okayama"))?;
 - `write` writes `swofty.json`, `database.json`, `erp.json`, `text.json` and `tracks.json` as needed, and sets `compat.launcher` to `>=1.3.0`, or to the crate's own version when it is older.
 - `write` refuses an invalid or `swofty.` id, a path that leaves the addon or the game folder, a file put twice, an op source that wasn't added, a source outside the addon folder, and a folder that isn't empty.
 - `write` refuses programs (`.dll`, `.exe`, `.asi`, `.so`, `.dylib`, `.bat`) as a source file, a path inside the addon or a game path.
+- `write` refuses a symbolic link or junction anywhere in a source.
 
 The template uses state to track which items are on, reading it here and writing it when the selection changes:
 

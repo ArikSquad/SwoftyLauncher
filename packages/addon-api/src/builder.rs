@@ -16,6 +16,7 @@ pub const ERP_FILE: &str = "erp.json";
 pub const TEXT_FILE: &str = "text.json";
 pub const TRACKS_FILE: &str = "tracks.json";
 const CODE: [&str; 6] = ["dll", "exe", "asi", "so", "dylib", "bat"];
+const MAX_DEPTH: usize = 64;
 
 #[derive(Debug, Clone)]
 pub struct AddonBuilder {
@@ -260,14 +261,14 @@ impl AddonBuilder {
         self.check()?;
         let m = self.manifest()?;
         for from in self.sources.values() {
-            refuse_code(from)?;
+            refuse_code(from, 0)?;
         }
         if std::fs::read_dir(dir).is_ok_and(|mut d| d.next().is_some()) {
             return Err(Error::Other(format!("{} is not empty", dir.display())));
         }
         mkdir(dir)?;
         for (rel, from) in &self.sources {
-            copy(from, &dir.join(rel))?;
+            copy(from, &dir.join(rel), 0)?;
         }
         let mut out = vec![(MANIFEST_FILE, serde_json::to_value(&m).expect("serialisable"))];
         if !self.database.ops.is_empty() {
@@ -313,19 +314,35 @@ fn mkdir(dir: &Path) -> Result<()> {
     })
 }
 
+fn io(path: &Path) -> impl FnOnce(std::io::Error) -> Error {
+    let path = path.to_path_buf();
+    move |source| Error::Io { path, source }
+}
+
 fn is_code(path: &Path) -> bool {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or_default();
     CODE.iter().any(|c| ext.eq_ignore_ascii_case(c))
 }
 
-fn refuse_code(path: &Path) -> Result<()> {
-    if path.is_dir() {
-        let entries = std::fs::read_dir(path).map_err(|source| Error::Io {
-            path: path.into(),
-            source,
-        })?;
-        for e in entries.flatten() {
-            refuse_code(&e.path())?;
+/// Whether `path` is a folder, refusing links, which could leave the source or loop.
+fn is_dir(path: &Path, depth: usize) -> Result<bool> {
+    let meta = std::fs::symlink_metadata(path).map_err(io(path))?;
+    if meta.file_type().is_symlink() {
+        return Err(Error::Other(format!(
+            "{} is a link; a generated addon copies plain files and folders",
+            path.display()
+        )));
+    }
+    if depth > MAX_DEPTH {
+        return Err(Error::Other(format!("{} is nested too deep", path.display())));
+    }
+    Ok(meta.is_dir())
+}
+
+fn refuse_code(path: &Path, depth: usize) -> Result<()> {
+    if is_dir(path, depth)? {
+        for e in std::fs::read_dir(path).map_err(io(path))? {
+            refuse_code(&e.map_err(io(path))?.path(), depth + 1)?;
         }
         return Ok(());
     }
@@ -338,15 +355,12 @@ fn refuse_code(path: &Path) -> Result<()> {
     }
 }
 
-fn copy(from: &Path, to: &Path) -> Result<()> {
-    let io = |path: &Path| {
-        let path = path.to_path_buf();
-        move |source| Error::Io { path, source }
-    };
-    if from.is_dir() {
+fn copy(from: &Path, to: &Path, depth: usize) -> Result<()> {
+    if is_dir(from, depth)? {
         mkdir(to)?;
-        for e in std::fs::read_dir(from).map_err(io(from))?.flatten() {
-            copy(&e.path(), &to.join(e.file_name()))?;
+        for e in std::fs::read_dir(from).map_err(io(from))? {
+            let e = e.map_err(io(from))?;
+            copy(&e.path(), &to.join(e.file_name()), depth + 1)?;
         }
         return Ok(());
     }
@@ -500,6 +514,27 @@ mod tests {
         assert!(refused(&b).contains("data only"));
         std::fs::write(root.join("okayama/plugin.dll"), "MZ").unwrap();
         assert!(refused(&base).contains("data only"));
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_links_in_sources() {
+        let root = tmp("links");
+        let out = root.join("out");
+        let base = sample(&root);
+        std::os::unix::fs::symlink(&root, root.join("okayama/loop")).unwrap();
+        let e = base.write(&out).unwrap_err().to_string();
+        assert!(e.contains("is a link") && !out.exists(), "{e}");
+        std::fs::remove_file(root.join("okayama/loop")).unwrap();
+        std::os::unix::fs::symlink("/etc/hostname", root.join("okayama/host")).unwrap();
+        assert!(base.write(&out).unwrap_err().to_string().contains("is a link"));
+        std::fs::remove_file(root.join("okayama/host")).unwrap();
+        let mut b = base.clone();
+        std::os::unix::fs::symlink(root.join("a.dds"), root.join("linked.dds")).unwrap();
+        b.file(root.join("linked.dds"), "livery_package_shared/b.dds");
+        assert!(b.write(&out).unwrap_err().to_string().contains("is a link"));
+        base.write(&out).unwrap();
         std::fs::remove_dir_all(&root).ok();
     }
 }
