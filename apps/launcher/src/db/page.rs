@@ -413,6 +413,32 @@ impl Shell {
                     .mx(px(GUTTER))
                     .mb(px(10.))
             }))
+            .children(self.db.newer.then(|| {
+                notice(
+                    "db-newer-draft",
+                    IconName::TriangleAlert,
+                    p.warning,
+                    "Another launcher window saved a newer draft. Changes here are not saved until you pick one."
+                        .into(),
+                    p,
+                )
+                .mx(px(GUTTER))
+                .mb(px(10.))
+                .child(
+                    Button::new("db-take-newer")
+                        .outline()
+                        .small()
+                        .label("Load the newer draft")
+                        .on_click(cx.listener(|this, _, _, cx| this.db_take_newer(cx))),
+                )
+                .child(
+                    Button::new("db-keep-mine")
+                        .ghost()
+                        .small()
+                        .label("Keep this window's changes")
+                        .on_click(cx.listener(|this, _, _, cx| this.db_keep_mine(cx))),
+                )
+            }))
             .child(body)
             .into_any_element()
     }

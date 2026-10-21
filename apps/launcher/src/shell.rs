@@ -374,7 +374,7 @@ impl Shell {
             live_n: 0,
             highlight: None,
             addons: crate::addons::AddonsPage::new(window, cx),
-            db: crate::db::Db::new(),
+            db: crate::db::Db::new(cx),
             news,
             _console_closed: console_closed,
             _poll: poll,
@@ -970,6 +970,7 @@ impl Shell {
     }
 
     pub(crate) fn open_page(&mut self, page: Page, cx: &mut Context<Self>) {
+        self.db_leaving(page, cx);
         self.page = page;
         if let Some(i) = self.open_section().filter(|i| !self.section_loaded(*i)) {
             self.fetch_views(Some(i), cx);
