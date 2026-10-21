@@ -296,6 +296,9 @@ impl Bundle {
         for (id, log) in helper_logs(store) {
             c.file(format!("addons/{id}/{}", crate::helper::LOG_FILE), &log, None);
         }
+        for (id, log) in addon_logs(store) {
+            c.file(format!("addons/{id}/logs/{}", file_name(&log)), &log, None);
+        }
         if let Some(snapshot) = report.game.dir.as_ref().map(|d| d.join(SNAPSHOT))
             && snapshot.is_file()
         {
@@ -756,6 +759,9 @@ fn files_under(dir: &Path, depth: usize) -> Vec<(String, PathBuf)> {
     out
 }
 
+/// Converter and other addon logs sent per addon, newest first.
+const ADDON_LOGS: usize = 5;
+
 fn helper_logs(store: &Store) -> Vec<(String, PathBuf)> {
     let mut out: Vec<(String, PathBuf)> = std::fs::read_dir(store.root.join("cache/addons"))
         .into_iter()
@@ -769,6 +775,31 @@ fn helper_logs(store: &Store) -> Vec<(String, PathBuf)> {
         })
         .filter(|(_, log)| log.is_file())
         .collect();
+    out.sort();
+    out
+}
+
+/// The newest `.log` files addons keep in `addon-data/<id>/logs/`, such as
+/// the Mod Importer's converter logs.
+fn addon_logs(store: &Store) -> Vec<(String, PathBuf)> {
+    let mut out = Vec::new();
+    for e in std::fs::read_dir(store.root.join("addon-data"))
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
+        let id = e.file_name().to_string_lossy().into_owned();
+        let mut logs: Vec<(std::time::SystemTime, PathBuf)> = std::fs::read_dir(e.path().join("logs"))
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|f| f.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "log") && p.is_file())
+            .filter_map(|p| Some((std::fs::metadata(&p).ok()?.modified().ok()?, p)))
+            .collect();
+        logs.sort_by_key(|l| std::cmp::Reverse(l.0));
+        out.extend(logs.into_iter().take(ADDON_LOGS).map(|(_, p)| (id.clone(), p)));
+    }
     out.sort();
     out
 }
