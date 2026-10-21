@@ -123,18 +123,25 @@ A later write wins, so load order matters when addons write to the same target. 
 | Target | Written by |
 |---|---|
 | An asset group | `group.register` |
-| A resource in an archive | `erp.put-resource`, `erp.replace-resource`, `erp.remove-resource`, `erp.add-resource`, `erp.copy-resource`, `erp.patch-pkg` (`erp.overlay` writes resources the planner doesn't list, since they are only known from its archive) |
+| A resource in an archive | `erp.put-resource`, `erp.replace-resource`, `erp.remove-resource`, `erp.add-resource`, `erp.copy-resource`, `erp.patch-pkg`, `erp.overlay` (each resource its archive holds, in each of its `erps`) |
 | A database record | `db.set`, `db.put-record`, `db.remove-record` |
 | A string in a language | `lang.set` |
 | A game path | `file.put`, `erp.add-mipmaps` (its `target`) |
 
-If one origin has already written to a target, replacing it counts as a conflict. That applies to `erp.put-resource`, `erp.replace-resource`, `erp.remove-resource`, `erp.add-mipmaps`, `db.set`, `db.put-record`, `db.remove-record`, `lang.set` and `file.put`. By contrast, `erp.add-resource`, `erp.copy-resource`, `erp.patch-pkg`, `group.register` and added rows compose. For each conflict, the build shows you the winner and the origins it overrides:
+If one origin has already written to a target, replacing it counts as a conflict. That applies to `erp.put-resource`, `erp.replace-resource`, `erp.remove-resource`, `erp.overlay`, `erp.add-mipmaps`, `db.set`, `db.put-record`, `db.remove-record`, `lang.set` and `file.put`. By contrast, `erp.add-resource`, `erp.copy-resource`, `erp.patch-pkg`, `group.register` and added rows compose. After its stages, the build prints a line per addon with what it writes, then a warning per pair of addons in conflict, the winner first:
 
 ```text
-conflict: text lng_team_tor_hashtag (eng): teamsimplified.mods (rm-designs.scuderia-alphatauri-orlen) overrides example.livery
+Scuderia AlphaTauri: 412 database values, 3 archive resources, 2 files, 5 text strings
+Scuderia AlphaTauri overrides Example Livery on 12 database values and 1 file
 ```
 
-The origin tells you where the write came from: the addon id, with the item inside that addon in brackets, such as a mod in the Team Simplified library.
+A conflict between two items of one addon, such as two mods in the Team Simplified library, prints the target and both origins, each an addon id with the item in brackets:
+
+```text
+conflict: text lng_team_tor_hashtag (eng): teamsimplified.mods (rm-designs.scuderia-alphatauri-orlen) overrides teamsimplified.mods (example.livery)
+```
+
+Each build also writes the pairs, with the overridden items, to `$DATA/cache/overlay/<profile>/conflicts.json` ([`swofty conflicts`](/reference/cli#swofty-conflicts)).
 
 ## In the game
 
