@@ -8,6 +8,7 @@ pub mod bundled;
 pub mod cache;
 pub mod compat;
 pub mod crash;
+pub mod dbedit;
 pub mod erpbuild;
 pub mod exe_version;
 pub mod helper;
@@ -305,20 +306,38 @@ pub(crate) fn move_file(from: &std::path::Path, to: &std::path::Path) -> Result<
 /// temporary file's data is flushed before it is renamed over the target,
 /// and on Unix the directory is flushed after.
 pub fn write_json<T: serde::Serialize>(path: &std::path::Path, value: &T) -> Result<()> {
+    write_json_via(path, value, &path.with_extension("json.tmp"))
+}
+
+/// [`write_json`] through a temporary name unique to this process and call,
+/// for files more than one process (the launcher and the CLI) may write.
+pub(crate) fn write_json_shared<T: serde::Serialize>(path: &std::path::Path, value: &T) -> Result<()> {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = path.with_extension(format!("json.{}-{n}.tmp", std::process::id()));
+    write_json_via(path, value, &tmp).inspect_err(|_| {
+        std::fs::remove_file(&tmp).ok();
+    })
+}
+
+fn write_json_via<T: serde::Serialize>(
+    path: &std::path::Path,
+    value: &T,
+    tmp: &std::path::Path,
+) -> Result<()> {
     use std::io::Write;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(io_err(dir))?;
     }
     let mut data = serde_json::to_vec_pretty(value).expect("serialisable");
     data.push(b'\n');
-    let tmp = path.with_extension("json.tmp");
-    std::fs::File::create(&tmp)
+    std::fs::File::create(tmp)
         .and_then(|mut f| {
             f.write_all(&data)?;
             f.sync_all()
         })
-        .map_err(io_err(&tmp))?;
-    std::fs::rename(&tmp, path).map_err(io_err(path))?;
+        .map_err(io_err(tmp))?;
+    std::fs::rename(tmp, path).map_err(io_err(path))?;
     sync_dir(path.parent());
     Ok(())
 }

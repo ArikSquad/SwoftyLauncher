@@ -177,6 +177,17 @@ fn render_file(
     OpFile::from_value(doc, kind).map_err(json)
 }
 
+/// A DB Editor package's ops, generated from its `dbedit.json` rather than
+/// read from its `database.json`.
+fn package_ops(store: &Store, id: &str) -> Result<OpFile> {
+    let ops = crate::dbedit::package::Package::open(store, id)?.edits.to_ops();
+    Ok(OpFile {
+        schema_version: ops.schema_version,
+        fields: ops.fields,
+        ops: ops.ops.into_iter().map(AssetOp::Db).collect(),
+    })
+}
+
 fn unbuilt<'a>(ops: impl IntoIterator<Item = &'a AssetOp>) -> Option<&'static str> {
     ops.into_iter().find_map(|op| match op {
         AssetOp::Erp(op) => unsupported(op),
@@ -369,7 +380,15 @@ pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
         .transpose()?
         .unwrap_or_default();
     let config = store.config();
-    let mut planner = Planner::new(&features, &config.runtime_assets).build_only(&config.build_assets);
+    let packages: BTreeMap<String, String> = resolved
+        .order
+        .iter()
+        .filter(|id| crate::dbedit::package::is_package(store, id))
+        .map(|id| (id.clone(), addons[id].name.clone()))
+        .collect();
+    let mut planner = Planner::new(&features, &config.runtime_assets)
+        .build_only(&config.build_assets)
+        .lenient(packages.clone());
     if features != Features::default() {
         hasher.update(format!("runtime {features:?} {:?};", config.runtime_assets));
         if !config.build_assets.is_empty() {
@@ -386,7 +405,23 @@ pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
             item: None,
         };
         let mut files = Vec::new();
+        let package = packages.get(id);
+        if let Some(name) = package {
+            match package_ops(store, id) {
+                Ok(file) => {
+                    hasher.update(serde_json::to_vec(&file).expect("serialisable"));
+                    files.push((FileKind::Database, file));
+                }
+                Err(e) => {
+                    hasher.update(format!("unread {e};"));
+                    built.warnings.push(format!("{name}: package skipped: {e}"));
+                }
+            }
+        }
         for (kind, rel) in m.operations.op_files() {
+            if package.is_some() && kind == FileKind::Database {
+                continue;
+            }
             let file = render_file(&dir.join(rel), kind, m, &p, &mut hasher)?;
             hash_sources(&mut hasher, store, id, &file.ops)?;
             files.push((kind, file));
@@ -569,6 +604,7 @@ pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
         }
         let staged = (planner.route(Kind::Db) == Route::Runtime && planner.has_db()).then(|| db.clone());
         let added = planner.apply_db(&mut db)?;
+        built.warnings.extend(planner.take_skipped());
         if !added.is_empty() {
             let found = owned::owned_items(&db, &Gvdb::parse(&shipped)?, &added);
             built.lines.extend(found.lines);
@@ -1430,6 +1466,125 @@ mod tests {
         let changed = build(&store, "default", &game).unwrap();
         assert!(!reused(&changed));
         assert_ne!(changed.buildhash, first.buildhash);
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn applies_db_editor_packages_leniently_in_load_order() {
+        use crate::dbedit::Catalog;
+        use crate::dbedit::package::Package;
+        use swofty_formats::gvdb::Record;
+        if loader_dir().is_some() {
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("swofty-build-dbedit-{}", std::process::id()));
+        std::fs::remove_dir_all(&root).ok();
+        let dir = root.join("game");
+        std::fs::create_dir_all(dir.join("game_package/gamedatabases")).unwrap();
+        std::fs::write(dir.join(crate::GAME_EXE), "exe").unwrap();
+        let records = vec![
+            Record::new("entrants.teams._team_instancecount_", 0, "1"),
+            Record::new("entrants.teams.team_0._metadata_", 4, "mclaren_26"),
+            Record::new("entrants.teams.team_0.stat_id", 0, "100"),
+            Record::new("entrants.teams.team_0.prestige", 0, "5"),
+        ];
+        let stock = Gvdb { records }.to_bytes();
+        std::fs::write(dir.join(GVDB), &stock).unwrap();
+        let game = Game {
+            identity: Identity::detect(&dir, Some(1)).unwrap(),
+            dir: dir.clone(),
+            user_reg: None,
+        };
+        let store = Store::new(root.join("data"));
+        let cat = Catalog::load(&stock).unwrap();
+        let key = |p: &str| swofty_formats::hash::fnv1a64(p);
+        let mut first = Package::create(&store, "First").unwrap();
+        first
+            .edits
+            .set(&cat, key("entrants.teams.team_0.stat_id"), "7")
+            .unwrap();
+        first
+            .edits
+            .set(&cat, key("entrants.teams.team_0.prestige"), "6")
+            .unwrap();
+        first.save(&store, &cat).unwrap();
+        let mut second = Package::create(&store, "Second").unwrap();
+        second
+            .edits
+            .set(&cat, key("entrants.teams.team_0.prestige"), "9")
+            .unwrap();
+        second.save(&store, &cat).unwrap();
+        store
+            .update_profile("default", |p| {
+                p.set_enabled(&first.id, true)?;
+                p.set_enabled(&second.id, true)
+            })
+            .unwrap();
+
+        let built = build(&store, "default", &game).unwrap();
+        let out = Gvdb::parse(&std::fs::read(&built.plan.data[GVDB]).unwrap()).unwrap();
+        assert_eq!(
+            out.get_text("entrants.teams.team_0.stat_id").as_deref(),
+            Some("7")
+        );
+        assert_eq!(
+            out.get_text("entrants.teams.team_0.prestige").as_deref(),
+            Some("9")
+        );
+        assert!(build(&store, "vanilla", &game).unwrap().lines.is_empty());
+
+        first.edits.edits[0].select = Some("entrants.teams.team[_metadata_=gone_26]".into());
+        first
+            .edits
+            .set(&cat, key("entrants.teams.team_0._metadata_"), "mclaren_27")
+            .unwrap();
+        first.save(&store, &cat).unwrap();
+        let built = build(&store, "default", &game).unwrap();
+        assert!(
+            built
+                .warnings
+                .iter()
+                .any(|w| w.starts_with("First: change skipped: ") && w.contains("gone_26")),
+            "{:?}",
+            built.warnings
+        );
+        let out = Gvdb::parse(&std::fs::read(&built.plan.data[GVDB]).unwrap()).unwrap();
+        assert_eq!(
+            out.get_text("entrants.teams.team_0.stat_id").as_deref(),
+            Some("100")
+        );
+        assert_eq!(
+            out.get_text("entrants.teams.team_0._metadata_").as_deref(),
+            Some("mclaren_27")
+        );
+
+        let put = |path: &str, value: &str| serde_json::json!({"op": "put-record", "key": format!("0x{:016x}", key(path)), "tag": 0, "value": value});
+        let hidden = serde_json::json!({"schema_version": 1, "ops": [
+            put("entrants.teams.team_0.prestige", "77"), put("entrants.teams.team_0.stat_id", "55")]});
+        let addon = store.addons_dir().join(&second.id);
+        std::fs::write(addon.join("database.json"), hidden.to_string()).unwrap();
+        std::fs::write(
+            store.addons_dir().join(&first.id).join("dbedit.json"),
+            "{\"format\": \"swofty-db-pa",
+        )
+        .unwrap();
+        let built = build(&store, "default", &game).unwrap();
+        assert!(
+            built
+                .warnings
+                .iter()
+                .any(|w| w.starts_with("First: package skipped: ")),
+            "{:?}",
+            built.warnings
+        );
+        let out = Gvdb::parse(&std::fs::read(&built.plan.data[GVDB]).unwrap()).unwrap();
+        for (path, want) in [
+            ("entrants.teams.team_0.prestige", "9"),
+            ("entrants.teams.team_0.stat_id", "100"),
+            ("entrants.teams.team_0._metadata_", "mclaren_26"),
+        ] {
+            assert_eq!(out.get_text(path).as_deref(), Some(want), "{path}");
+        }
         std::fs::remove_dir_all(&root).ok();
     }
 

@@ -247,6 +247,9 @@ impl Store {
             return result;
         }
         let src = &crate::import::addon_root(src).unwrap_or_else(|| src.to_path_buf());
+        if src.join(crate::dbedit::package::MARKER).is_file() {
+            return crate::dbedit::package::install(self, src).map(|(p, _)| p.manifest);
+        }
         let m = AddonManifest::load(src)?;
         if self.is_builtin(&m.id) {
             return Err(Error::Other(format!("{} is built in", m.id)));

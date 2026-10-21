@@ -181,6 +181,31 @@ fn collects_the_logs_the_developers_need() {
 }
 
 #[test]
+fn includes_the_db_editor_packages_the_active_profile_runs() {
+    use crate::dbedit::package::Package;
+    let root = tmp("dbpackages");
+    let (store, game) = fake_data(&root);
+    let on = Package::create(&store, "On").unwrap();
+    let off = Package::create(&store, "Off").unwrap();
+    store
+        .update_profile("default", |p| {
+            p.set_enabled(&on.id, true)?;
+            p.set_enabled(&off.id, false)
+        })
+        .unwrap();
+    let zip = Bundle::collect_with(&store, &report(&game), Limits::default(), "x")
+        .zip()
+        .unwrap();
+    let got: Vec<String> = names(&zip)
+        .into_iter()
+        .filter(|n| n.starts_with("db-packages/"))
+        .collect();
+    assert_eq!(got, ["db-packages/dbedit.on.json"]);
+    assert!(entry(&zip, "db-packages/dbedit.on.json").contains("swofty-db-package"));
+    std::fs::remove_dir_all(&root).ok();
+}
+
+#[test]
 fn redacts_secrets_from_config_and_environment() {
     let root = tmp("redact");
     let (store, game) = fake_data(&root);

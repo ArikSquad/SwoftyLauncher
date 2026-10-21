@@ -263,6 +263,15 @@ impl Bundle {
         }
         let addons = serde_json::to_string_pretty(&addons_summary(store)).unwrap_or_default();
         c.push("addons.json".into(), addons.into_bytes(), None);
+        if let Ok(p) = store.profile(&store.active_profile()) {
+            for id in p
+                .enabled()
+                .filter(|id| crate::dbedit::package::is_package(store, id))
+            {
+                let source = store.addons_dir().join(id).join(crate::dbedit::package::MARKER);
+                c.file(format!("db-packages/{id}.json"), &source, None);
+            }
+        }
         let sessions = newest_sessions(store, SESSIONS);
         let mut loader = Vec::new();
         let mut live_perf = None;

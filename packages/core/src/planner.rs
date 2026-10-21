@@ -6,7 +6,7 @@ use swofty_formats::gvdb::Gvdb;
 
 use crate::asset::{AssetOp, FileKind, FileOp, GroupOp, LangOp, Op, OpFile, Origin};
 pub use crate::asset::{Features, Kind};
-use crate::ops::{DbOps, ErpOp, apply_db_ops};
+use crate::ops::{DbOps, ErpOp, apply_db_ops, apply_db_ops_lenient};
 use crate::owned::{self, Added};
 use crate::{Error, Result};
 
@@ -118,6 +118,8 @@ pub struct Planner<'a> {
     writers: BTreeMap<Target, Vec<Origin>>,
     removals: usize,
     fields: BTreeMap<String, BTreeMap<String, Vec<String>>>,
+    skipped: Vec<String>,
+    lenient: BTreeMap<String, String>,
 }
 
 fn erp_target(op: &ErpOp) -> Option<(Target, bool)> {
@@ -186,11 +188,20 @@ impl<'a> Planner<'a> {
             writers: BTreeMap::new(),
             removals: 0,
             fields: BTreeMap::new(),
+            skipped: Vec::new(),
+            lenient: BTreeMap::new(),
         }
     }
 
     pub fn build_only(mut self, kinds: &'a BTreeSet<Kind>) -> Self {
         self.build_only = kinds;
+        self
+    }
+
+    /// Addons (id → name) whose failing database ops are skipped with a
+    /// warning instead of failing the build: the DB Editor's packages.
+    pub fn lenient(mut self, addons: BTreeMap<String, String>) -> Self {
+        self.lenient = addons;
         self
     }
 
@@ -337,14 +348,28 @@ impl<'a> Planner<'a> {
         for (origin, ops) in std::mem::take(&mut self.db) {
             let before = owned::counts(db);
             let names = fields.get(&origin.addon).unwrap_or(&none);
-            let replaced =
-                apply_db_ops(db, &ops, names).map_err(|e| Error::Other(format!("applying {origin}: {e}")))?;
+            let replaced = if let Some(name) = self.lenient.get(&origin.addon) {
+                let (replaced, failed) = apply_db_ops_lenient(db, &ops, names);
+                self.skipped.extend(
+                    failed
+                        .into_iter()
+                        .map(|(_, e)| format!("{name}: change skipped: {e}")),
+                );
+                replaced
+            } else {
+                apply_db_ops(db, &ops, names).map_err(|e| Error::Other(format!("applying {origin}: {e}")))?
+            };
             for key in replaced {
                 self.write(Target::Record(key), &origin, true);
             }
             added.extend(owned::added(db, &origin.addon, &before));
         }
         Ok(added)
+    }
+
+    /// Lenient addons' changes the last `apply_db` could not apply.
+    pub fn take_skipped(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.skipped)
     }
 
     pub fn erp_ops(&self) -> &[Op] {
