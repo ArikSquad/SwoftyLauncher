@@ -59,7 +59,7 @@ Select a row to open its panel: description, author, version, source, whether it
 
 Select a conflict to see what it covers, grouped by archive, database table, text or folder. **Details** lists the items, ten at first; **Show all** lists the rest.
 
-An addon from the DB Editor has **Edit in DB Editor**. An addon from the Simplified Importer has **Open in Simplified Importer**.
+An addon from the DB Editor has **Edit in DB Editor**.
 
 ## Change its settings
 

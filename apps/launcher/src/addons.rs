@@ -1710,17 +1710,6 @@ impl Shell {
                     .into_any_element(),
             );
         }
-        if m.source == Source::Importer {
-            actions.push(
-                Button::new("detail-importer")
-                    .outline()
-                    .small()
-                    .icon(IconName::FolderInput)
-                    .label("Open in Simplified Importer")
-                    .on_click(cx.listener(|this, _, _, cx| this.open_page(Page::Importer, cx)))
-                    .into_any_element(),
-            );
-        }
         let remove = (m.source != Source::Builtin && !m.locked).then(|| {
             let (id, name) = (man.id.clone(), man.name.clone());
             Button::new("detail-remove")
