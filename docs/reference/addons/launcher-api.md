@@ -348,7 +348,7 @@ Return one page from `view`, describing its header, content and footer:
 | `actions` | Buttons in the header. |
 | `notices` | Bars under the header, each with an optional button. `tone` colours the bar. |
 | `body` | One of the three bodies below. |
-| `footer` | A muted line under the body. |
+| `footer` | A muted line at the end of the page, after the body. |
 | `tick` *(1.0.10)* | `true` asks for a `tick` about once a second while the page is open ([Live pages](#live-pages)). Default `false`. |
 
 Choose one of these shapes for `body`:
