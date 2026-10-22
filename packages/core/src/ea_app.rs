@@ -113,9 +113,44 @@ fn program_files() -> Vec<PathBuf> {
         .collect()
 }
 
+/// The folders the EA app installs games into, from the `downloadinplacedir`
+/// lines of its `machine.ini` and `user_<id>.ini` settings.
+pub fn library_dirs(ini: &str) -> Vec<PathBuf> {
+    ini.lines()
+        .filter_map(|l| l.trim_end_matches('\r').split_once('='))
+        .filter(|(k, _)| k.trim().to_ascii_lowercase().ends_with(".downloadinplacedir"))
+        .map(|(_, v)| v.trim().trim_matches('"'))
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .collect()
+}
+
+#[cfg(windows)]
+fn settings_files() -> Vec<PathBuf> {
+    let machine = std::env::var_os("ProgramData").map(|d| PathBuf::from(d).join(r"EA Desktop\machine.ini"));
+    let users = std::env::var_os("LOCALAPPDATA")
+        .map(|d| PathBuf::from(d).join(r"Electronic Arts\EA Desktop"))
+        .and_then(|d| std::fs::read_dir(d).ok())
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with("user_") && n.ends_with(".ini"))
+        });
+    machine.into_iter().chain(users).collect()
+}
+
 #[cfg(windows)]
 pub fn installs() -> Vec<PathBuf> {
-    let defaults: Vec<PathBuf> = program_files().iter().map(|p| p.join("EA Games")).collect();
+    let defaults: Vec<PathBuf> = settings_files()
+        .into_iter()
+        .filter_map(|f| std::fs::read_to_string(f).ok())
+        .flat_map(|ini| library_dirs(&ini))
+        .chain(program_files().into_iter().map(|p| p.join("EA Games")))
+        .collect();
     find_installs(reg_exe, &defaults, is_install)
 }
 
@@ -203,6 +238,28 @@ pub fn split_command(line: &str) -> Vec<String> {
     words
 }
 
+/// A registered handler's command line: the EA app writes its program path
+/// unquoted, spaces and all, so the program runs up to the first `.exe`.
+pub fn split_handler(line: &str) -> Vec<String> {
+    let line = line.trim();
+    if line.starts_with('"') {
+        return split_command(line);
+    }
+    let lower = line.to_ascii_lowercase();
+    let end = lower.match_indices(".exe").map(|(i, _)| i + 4).find(|&i| {
+        line[i..]
+            .chars()
+            .next()
+            .is_none_or(|c| c.is_whitespace() || c == '"')
+    });
+    match end {
+        Some(end) => std::iter::once(line[..end].to_owned())
+            .chain(split_command(&line[end..]))
+            .collect(),
+        None => split_command(line),
+    }
+}
+
 /// How a launch link reaches the EA app.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Handoff {
@@ -216,7 +273,7 @@ impl Handoff {
     /// The `origin2` handler Windows registered, from `reg query <key> /ve`.
     pub fn from_protocol(reg_out: &str) -> Option<Self> {
         let (_, command) = parse_reg_query(reg_out).into_iter().next()?;
-        let words = split_command(&command);
+        let words = split_handler(&command);
         (!words.is_empty()).then_some(Self::Program(words))
     }
 
@@ -225,7 +282,7 @@ impl Handoff {
         if command.is_empty() {
             None
         } else if cfg!(windows) {
-            Some(Self::Program(split_command(command)))
+            Some(Self::Program(split_handler(command)))
         } else {
             Some(Self::Shell(command.to_owned()))
         }
@@ -283,18 +340,26 @@ impl std::fmt::Display for Handoff {
 }
 
 /// EALauncher.exe from the EA Desktop key's values, else its default folder.
+/// `InstallLocation` is the EA Desktop folder, with the app one level down.
 pub fn launcher_exe(desktop_values: &str, defaults: &[PathBuf]) -> Option<PathBuf> {
     let values = parse_reg_query(desktop_values);
     let value = |name: &str| {
         values
             .iter()
-            .find(|(n, d)| n.eq_ignore_ascii_case(name) && !d.trim().is_empty())
+            .filter(|(n, d)| n.eq_ignore_ascii_case(name) && !d.trim().is_empty())
             .map(|(_, d)| PathBuf::from(d.trim().trim_matches('"')))
+            .collect::<Vec<_>>()
     };
+    let beside = |exe: PathBuf| exe.parent().map(|d| d.join(LAUNCHER_EXE));
     value("LauncherAppPath")
-        .or_else(|| value("InstallLocation").map(|d| d.join(LAUNCHER_EXE)))
-        .or_else(|| value("DesktopAppPath").and_then(|d| Some(d.parent()?.join(LAUNCHER_EXE))))
         .into_iter()
+        .chain(
+            value("InstallLocation")
+                .into_iter()
+                .flat_map(|d| [d.join("EA Desktop").join(LAUNCHER_EXE), d.join(LAUNCHER_EXE)]),
+        )
+        .chain(value("DesktopAppPath").into_iter().filter_map(beside))
+        .chain(value("ClientPath").into_iter().filter_map(beside))
         .chain(defaults.iter().cloned())
         .find(|p| p.is_file())
 }
@@ -333,13 +398,19 @@ fn windows_handoff() -> Option<Handoff> {
     None
 }
 
-/// EALauncher.exe on its own, which opens the EA app.
+/// What opens the EA app without a launch link: EALauncher.exe on its own,
+/// or the setting's command with the link left out.
 pub fn opener(handoff: &Handoff) -> Option<Command> {
     match handoff {
         Handoff::Program(words) if words[0].to_ascii_lowercase().ends_with(".exe") => {
             Some(Command::new(&words[0]))
         }
-        _ => None,
+        Handoff::Shell(line) => {
+            let mut c = Command::new("sh");
+            c.arg("-c").arg(line.replace("{url}", ""));
+            Some(c)
+        }
+        Handoff::Program(_) => None,
     }
 }
 
@@ -499,7 +570,106 @@ mod tests {
         );
         assert_eq!(Handoff::Shell("open".into()).argv("a'b")[2], r"open 'a'\''b'");
         assert_eq!(Handoff::from_setting("  "), None);
-        assert!(opener(&h).is_none());
+        let open = opener(&h).unwrap();
+        let args: Vec<_> = open.get_args().collect();
+        assert_eq!(open.get_program(), "sh");
+        assert_eq!(args, ["-c", "/games/ea-app.sh wine start "]);
+        assert!(opener(&Handoff::Program(vec!["open.bat".into()])).is_none());
+    }
+
+    // The values the EA app 13.813 installer writes, as `reg query` lists them.
+    const ORIGIN2_KEY: &str = "\r\nHKEY_CLASSES_ROOT\\origin2\\shell\\open\\command\r\n    (Default)    REG_SZ    C:\\Program Files\\Electronic Arts\\EA Desktop\\EA Desktop\\EALauncher.exe \"%1\"\r\n\r\n";
+    const DESKTOP_KEY: &str = "\r\nHKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Electronic Arts\\EA Desktop\r\n    ClientPath    REG_SZ    C:\\Program Files\\Electronic Arts\\EA Desktop\\EA Desktop\\EADesktop.exe\r\n    DesktopAppPath    REG_SZ    C:\\Program Files\\Electronic Arts\\EA Desktop\\EA Desktop\\EADesktop.exe\r\n    InstallLocation    REG_SZ    C:\\Program Files\\Electronic Arts\\EA Desktop\r\n";
+
+    #[test]
+    fn runs_the_unquoted_handler_the_ea_app_registers() {
+        let h = Handoff::from_protocol(ORIGIN2_KEY).unwrap();
+        let url = "origin2://game/launch?offerIds=16425845,16425845_oa&autoDownload=1&cmdParams=-vr";
+        assert_eq!(
+            h.argv(url),
+            [
+                r"C:\Program Files\Electronic Arts\EA Desktop\EA Desktop\EALauncher.exe",
+                url
+            ]
+        );
+        assert_eq!(
+            opener(&h).map(|c| c.get_program().to_owned()),
+            Some(r"C:\Program Files\Electronic Arts\EA Desktop\EA Desktop\EALauncher.exe".into())
+        );
+        assert_eq!(
+            split_handler(r#"C:\EA app.EXE --x "%1""#),
+            [r"C:\EA app.EXE", "--x", "%1"]
+        );
+        assert_eq!(split_handler(r"C:\a.exe.d\b.exe %1"), [r"C:\a.exe.d\b.exe", "%1"]);
+        assert_eq!(split_handler("open %1"), ["open", "%1"]);
+    }
+
+    #[test]
+    fn finds_the_launcher_beside_the_desktop_app() {
+        let root = std::env::temp_dir().join(format!("swofty-ea-desktop-{}", std::process::id()));
+        let app = root.join("EA Desktop");
+        std::fs::create_dir_all(&app).unwrap();
+        std::fs::write(app.join(LAUNCHER_EXE), b"MZ").unwrap();
+        let values = DESKTOP_KEY.replace(
+            r"C:\Program Files\Electronic Arts\EA Desktop",
+            &root.display().to_string(),
+        );
+        assert_eq!(launcher_exe(&values, &[]), Some(app.join(LAUNCHER_EXE)));
+        let desktop_only = format!(
+            "    DesktopAppPath    REG_SZ    {}\r\n",
+            app.join("EADesktop.exe").display()
+        );
+        assert_eq!(launcher_exe(&desktop_only, &[]), Some(app.join(LAUNCHER_EXE)));
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn reads_the_ea_app_library_folders() {
+        let machine =
+            "machine.downloadinplacedir=C:\\Program Files\\EA Games\\\r\nmachine.updatebucket=6\r\n";
+        let user = "user.locale=en_GB\nuser.downloadinplacedir=D:\\\nuser.downloadinplacedir=\n";
+        assert_eq!(
+            library_dirs(machine),
+            [PathBuf::from("C:\\Program Files\\EA Games\\")]
+        );
+        assert_eq!(library_dirs(user), [PathBuf::from("D:\\")]);
+        assert!(library_dirs("machine.razormodesplashscreenenabled=1").is_empty());
+    }
+
+    #[test]
+    fn finds_an_install_in_a_library_folder_without_registry_keys() {
+        let root = std::env::temp_dir().join(format!("swofty-ea-library-{}", std::process::id()));
+        let game = root.join("F1 25");
+        std::fs::create_dir_all(game.join("__Installer")).unwrap();
+        std::fs::write(game.join(GAME_EXE), b"MZ").unwrap();
+        std::fs::write(game.join(MARKER), INSTALLERDATA).unwrap();
+        let ini = format!(
+            "user.downloadinplacedir={}{}\n",
+            root.display(),
+            std::path::MAIN_SEPARATOR
+        );
+        let found = find_installs(|_| None, &library_dirs(&ini), is_install);
+        assert_eq!(found.len(), 1);
+        assert!(crate::copies::same_dir(&found[0], &game));
+        assert!(find_installs(|_| None, &[root.join("missing")], is_install).is_empty());
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_lookups_hold_on_a_computer_without_the_ea_app() {
+        // CI's runner has no EA app: discovery and the handler lookup must
+        // come back empty-handed, not fail, and a found handler must be one
+        // that takes the link.
+        for dir in installs() {
+            assert!(is_install(&dir));
+        }
+        if let Some(h) = handoff(None) {
+            assert!(h.argv("origin2://x").iter().any(|w| w == "origin2://x"));
+        }
+        assert_eq!(no_handoff(), NO_HANDOFF_WINDOWS);
+        let set = handoff(Some(r#"C:\Tools\ea open.exe "%1""#)).unwrap();
+        assert_eq!(set.argv("u"), [r"C:\Tools\ea open.exe", "u"]);
     }
 
     #[test]
