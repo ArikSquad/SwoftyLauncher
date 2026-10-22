@@ -16,7 +16,7 @@ use gpui_kit::*;
 use swofty_core::crash::StartFailure;
 use swofty_core::install::Source;
 use swofty_core::launch;
-use swofty_core::process::{GameProcess, stop_game};
+use swofty_core::process::{GameProcess, stop_game_in};
 use swofty_core::quarantine;
 use swofty_core::recovery::{self, Blocked, Notice};
 use swofty_core::saves::{self, SavesWarning};
@@ -25,7 +25,7 @@ use swofty_core::stock;
 use swofty_core::store::Store;
 use swofty_core::view::View;
 
-use crate::game::{self, Install, Launch, Probe};
+use crate::game::{self, Install, Launch, Owner, Probe};
 use crate::game_edited::Edited;
 use crate::library::{AddonIcon, Library};
 use crate::pages::{addon_icon, label};
@@ -75,6 +75,7 @@ pub enum PlayState {
     Launching,
     Restoring,
     Running,
+    Elsewhere(Owner),
     Checking,
     Crashed(SessionRecord),
 }
@@ -90,6 +91,7 @@ pub struct Shell {
     pub(crate) detected: bool,
     pub(crate) rediscover: bool,
     pub(crate) processes: Vec<GameProcess>,
+    pub(crate) owners: Vec<Owner>,
     pub(crate) session: Option<SessionRecord>,
     pub(crate) crash: Option<(PathBuf, Result<String, StartFailure>)>,
     pub(crate) dismissed: Option<PathBuf>,
@@ -336,6 +338,7 @@ impl Shell {
             detected: false,
             rediscover: true,
             processes: Vec::new(),
+            owners: Vec::new(),
             session: None,
             crash: None,
             dismissed: None,
@@ -486,8 +489,9 @@ impl Shell {
             self.reload(cx);
         }
         self.processes = probe.processes;
+        self.attribute();
         if let Some(launch) = self.launch.as_mut() {
-            launch.saw_game |= !self.processes.is_empty();
+            launch.saw_game |= self.owners.iter().any(|o| !matches!(o, Owner::Other(_)));
             launch.stage = probe.launch_stage;
             if let Some(ok) = launch.finished() {
                 if !ok && !launch.saw_game {
@@ -568,8 +572,16 @@ impl Shell {
         cx.notify();
     }
 
+    fn attribute(&mut self) {
+        self.owners = self
+            .processes
+            .iter()
+            .map(|g| game::owner(g, self.install.as_ref(), &self.copies))
+            .collect();
+    }
+
     pub(crate) fn play_state(&self) -> PlayState {
-        if !self.processes.is_empty() {
+        if self.owners.contains(&Owner::Active) {
             return PlayState::Running;
         }
         if let Some(launch) = &self.launch {
@@ -584,6 +596,9 @@ impl Shell {
         }
         if !self.detected {
             return PlayState::Detecting;
+        }
+        if let Some(owner) = self.owners.first() {
+            return PlayState::Elsewhere(owner.clone());
         }
         if self.install.is_none() {
             return PlayState::NotInstalled;
@@ -666,6 +681,7 @@ impl Shell {
         if let Some(copy) = self.copies.iter().find(|c| c.dir == dir) {
             self.install = Some(copy.clone());
         }
+        self.attribute();
         self.notice = None;
         self.rediscover = true;
         self.reload(cx);
@@ -736,14 +752,18 @@ impl Shell {
     }
 
     pub(crate) fn confirm_stop(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        window.open_alert_dialog(cx, |alert, _, _| {
+        let Some(dir) = self.install.as_ref().map(|i| i.dir.clone()) else {
+            return;
+        };
+        window.open_alert_dialog(cx, move |alert, _, _| {
+            let dir = dir.clone();
             alert
                 .title("Stop F1 25?")
                 .description("The game closes immediately. Unsaved progress is lost.")
                 .ok_text("Stop game")
                 .show_cancel(true)
-                .on_ok(|_, window, cx| {
-                    if let Err(e) = stop_game() {
+                .on_ok(move |_, window, cx| {
+                    if let Err(e) = stop_game_in(&dir) {
                         window.push_notification(Notification::error(e.to_string()), cx);
                     }
                     true

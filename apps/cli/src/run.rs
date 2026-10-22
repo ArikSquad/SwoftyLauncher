@@ -10,7 +10,7 @@ use swofty_core::crash::{Event, LogScan, Symbols, fatal_name};
 use swofty_core::install::{Game, Installer, PROXY, Source};
 use swofty_core::launch;
 use swofty_core::process::{
-    descends_from, game_processes, game_running, steamvr_running, stop_game, stop_process,
+    descends_from, game_processes, game_running_in, games_in, steamvr_running, stop_game_in, stop_process,
 };
 use swofty_core::quarantine::{self, Attach, AttachWatch, Stage};
 use swofty_core::recovery::{Scope, SessionLock};
@@ -30,7 +30,7 @@ const KB: &str = include_str!("../../../re/db/functions.tsv");
 pub struct RunArgs {
     #[arg(long, default_value = DEFAULT_WINEDEBUG, help = "WINEDEBUG channels for the game process")]
     winedebug: String,
-    #[arg(long, help = "Close a running F1 25 first")]
+    #[arg(long, help = "Close this copy's running F1 25 first")]
     restart: bool,
     #[arg(long, help = "Launch through Proton directly instead of asking Steam")]
     direct: bool,
@@ -79,16 +79,27 @@ pub fn run(store: &Store, profile: &str, args: RunArgs) -> Result<ExitCode> {
     }
     crate::build::supported(&g)?;
     let game = g.dir.clone();
-    if let Some(running) = game_processes().first() {
+    let running = game_processes();
+    if let Some(first) = running.first() {
         if !args.restart {
             return Err(already_running(
                 store,
-                running.pid,
+                first.pid,
                 "close it first, or pass --restart to close it",
             ));
         }
-        stop_game().ok();
-        while game_running() {
+        if let Some(other) = running.iter().find(|g| !g.is_in(&game)) {
+            return Err(already_running(
+                store,
+                other.pid,
+                &format!(
+                    "it isn't the copy in {}, so --restart leaves it running; close it first",
+                    game.display()
+                ),
+            ));
+        }
+        stop_game_in(&game).ok();
+        while game_running_in(&game) {
             std::thread::sleep(Duration::from_millis(500));
         }
     }
@@ -251,7 +262,7 @@ fn settle(store: &Store, g: &Game, wrapper: &mut Wrapper, mut relay: Option<&mut
                 return;
             }
         }
-        if wrapper.child.is_none() && game_running() {
+        if wrapper.child.is_none() && game_running_in(&g.dir) {
             say(
                 "info",
                 "F1 25 is running again; its game files are rolled back when it exits",
@@ -419,10 +430,10 @@ fn finish(session: Session, result: Result<ExitCode>) -> Result<ExitCode> {
     }
 }
 
-/// Why a rollback could not touch the game files, when a copy of F1 25 is
+/// Why a rollback could not touch the game files, when the copy's game is
 /// still running and holds them.
-fn still_running() -> String {
-    match game_processes().first() {
+fn still_running(game: &Path) -> String {
+    match games_in(game).first() {
         Some(g) => format!(
             " because F1 25 ({GAME_EXE}, pid {}) is still running and holds the game files",
             g.pid
@@ -453,7 +464,7 @@ impl Drop for Session<'_> {
             Ok(false) => {}
             Err(e) => info(&format!(
                 "offline play restore failed{}, run swofty restore: {e:#}",
-                still_running()
+                still_running(&self.game.dir)
             )),
         }
         let inst = Installer::new(&self.store.root, self.game);
@@ -468,7 +479,7 @@ impl Drop for Session<'_> {
             }
             Err(e) => info(&format!(
                 "rollback failed{}; the next swofty run or launcher start retries it, or run swofty restore: {e:#}",
-                still_running()
+                still_running(&self.game.dir)
             )),
         }
         let logs = self
@@ -732,7 +743,7 @@ fn play(
         }
     };
     let code = if let Some(started) = ea {
-        crate::ea::wait(&copies_before, started, tick)
+        crate::ea::wait(game, &copies_before, started, tick)
     } else {
         wait_game(&mut spawn(target, "game_stdout.log")?, tick)?
             .code()
@@ -744,7 +755,7 @@ fn play(
     {
         missed();
     }
-    wait_relaunched(&copies_before, code, launched.elapsed().unwrap_or_default());
+    wait_relaunched(game, &copies_before, code, launched.elapsed().unwrap_or_default());
     if let Some(usage) = usage {
         usage.end(code);
     }
@@ -773,8 +784,9 @@ const RELAUNCH_CAP: Duration = Duration::from_secs(12 * 3600);
 /// the game folder's launcher. That copy is not the session's descendant and
 /// still holds the staged files, so the session waits for it before the
 /// game files are rolled back. A launch that failed quickly gets longer for
-/// the relaunch to appear.
-fn wait_relaunched(before: &[u32], code: i32, ran: Duration) {
+/// the relaunch to appear. Another copy's game is not waited for, and only
+/// a game that is this copy's is closed.
+fn wait_relaunched(game: &Path, before: &[u32], code: i32, ran: Duration) {
     let settle = if code != 0 && ran < SHORT_RUN {
         RELAUNCH_AFTER_FAILURE
     } else {
@@ -785,7 +797,8 @@ fn wait_relaunched(before: &[u32], code: i32, ran: Duration) {
     let mut seen: Vec<u32> = Vec::new();
     let mut asked = false;
     loop {
-        let others = swofty_core::process::started_elsewhere(&game_processes(), before, |pid| {
+        let running = game_processes();
+        let others = swofty_core::process::started_elsewhere(&running, game, before, |pid| {
             descends_from(pid, std::process::id())
         });
         let new: Vec<u32> = others.iter().copied().filter(|p| !seen.contains(p)).collect();
@@ -813,8 +826,11 @@ fn wait_relaunched(before: &[u32], code: i32, ran: Duration) {
             info(
                 "asked to stop: closing the F1 25 started outside this session, then rolling its game files back",
             );
-            for &pid in &others {
-                stop_process(pid).ok();
+            for g in running
+                .iter()
+                .filter(|g| others.contains(&g.pid) && g.is_in(game))
+            {
+                stop_process(g.pid).ok();
             }
         }
         std::thread::sleep(Duration::from_millis(500));
@@ -2066,7 +2082,7 @@ mod tests {
 
     #[test]
     fn waits_for_a_steam_wrapper_to_finish_rolling_back_before_recovering() {
-        if !which("flock") || game_running() {
+        if !which("flock") {
             return;
         }
         let m = Modded::new("steam");

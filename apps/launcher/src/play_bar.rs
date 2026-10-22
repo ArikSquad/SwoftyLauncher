@@ -7,7 +7,7 @@ use gpui_kit::component::{Disableable, Icon, Side, Sizable, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 
-use crate::game::{self, ago, duration};
+use crate::game::{self, Owner, ago, duration};
 
 pub(crate) const HEIGHT: f32 = 72.;
 use crate::library::plural;
@@ -266,6 +266,31 @@ impl Shell {
         let rebuild = !self.library.profile.is_vanilla() && !self.library.rebuild.is_empty();
         match state {
             PlayState::Running => row,
+            PlayState::Elsewhere(owner) => {
+                let text = match owner {
+                    Owner::Other(i) => match i.source {
+                        Source::Steam => "F1 25 from Steam is running",
+                        Source::EaApp => "F1 25 from the EA app is running",
+                        Source::Unknown => "F1 25 from another folder is running",
+                    },
+                    _ => {
+                        "F1 25 is running from a folder the launcher doesn't know · close it to play this copy"
+                    }
+                };
+                let row = row
+                    .text_color(p.text_muted)
+                    .child(dot(p.warning))
+                    .child(div().min_w_0().truncate().child(text));
+                match owner {
+                    Owner::Other(i) => {
+                        let dir = i.dir.clone();
+                        row.child(link("switch-to-running", "Switch to it", p).on_click(
+                            cx.listener(move |this, _, window, cx| this.use_copy(dir.clone(), window, cx)),
+                        ))
+                    }
+                    _ => row,
+                }
+            }
             PlayState::Restoring => row.child(dot(p.warning)).child("Restoring the game files…"),
             PlayState::Launching => row
                 .child(dot(p.warning))
@@ -519,6 +544,7 @@ impl Shell {
             PlayState::Detecting | PlayState::Checking => {
                 (IconName::LoaderCircle, "Play", p.elevated, p.text_muted, false)
             }
+            PlayState::Elsewhere(_) => (IconName::Play, "Play", p.elevated, p.text_muted, false),
         };
         let ready = matches!(state, PlayState::Ready | PlayState::Crashed(_));
         let missing = matches!(state, PlayState::NotInstalled);

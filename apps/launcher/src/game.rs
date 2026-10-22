@@ -37,6 +37,26 @@ impl Install {
     }
 }
 
+/// Whose a running F1 25 is: the active copy's, another listed copy's, or
+/// none the launcher can tell.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Owner {
+    Active,
+    Other(Install),
+    Unknown,
+}
+
+pub fn owner(g: &GameProcess, active: Option<&Install>, copies: &[Install]) -> Owner {
+    if active.is_some_and(|a| g.is_in(&a.dir)) {
+        return Owner::Active;
+    }
+    copies
+        .iter()
+        .find(|c| g.is_in(&c.dir))
+        .cloned()
+        .map_or(Owner::Unknown, Owner::Other)
+}
+
 /// Every copy found, and the one Play uses.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Copies {

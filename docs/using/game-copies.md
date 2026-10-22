@@ -16,6 +16,15 @@ The bottom-left of the launcher shows the active copy: its version, a **STEAM** 
 
 The launcher remembers your choice. If the active copy is uninstalled, the launcher plays the first copy it finds instead.
 
+## While F1 25 is running
+
+The launcher matches a running F1 25 to a copy by the folder its `F1_25.exe` runs from.
+
+- **Stop** closes the active copy's game only.
+- While another copy's game runs, the play bar says which store it's from and **Play** is unavailable. You can still switch copies, and **Switch to it** makes the running copy the active one.
+- The launcher never closes a running F1 25 it can't match to the active copy.
+- `swofty run --restart` closes a running F1 25 only when it's the copy being played.
+
 ## Add a game folder
 
 1. Select the game name, then **Add another folder…**. When no copy is found, select **Locate game** on the **Play** button instead.
