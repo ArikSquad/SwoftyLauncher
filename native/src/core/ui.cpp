@@ -715,7 +715,13 @@ void mid(safetyhook::MidHook &h, const Target &t, void (*fn)(safetyhook::Context
 
 }
 
-SWOFTY_ON_LOAD
+namespace runtime {
+void when_code_ready(const char *what, void (*fn)());
+}
+
+namespace {
+
+void ui_load()
 {
     base = swofty::api->module_base();
     load_config();
@@ -757,4 +763,11 @@ SWOFTY_ON_LOAD
         install(h_handler, a_handler, handler_hook, "screen loader (UIDF handler)");
     else
         swofty::log("[ui] addon screen registration off: a loader target did not resolve");
+}
+
+}
+
+SWOFTY_ON_LOAD
+{
+    runtime::when_code_ready("ui: screen hooks", ui_load);
 }

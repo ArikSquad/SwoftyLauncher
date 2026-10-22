@@ -1,5 +1,6 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <math.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -707,6 +708,111 @@ static void show_launch_error(void)
     expect(box != NULL, "fallback mode: a launch error dialog came up before the window");
 }
 
+#ifdef PACKED_TEST
+// Two full pages of filler so every page the core samples is covered by encrypted bytes.
+__asm__(".section .xtls,\"xr\"\n.fill 0x2000, 1, 0xCC\n.text\n");
+#endif
+
+// The packed build: run_wine_test.sh encrypts .xtls in the file with this xorshift stream, like the EA App
+// build whose code reads encrypted at load; the exe decrypts it in bulk before its window, as that build does.
+#define PACK_SEED 0x5EEDC0DEu
+
+static IMAGE_SECTION_HEADER *exe_section(const char *name)
+{
+    uint8_t *b = (uint8_t *)GetModuleHandleW(NULL);
+    IMAGE_NT_HEADERS *nt = (IMAGE_NT_HEADERS *)(b + ((IMAGE_DOS_HEADER *)b)->e_lfanew);
+    IMAGE_SECTION_HEADER *s = IMAGE_FIRST_SECTION(nt);
+    for (int i = 0; i < nt->FileHeader.NumberOfSections; i++, s++)
+        if (!strncmp((const char *)s->Name, name, 8))
+            return s;
+    return NULL;
+}
+
+static double page_entropy(const uint8_t *p)
+{
+    unsigned cnt[256] = {0};
+    for (int i = 0; i < 0x1000; i++)
+        cnt[p[i]]++;
+    double h = 0;
+    for (int i = 0; i < 256; i++)
+        if (cnt[i]) {
+            double pr = cnt[i] / 4096.0;
+            h -= pr * log2(pr);
+        }
+    return h;
+}
+
+static void decrypt_code(uint8_t *p, size_t n)
+{
+    DWORD old;
+    VirtualProtect(p, n, PAGE_EXECUTE_READWRITE, &old);
+    uint32_t x = PACK_SEED;
+    for (size_t i = 0; i < n; i++) {
+        x ^= x << 13, x ^= x >> 17, x ^= x << 5;
+        p[i] ^= (uint8_t)(x >> 8);
+    }
+    VirtualProtect(p, n, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), p, n);
+}
+
+/* packed: .xtls reads encrypted at the early stage and is decrypted before the window. packed_never: it never
+   decrypts. packed_plain: the same flow on the exe left unencrypted, with a set that is not packed. */
+static void expect_in(const char *mode, int ok, const char *what)
+{
+    printf("%s: %s: %s\n", ok ? "ok  " : "FAIL", mode, what);
+    fails += !ok;
+}
+
+static int packed_main(const char *mode)
+{
+    int encrypted = strcmp(mode, "packed_plain") != 0, decrypts = strcmp(mode, "packed_never") != 0;
+    IMAGE_SECTION_HEADER *s = exe_section(".xtls");
+    uint8_t *code = (uint8_t *)GetModuleHandleW(NULL) + s->VirtualAddress;
+    size_t n = s->Misc.VirtualSize;
+    uint8_t *before = malloc(n);
+    memcpy(before, code, n);
+    double e = page_entropy(code);
+    printf("      %s: .xtls is %zu bytes, its first page reads entropy %.2f\n", mode, n, e);
+    expect_in(mode, encrypted ? e > 7.5 : e < 6.5, encrypted ? "the game code section reads encrypted at load"
+                                                    : "the game code section reads as code at load");
+    HANDLE mx = CreateMutexW(NULL, FALSE, L"Codemasters F1 25");
+    expect_in(mode, mx && GetModuleHandleW(L"swofty_core.dll") && GetModuleHandleW(L"t_packed.dll") &&
+               GetModuleHandleW(L"t_packed_scan.dll"),
+           "CreateMutexW loaded the core and the early plugins");
+    if (encrypted)
+        expect_in(mode, !memcmp(before, code, n), "nothing was written into the encrypted code at the early stage");
+    if (decrypts && encrypted) {
+        decrypt_code(code, n);
+        printf("      packed: decrypted .xtls in bulk, first page entropy now %.2f\n", page_entropy(code));
+        expect_in(mode, fake_stage_wrap() == 9 && probe[41] == 0, "before the window stage the decrypted code runs unhooked");
+    }
+    WNDCLASSEXW wc = {.cbSize = sizeof wc, .lpfnWndProc = wndproc, .hInstance = GetModuleHandleW(NULL),
+                      .lpszClassName = L"EGO_WindowClass"};
+    __imp_RegisterClassExW(&wc);
+    HWND w = __imp_CreateWindowExW(0, L"EGO_WindowClass", L"F1 25", WS_OVERLAPPEDWINDOW, 0, 0, 320, 200, NULL, NULL,
+                                   wc.hInstance, NULL);
+    if (!decrypts) {
+        Sleep(10500);
+        expect_in(mode, !memcmp(before, code, n), "no hook was ever written into the code that never decrypted");
+        expect_in(mode, probe[41] == 0 && probe[44] == 0 && probe[43] == 0,
+               "no handler of the early plugins ran and no scan found anything");
+    } else {
+        run_build(1, 1);
+        expect_in(mode, ncalls == 4 && !strcmp(calls[1].name, "career") && calls[1].index == 3,
+               "the core's site on the home builder fires after the window stage (mod tile added)");
+        expect_in(mode, fake_stage_wrap() == 89, "t_packed's wrap on Fake_Stage_Wrap runs");
+        expect_in(mode, fake_stage_site() == 7 && probe[41] == 1, "t_packed's site on the entry of Fake_Stage_Site runs");
+        expect_in(mode, probe[44] == 1, "t_packed's on_load handler ran once");
+        expect_in(mode, probe[43] == (intptr_t)fake_stage_plain && probe[42] == (encrypted ? 2 : 1),
+               encrypted ? "t_packed_scan's init was refused its scan of encrypted code, then found "
+                           "Fake_Stage_Plain when called again"
+                         : "t_packed_scan's init found Fake_Stage_Plain on its first call");
+    }
+    printf("%s (%d failure(s))\n", fails ? "FAILED" : "ALL PASSED", fails);
+    DestroyWindow(w);
+    return fails != 0;
+}
+
 int main(int argc, char **argv)
 {
     int fallback = argc > 1 && !strcmp(argv[1], "fallback"), vm = argc > 1 && !strcmp(argv[1], "vm");
@@ -720,6 +826,8 @@ int main(int argc, char **argv)
     CAREER_VT[5] = (void *)id_action;
     OTHER_VT[4] = (void *)fake_base_populate;
     OTHER_VT[5] = (void *)id_action;
+    if (argc > 1 && !strncmp(argv[1], "packed", 6))
+        return packed_main(argv[1]);
 
     DWORD dummy, size = GetFileVersionInfoSizeW(L"C:\\windows\\system32\\kernel32.dll", &dummy);
     void *buf = malloc(size ? size : 1);

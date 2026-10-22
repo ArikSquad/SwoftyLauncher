@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <bcrypt.h>
 #include <cmath>
 #include <cstdarg>
@@ -19,6 +20,7 @@
 #include "swofty_api.h"
 
 void crash_attach(SwoftyApi *a, const std::wstring &dir);
+void crash_game_hooks();
 void settings_attach(SwoftyApi *a, const std::wstring &dir);
 int settings_get(const char *id, uint32_t type, SwoftySettingValue *out);
 int settings_watch(const char *id, SwoftySettingFn fn, void *user);
@@ -57,6 +59,8 @@ void events_drop_module(void *module);
 void career_start_drop_module(void *module);
 const std::wstring &swofty_root();
 void on_stage(void (*fn)(int));
+void when_code_ready(const char *what, void (*fn)());
+void stage_catch_up();
 }
 
 namespace {
@@ -169,9 +173,15 @@ struct SectionRead {
     DWORD at;
 };
 std::unordered_map<std::string, SectionRead> section_reads;
-std::recursive_mutex commit_lock;
+std::recursive_mutex commit_lock, resolve_lock;
 volatile LONG retries_started;
 bool unreported;
+std::atomic<bool> code_plain;
+struct CodeTask {
+    std::string what;
+    void (*fn)();
+};
+std::vector<CodeTask> code_tasks;
 
 std::vector<safetyhook::InlineHook> inline_hooks;
 std::vector<std::string> inline_names;
@@ -1010,12 +1020,60 @@ uint64_t exe_key()
     return k;
 }
 
+std::string section_name(const IMAGE_SECTION_HEADER *s)
+{
+    char n[9] = {};
+    if (s)
+        memcpy(n, s->Name, 8);
+    return n;
+}
+
+/* A scan of encrypted bytes matches garbage or nothing, so on a packed build it is refused while its section
+   reads encrypted, and a hit on a page that still does is dropped. An addon init that hit one is called again
+   once the code decrypts, as for a deferred binding. */
+bool scan_refused(const char *section, const char *pattern, uintptr_t hit)
+{
+    char why[160];
+    if (!hit) {
+        auto s = section ? section_by_name(section) : code_section();
+        if (!s || !(s->Characteristics & IMAGE_SCN_MEM_EXECUTE))
+            return false;
+        double e = section_now(section_name(s));
+        if (e >= 0 && e <= ENCRYPTED)
+            return false;
+        snprintf(why, sizeof why, "%s reads %s (entropy %.2f)", section_name(s).c_str(), reads(e), e < 0 ? 0 : e);
+    } else {
+        if (!in_exec(hit) || !page_encrypted(hit))
+            return false;
+        snprintf(why, sizeof why, "its hit at base+0x%llx is on a page that still reads encrypted", rva(hit));
+    }
+    if (current)
+        current->hit_deferred = true;
+    api->log("[core] scan %s [%s]%s%s refused: %s on this packed build; nothing resolves in encrypted code",
+             section ? section : "<exec>", pattern, current ? " for " : "", current ? current->name.c_str() : "", why);
+    return true;
+}
+
 /* Core code and addons written for Steam scan Steam's section names; the set's section map sends them to this
    build's section. Bindings already name their own build's section and scan without the map. */
 int api_scan(const char *section, const char *pattern, uintptr_t *out)
 {
     auto it = section ? section_alias.find(section) : section_alias.end();
-    return core_scan(it == section_alias.end() ? section : it->second.c_str(), pattern, out);
+    const char *real = it == section_alias.end() ? section : it->second.c_str();
+    if (!packed)
+        return core_scan(real, pattern, out);
+    std::lock_guard<std::recursive_mutex> g(resolve_lock);
+    if (out)
+        *out = 0;
+    uintptr_t at = 0;
+    if (scan_refused(real, pattern, 0))
+        return 0;
+    int hits = core_scan(real, pattern, &at);
+    if (hits == 1 && scan_refused(real, pattern, at))
+        return 0;
+    if (out)
+        *out = at;
+    return hits;
 }
 
 void open_scan_cache(SwoftyApi *a, const std::wstring &dir)
@@ -1075,8 +1133,6 @@ Binding *find_binding(const std::string &id)
     auto it = binding_index.find(id);
     return it == binding_index.end() ? nullptr : &bindings[it->second];
 }
-
-std::recursive_mutex resolve_lock;
 
 uintptr_t api_resolve(const char *id)
 {
@@ -1594,12 +1650,51 @@ void late_install(size_t *count)
 void settle_core_sets();
 size_t offer_core_sets();
 
+/* Core and addon scans name Steam's .xtls; the set's section map sends it to this build's code section. */
+std::string game_code()
+{
+    auto it = section_alias.find(".xtls");
+    if (it != section_alias.end())
+        return it->second;
+    return section_by_name(".xtls") ? ".xtls" : section_name(code_section());
+}
+
+bool code_decrypted(double &e)
+{
+    e = section_now(game_code());
+    return e >= 0 && e <= PLAIN;
+}
+
+/* Setups that scan or hook game code without bindings wait for the whole code section, not a page, to read
+   decrypted: a setup that ran on half-decrypted code would give up for good on what is still encrypted. */
+size_t run_code_tasks(const char *pass, bool final)
+{
+    double e;
+    if (code_tasks.empty() || (!code_decrypted(e) && !final))
+        return 0;
+    bool ok = e >= 0 && e <= PLAIN;
+    auto tasks = std::move(code_tasks);
+    code_tasks.clear();
+    for (auto &t : tasks) {
+        if (!ok) {
+            api->log("[core] %s: not set up; %s still reads %s (entropy %.2f) at the last retry, so it fails closed",
+                     t.what.c_str(), game_code().c_str(), reads(e), e < 0 ? 0 : e);
+            continue;
+        }
+        api->log("[core] %s: %s reads decrypted (entropy %.2f) at the %s pass; setting it up now", t.what.c_str(),
+                 game_code().c_str(), e, pass);
+        t.fn();
+        runtime::stage_catch_up();
+    }
+    return tasks.size();
+}
+
 void late_pass(const char *pass, bool final)
 {
     std::lock_guard<std::recursive_mutex> c(commit_lock);
     std::lock_guard<std::recursive_mutex> r(resolve_lock);
     size_t before = deferred_count();
-    if (!before && !waits(false)) {
+    if (!before && !waits(false) && code_tasks.empty()) {
         if (unreported)
             report(pass);
         return;
@@ -1627,13 +1722,15 @@ void late_pass(const char *pass, bool final)
         runtime::career_setup();
         settle_core_sets();
     }
+    size_t setups = run_code_tasks(pass, final);
     if (!waits(false))
         closed = true;
     size_t after = deferred_count(), installed = 0;
     for (size_t k : count)
         installed += k;
-    if (after == before && !final && !installed && strcmp(pass, "window")) {
-        api->log("[core] %s pass: %zu binding(s) still wait for their code to decrypt (%s)", pass, after, sampled.c_str());
+    if (after == before && !final && !installed && !setups && strcmp(pass, "window")) {
+        api->log("[core] %s pass: %zu binding(s) and %zu setup(s) still wait for their code to decrypt (%s)", pass, after,
+                 code_tasks.size(), sampled.c_str());
         return;
     }
     api->log("[core] %s pass: %s; %zu binding(s) came out of deferral, %zu still deferred; installed %zu wrap(s), %zu site(s), "
@@ -1648,7 +1745,7 @@ void late_pass(const char *pass, bool final)
 bool pending()
 {
     std::lock_guard<std::recursive_mutex> c(commit_lock);
-    return deferred_count() || waits(false);
+    return deferred_count() || waits(false) || !code_tasks.empty();
 }
 
 DWORD WINAPI retry_worker(LPVOID)
@@ -1666,9 +1763,9 @@ void start_retries()
 {
     if (InterlockedExchange(&retries_started, 1))
         return;
-    api->log("[core] bindings: %zu still wait for their code to decrypt; retrying every %lu ms, %d time(s), then they "
-             "fail closed",
-             deferred_count(), (unsigned long)RETRY_MS, RETRIES);
+    api->log("[core] bindings: %zu binding(s) and %zu setup(s) still wait for their code to decrypt; retrying every %lu "
+             "ms, %d time(s), then they fail closed",
+             deferred_count(), code_tasks.size(), (unsigned long)RETRY_MS, RETRIES);
     if (HANDLE t = CreateThread(nullptr, 0, retry_worker, nullptr, 0, nullptr))
         CloseHandle(t);
     else
@@ -1687,6 +1784,38 @@ void bind_stage(int stage)
 }
 
 namespace runtime {
+
+/* Core setups that scan or hook game code without a binding run now, or on a packed build whose code still
+   reads encrypted, at the first stage pass that reads it decrypted (the retries bound it like bindings). */
+void when_code_ready(const char *what, void (*fn)())
+{
+    std::lock_guard<std::recursive_mutex> c(commit_lock);
+    {
+        std::lock_guard<std::recursive_mutex> r(resolve_lock);
+        double e = 0;
+        if (packed && !code_decrypted(e)) {
+            code_tasks.push_back({what, fn});
+            api->log("[core] %s waits: %s reads %s (entropy %.2f) on this packed build; it is set up once that code "
+                     "decrypts",
+                     what, game_code().c_str(), reads(e), e < 0 ? 0 : e);
+            return;
+        }
+    }
+    fn();
+    runtime::stage_catch_up();
+}
+
+/* Lazy lookups ask this before caching a miss, so a miss on code that still reads encrypted is tried again. */
+bool code_ready()
+{
+    if (!packed || code_plain.load(std::memory_order_acquire))
+        return true;
+    std::lock_guard<std::recursive_mutex> r(resolve_lock);
+    double e;
+    if (code_decrypted(e))
+        code_plain.store(true, std::memory_order_release);
+    return code_plain.load(std::memory_order_acquire);
+}
 
 bool core_mixins_active(const char *name)
 {
@@ -1822,7 +1951,7 @@ extern "C" __declspec(dllexport) int SwoftyCoreAttach(SwoftyApi *a)
     CreateDirectoryW((dir + L"..\\..\\cache").c_str(), nullptr);
     exe_sha = exe_sha256(exe, dir + L"..\\..\\cache\\exe-sha256.tsv");
     const auto &said = doc["build"]["packed"];
-    auto cs = code_section();
+    auto cs = section_by_name(game_code());
     double ce = cs ? section_entropy(cs) : -1;
     packed = said.type == json::Value::Bool ? said.b : ce > ENCRYPTED;
     char cname[9] = {};
@@ -1839,6 +1968,7 @@ extern "C" __declspec(dllexport) int SwoftyCoreAttach(SwoftyApi *a)
         report("init");
     }
     save_scan_cache();
+    runtime::when_code_ready("crash: Ne_ReportMemoryError hook", crash_game_hooks);
     if (packed)
         runtime::on_stage(bind_stage);
     return 1;
@@ -1857,8 +1987,8 @@ extern "C" __declspec(dllexport) int SwoftyCoreInit(const wchar_t *name, SwoftyA
         drop_module(current->module);
         if (packed && current->hit_deferred) {
             current->reinit = init;
-            api->log("[core] addon %s: its init needs bindings whose code still reads encrypted; SwoftyAddonInit runs "
-                     "again once that code decrypts",
+            api->log("[core] addon %s: its init needs code that still reads encrypted (a binding or a scan); "
+                     "SwoftyAddonInit runs again once that code decrypts",
                      current->name.c_str());
             r = 1;
         } else {
@@ -1879,7 +2009,7 @@ extern "C" __declspec(dllexport) int SwoftyCoreCommit(void)
     if (!waits(true))
         runtime::career_setup();
     if (!from)
-        runtime::popup_setup();
+        runtime::when_code_ready("popup: message system hook", runtime::popup_setup);
     if (!waits(true))
         settle_core_sets();
     for (size_t i = from; i < settled; i++)
@@ -1892,7 +2022,8 @@ extern "C" __declspec(dllexport) int SwoftyCoreCommit(void)
         settle_core_sets();
     closed = (from || runtime::load_stage() != "early") && !waits(false);
     if (!from)
-        runtime::ready();
+        runtime::when_code_ready("runtime setup (assets, resources, gamedb, dbread, overlay, lang, events, hud, telemetry)",
+                                 runtime::ready);
     size_t active = 0;
     for (size_t i = from; i < addons.size(); i++)
         active += addons[i].active;
