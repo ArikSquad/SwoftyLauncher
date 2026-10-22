@@ -41,6 +41,7 @@ pub const SAVED_FILE: &str = "built.json";
 const SAVED_VERSION: u32 = 1;
 const PACKED_AGE: std::time::Duration = std::time::Duration::from_secs(30 * 24 * 3600);
 pub const ADDONS_DIR: &str = "addons";
+const LOCK_FILE: &str = "build.lock";
 
 #[derive(Debug, Clone, Default)]
 pub struct Built {
@@ -365,6 +366,26 @@ impl Saved {
     }
 }
 
+/// Held while a build writes a profile's overlay; another build of the
+/// profile, in this process or another, waits until it is dropped.
+pub struct BuildLock {
+    _file: std::fs::File,
+}
+
+pub fn lock(store: &Store, profile: &str) -> Result<BuildLock> {
+    let dir = store.overlays_dir(profile);
+    std::fs::create_dir_all(&dir).map_err(io_err(&dir))?;
+    let path = dir.join(LOCK_FILE);
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&path)
+        .map_err(io_err(&path))?;
+    file.lock().map_err(io_err(&path))?;
+    Ok(BuildLock { _file: file })
+}
+
 pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
     build_as(store, profile, game, false)
 }
@@ -394,6 +415,7 @@ pub(crate) fn build_as(store: &Store, profile: &str, game: &Game, checking: bool
         built.plan = Plan::vanilla();
         return Ok(built);
     }
+    let _lock = lock(store, profile)?;
     let mut hasher = Sha256::new();
     let packed = store.root.join("cache").join(crate::cache::PACKED_DIR);
     swofty_formats::erp::cache_compressed(Some(packed.clone()));
@@ -2045,7 +2067,18 @@ mod tests {
             all
         };
         let before = listing(&dir);
-        let checked = crate::conflicts::check(&store, "default", &game).unwrap();
+        let held = lock(&store, "default").unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                tx.send(crate::conflicts::check(&store, "default", &game))
+                    .unwrap()
+            });
+            let waited = rx.recv_timeout(std::time::Duration::from_millis(300));
+            assert!(waited.is_err(), "the check ran while another build held the lock");
+            drop(held);
+        });
+        let checked = rx.recv().unwrap().unwrap();
         assert_eq!(listing(&dir), before);
         let built = build(&store, "default", &game).unwrap();
         assert!(
