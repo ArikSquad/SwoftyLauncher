@@ -42,6 +42,7 @@ impl Install {
 pub struct Copies {
     pub all: Vec<Install>,
     pub active: Option<Install>,
+    pub missing: Vec<PathBuf>,
 }
 
 pub struct Probe {
@@ -157,6 +158,7 @@ pub fn discover_all(store: &Store) -> Copies {
     let all: Vec<Install> = found.iter().map(install).collect();
     Copies {
         active: active.and_then(|dir| all.iter().find(|i| i.dir == dir).cloned()),
+        missing: copies::missing(&found, &config),
         all,
     }
 }

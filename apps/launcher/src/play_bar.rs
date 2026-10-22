@@ -105,7 +105,7 @@ impl Shell {
         };
         let Some(i) = &self.install else {
             let (title, line) = if self.detected {
-                ("F1 25 not found", "No copy from Steam or the EA app was found")
+                ("F1 25 not found", "Not in Steam or the EA app")
             } else {
                 ("F1 25", "Looking for the game…")
             };
@@ -133,6 +133,7 @@ impl Shell {
             .into_any_element();
         let shell = cx.entity().downgrade();
         let copies = self.copies.clone();
+        let missing = self.missing_copies.clone();
         let active = i.dir.clone();
         Button::new("game-switcher")
             .ghost()
@@ -196,6 +197,32 @@ impl Shell {
                         .on_click(move |_, window, cx| {
                             shell.update(cx, |s, cx| s.use_copy(dir.clone(), window, cx)).ok();
                         }),
+                    );
+                }
+                for dir in &missing {
+                    let folder = dir.display().to_string();
+                    menu = menu.item(
+                        PopupMenuItem::element(move |_, _| {
+                            v_flex()
+                                .w_full()
+                                .min_w_0()
+                                .gap(px(3.))
+                                .py(px(3.))
+                                .child(
+                                    div()
+                                        .text_size(px(13.))
+                                        .text_color(p.text_muted)
+                                        .child("Folder not found"),
+                                )
+                                .child(
+                                    div()
+                                        .text_size(px(12.))
+                                        .text_color(p.text_placeholder)
+                                        .truncate()
+                                        .child(folder.clone()),
+                                )
+                        })
+                        .disabled(true),
                     );
                 }
                 let shell = shell.clone();
@@ -319,7 +346,7 @@ impl Shell {
                 div()
                     .min_w_0()
                     .truncate()
-                    .child("Install it with Steam or locate its folder"),
+                    .child("Install it with Steam or the EA app, or locate its folder"),
             ),
             PlayState::Detecting => row.text_color(p.text_muted).child("Detecting F1 25…"),
             PlayState::Checking => row.text_color(p.text_muted).child("Checking conflicts…"),

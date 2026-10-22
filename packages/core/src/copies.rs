@@ -97,6 +97,18 @@ pub fn active<'a>(copies: &'a [GameCopy], config: &Config) -> Option<&'a GameCop
         .or_else(|| copies.first())
 }
 
+/// Added folders without the game in them any more: uninstalled, moved, or
+/// on a drive that is not connected.
+pub fn missing(copies: &[GameCopy], config: &Config) -> Vec<PathBuf> {
+    config
+        .games
+        .added
+        .iter()
+        .filter(|d| !copies.iter().any(|c| same_dir(&c.dir, d)))
+        .cloned()
+        .collect()
+}
+
 pub fn find_active(config: &Config) -> Option<GameCopy> {
     active(&discover(config), config).cloned()
 }
@@ -221,6 +233,8 @@ mod tests {
         assert_eq!(active(&copies, &config).unwrap().dir, e);
         set_active(&mut config, &root.0.join("uninstalled"));
         assert_eq!(active(&copies, &config).unwrap().dir, s);
+        config.games.added = vec![e.clone(), root.0.join("uninstalled")];
+        assert_eq!(missing(&copies, &config), [root.0.join("uninstalled")]);
         assert!(active(&[], &config).is_none());
     }
 

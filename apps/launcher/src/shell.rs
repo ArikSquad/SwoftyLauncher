@@ -86,6 +86,7 @@ pub struct Shell {
     pub(crate) open_addon: Option<String>,
     pub(crate) install: Option<Install>,
     pub(crate) copies: Vec<Install>,
+    pub(crate) missing_copies: Vec<PathBuf>,
     pub(crate) detected: bool,
     pub(crate) rediscover: bool,
     pub(crate) processes: Vec<GameProcess>,
@@ -331,6 +332,7 @@ impl Shell {
             open_addon: None,
             install: None,
             copies: Vec::new(),
+            missing_copies: Vec::new(),
             detected: false,
             rediscover: true,
             processes: Vec::new(),
@@ -475,6 +477,7 @@ impl Shell {
             let changed = !self.detected || self.install != found.active || self.copies != found.all;
             self.install = found.active;
             self.copies = found.all;
+            self.missing_copies = found.missing;
             self.detected = true;
             if changed || probe.merged {
                 self.reload(cx);
