@@ -19,7 +19,7 @@ The **baseline** records original game files. The **journal** records changes so
 | `$DATA/state/placed.json` | Every file the launcher wrote into the game folder, with its SHA-256 |
 | `$DATA/state/session.lock` | Held by a running session until its game files are rolled back |
 | `$DATA/state/blocked.json` | Files of unknown origin that stopped the last launch |
-| `$DATA/state/not-stock.json` | Game files that don't match Steam's copy, which stopped the last launch |
+| `$DATA/state/not-stock.json` | Game files that don't match Steam's copy, which stopped the last launch, with each file's measured path, found size, Steam's size and modified time |
 | `$DATA/state/recovered.json` | The last recovery, for the launcher to announce |
 
 ## Checking against Steam
@@ -27,10 +27,12 @@ The **baseline** records original game files. The **journal** records changes so
 Steam keeps a manifest for each installed depot in `<steam>/depotcache/<depot>_<manifest>.manifest`, listing every file's size and SHA-1. The installed depots and their manifest ids are in the library's `appmanifest_3059520.acf`. Before a session builds anything, `swofty run` and `swofty apply` check the game against them:
 
 - Each original the baseline recorded at first sight (`"source": "first-sight"`) is compared with Steam's copy. A match becomes `"source": "depot"` and isn't compared again. A mismatch whose game folder file now matches Steam's, as after a Verify in Steam, is backed up again from the game folder.
-- Until a check passes for a game build, every file Steam installed is checked by size (`"stock_checked": true` in `baseline.json` once it has). Files `placed.json` records as written by the launcher are left to the install. While offline play has `EAAntiCheat.GameServiceLauncher.exe` parked as `.bak`, the parked copy is checked.
+- Until a check passes for a game build, every file Steam installed is checked by size (`"stock_checked": true` in `baseline.json` once it has). Files `placed.json` records as written by the launcher are left to the install.
+- EA AntiCheat's launcher files (`EAAntiCheat.*` in the game root) are logged when they differ from Steam's and never stop a launch. EA rewrites them on a normal start. Modded sessions do not use them. Offline play parks and restores `EAAntiCheat.GameServiceLauncher.exe` through its own journal.
+- Before the check, a stale `EAAntiCheat.GameServiceLauncher.exe.bak` an interrupted session left is cleared: a backup that is Steam's copy is put back over the live exe, and a backup that is not is set aside under `swofty/offline-recovery/` while a Steam-verified live exe is kept. This step is skipped while a session is pending.
 - Each original the install backs up for the first time is compared with Steam's copy before it is copied.
 
-A file that doesn't match stops the session before anything is built or changed, writes `state/not-stock.json` and shows a dialog that asks the player to verify the game files in Steam. Files Steam doesn't list are not checked. A game folder outside Steam is not checked. Without a readable manifest for every installed depot, the check is skipped and the launch log says why.
+A file that doesn't match, other than an EA AntiCheat launcher file, stops the session before anything is built or changed, writes `state/not-stock.json` and shows a dialog that asks the player to verify the game files in Steam. Files Steam doesn't list are not checked. A game folder outside Steam is not checked. Without a readable manifest for every installed depot, the check is skipped and the launch log says why.
 
 ## Recovery rules
 

@@ -22,8 +22,11 @@ use std::process::Command;
 
 use serde::{Deserialize, Serialize};
 
-use crate::baseline::{sha256_file, sha256_opt};
+use crate::baseline::{DepotHashes, sha256_file, sha256_opt};
 use crate::{Error, Result, io_err, read_json, with_retry, write_json};
+
+const EAC_EXE: &str = "EAAntiCheat.GameServiceLauncher.exe";
+const EAC_BAK: &str = "EAAntiCheat.GameServiceLauncher.exe.bak";
 
 /// The terms shown before consent and by `swofty offline accept`.
 pub const DISCLOSURE: &str = "\
@@ -618,7 +621,7 @@ pub fn heal_stale_backup(game: &Path, journal: &Path) -> Result<Vec<String>> {
         }
         std::fs::remove_file(journal).map_err(io_err(journal))?;
     }
-    notes.extend(heal_launcher(game)?);
+    notes.extend(heal_launcher(game, None)?);
     // A hook left in the loader's slot is ours: the journal is what normally
     // owns it, and staging cannot drop the new one while it is there.
     let hook = game.join("swofty/mods/core/f1op_hook.dll");
@@ -629,10 +632,39 @@ pub fn heal_stale_backup(game: &Path, journal: &Path) -> Result<Vec<String>> {
     Ok(notes)
 }
 
-fn heal_launcher(game: &Path) -> Result<Vec<String>> {
+/// Clear a stale anti-cheat backup before a build's stock check, so a leftover
+/// `.bak` of the wrong size can't block every launch. It does nothing while a
+/// session is pending ([`restore_pending`] owns the launcher then). With a
+/// depot list it keeps a Steam-verified live exe and sets the stale backup
+/// aside; without one it keeps today's restore-from-backup behaviour. Returns
+/// what it did.
+pub fn heal_before_check(data: &Path, game: &Path, depot: Option<&dyn DepotHashes>) -> Result<Vec<String>> {
+    if journal_path(data).exists() {
+        return Ok(Vec::new());
+    }
+    heal_launcher(game, depot)
+}
+
+fn set_aside(game: &Path, file: &Path) -> Result<PathBuf> {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let name = file.file_name().and_then(|n| n.to_str()).unwrap_or("file");
+    let keep = game
+        .join("swofty/offline-recovery")
+        .join(format!("{name}.{secs}"));
+    if let Some(parent) = keep.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| io_err(parent.to_path_buf())(e))?;
+    }
+    with_retry(file, || std::fs::rename(file, &keep))?;
+    Ok(keep)
+}
+
+fn heal_launcher(game: &Path, depot: Option<&dyn DepotHashes>) -> Result<Vec<String>> {
     let mut notes = Vec::new();
-    let launcher = game.join("EAAntiCheat.GameServiceLauncher.exe");
-    let parked = game.join("EAAntiCheat.GameServiceLauncher.exe.bak");
+    let launcher = game.join(EAC_EXE);
+    let parked = game.join(EAC_BAK);
     if !parked.exists() {
         return Ok(notes);
     }
@@ -642,18 +674,27 @@ fn heal_launcher(game: &Path) -> Result<Vec<String>> {
         notes.push("removed a stale backup identical to the launcher".into());
         return Ok(notes);
     }
+    let live_is_stock = match depot {
+        Some(d) if launcher.exists() => d.stock(EAC_EXE, &launcher)?,
+        _ => None,
+    };
+    let bak_is_stock = match depot {
+        Some(d) => d.stock(EAC_EXE, &parked)?,
+        None => None,
+    };
+    if live_is_stock == Some(true) && bak_is_stock != Some(true) {
+        let keep = set_aside(game, &parked)?;
+        notes.push(format!(
+            "set a stale anti-cheat backup aside at {}",
+            keep.display()
+        ));
+        return Ok(notes);
+    }
+    if depot.is_some() && bak_is_stock != Some(true) {
+        return Ok(notes);
+    }
     if launcher.exists() {
-        let secs = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        let keep = game
-            .join("swofty/offline-recovery")
-            .join(format!("EAAntiCheat.GameServiceLauncher.exe.{secs}"));
-        if let Some(parent) = keep.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| io_err(parent.to_path_buf())(e))?;
-        }
-        with_retry(&launcher, || std::fs::rename(&launcher, &keep))?;
+        let keep = set_aside(game, &launcher)?;
         notes.push(format!("kept the staged file at {}", keep.display()));
     }
     with_retry(&launcher, || std::fs::rename(&parked, &launcher))?;
@@ -1329,6 +1370,110 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&launcher).unwrap(), "original");
         assert!(!journal.exists());
         assert!(notes.iter().any(|n| n.contains("restored")), "{notes:?}");
+        std::fs::remove_dir_all(&d).ok();
+    }
+
+    struct FakeDepot {
+        rel: String,
+        bytes: Vec<u8>,
+    }
+
+    impl DepotHashes for FakeDepot {
+        fn stock(&self, rel: &str, path: &Path) -> Result<Option<bool>> {
+            if rel != self.rel {
+                return Ok(None);
+            }
+            match std::fs::read(path) {
+                Ok(data) => Ok(Some(data == self.bytes)),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Some(false)),
+                Err(e) => Err(io_err(path)(e)),
+            }
+        }
+    }
+
+    #[test]
+    fn a_stale_backup_is_set_aside_when_the_live_exe_is_steams_copy() {
+        let d = temp("heal-depot-stale");
+        let game = d.join("game");
+        std::fs::create_dir_all(&game).unwrap();
+        let launcher = game.join(EAC_EXE);
+        let parked = game.join(EAC_BAK);
+        std::fs::write(&launcher, "stock exe").unwrap();
+        std::fs::write(&parked, "a stale backup of the wrong size").unwrap();
+        let depot = FakeDepot {
+            rel: EAC_EXE.into(),
+            bytes: b"stock exe".to_vec(),
+        };
+
+        let notes = heal_launcher(&game, Some(&depot)).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&launcher).unwrap(),
+            "stock exe",
+            "the Steam-verified live exe is kept"
+        );
+        assert!(!parked.exists(), "the stale backup is moved out of the game root");
+        let kept = std::fs::read_dir(game.join("swofty/offline-recovery"))
+            .unwrap()
+            .flatten()
+            .next()
+            .expect("the stale backup is set aside, never destroyed");
+        assert_eq!(
+            std::fs::read_to_string(kept.path()).unwrap(),
+            "a stale backup of the wrong size"
+        );
+        assert!(notes.iter().any(|n| n.contains("set a stale")), "{notes:?}");
+        std::fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn an_offline_session_backup_is_restored_over_a_stub_with_a_depot() {
+        let d = temp("heal-depot-session");
+        let game = d.join("game");
+        std::fs::create_dir_all(&game).unwrap();
+        let launcher = game.join(EAC_EXE);
+        let parked = game.join(EAC_BAK);
+        std::fs::write(&launcher, "offline play stub").unwrap();
+        std::fs::write(&parked, "the real launcher").unwrap();
+        let depot = FakeDepot {
+            rel: EAC_EXE.into(),
+            bytes: b"the real launcher".to_vec(),
+        };
+
+        let notes = heal_launcher(&game, Some(&depot)).unwrap();
+        assert_eq!(std::fs::read_to_string(&launcher).unwrap(), "the real launcher");
+        assert!(!parked.exists());
+        let kept = std::fs::read_dir(game.join("swofty/offline-recovery"))
+            .unwrap()
+            .flatten()
+            .next()
+            .expect("the stub is kept, never destroyed");
+        assert_eq!(std::fs::read_to_string(kept.path()).unwrap(), "offline play stub");
+        assert!(notes.iter().any(|n| n.contains("restored")), "{notes:?}");
+        std::fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn heal_before_check_waits_while_a_session_is_pending() {
+        let d = temp("heal-pending");
+        let game = d.join("game");
+        std::fs::create_dir_all(&game).unwrap();
+        std::fs::write(game.join(EAC_EXE), "stub").unwrap();
+        std::fs::write(game.join(EAC_BAK), "real").unwrap();
+        let journal = journal_path(&d);
+        std::fs::create_dir_all(journal.parent().unwrap()).unwrap();
+        std::fs::write(&journal, "{}\n").unwrap();
+        let depot = FakeDepot {
+            rel: EAC_EXE.into(),
+            bytes: b"real".to_vec(),
+        };
+
+        let notes = heal_before_check(&d, &game, Some(&depot)).unwrap();
+        assert!(
+            notes.is_empty(),
+            "the pending session's journal owns the launcher"
+        );
+        assert!(game.join(EAC_BAK).exists());
+        assert_eq!(std::fs::read_to_string(game.join(EAC_EXE)).unwrap(), "stub");
         std::fs::remove_dir_all(&d).ok();
     }
 
