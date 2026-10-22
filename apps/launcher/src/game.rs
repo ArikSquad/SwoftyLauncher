@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use swofty_core::copies::{self, Found, GameCopy};
 use swofty_core::crash::{LogScan, StartFailure, Symbols, fatal_name};
 use swofty_core::install::{Game, Source};
 use swofty_core::launch;
@@ -28,8 +29,23 @@ pub struct Install {
     pub source: Source,
 }
 
+impl Install {
+    pub fn version(&self) -> Option<String> {
+        self.exe_version
+            .clone()
+            .or_else(|| self.build_id.map(|b| b.to_string()))
+    }
+}
+
+/// Every copy found, and the one Play uses.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Copies {
+    pub all: Vec<Install>,
+    pub active: Option<Install>,
+}
+
 pub struct Probe {
-    pub install: Option<Option<Install>>,
+    pub install: Option<Copies>,
     pub processes: Vec<GameProcess>,
     pub session: Option<SessionRecord>,
     pub requests: Option<SystemTime>,
@@ -47,7 +63,7 @@ pub fn probe(store: &Store, rediscover: bool, seen: Option<SystemTime>) -> Probe
     let processes = game_processes();
     let (requests, merged) = merge_requests(store, processes.is_empty(), seen);
     Probe {
-        install: rediscover.then(|| discover(store)),
+        install: rediscover.then(|| discover_all(store)),
         processes,
         session: store.latest_session().map(|d| SessionRecord::read(&d)),
         requests,
@@ -131,9 +147,22 @@ fn merge_requests(store: &Store, idle: bool, seen: Option<SystemTime>) -> (Optio
 }
 
 pub fn discover(store: &Store) -> Option<Install> {
-    let found = steam::find_game().filter(|g| g.exe().is_file());
-    let manual = store.config().game_dir.filter(|d| d.join(GAME_EXE).is_file());
-    let steam_root = found.as_ref().map(|g| g.steam_root.clone());
+    discover_all(store).active
+}
+
+pub fn discover_all(store: &Store) -> Copies {
+    let config = store.config();
+    let found = copies::discover(&config);
+    let active = copies::active(&found, &config).map(|c| c.dir.clone());
+    let all: Vec<Install> = found.iter().map(install).collect();
+    Copies {
+        active: active.and_then(|dir| all.iter().find(|i| i.dir == dir).cloned()),
+        all,
+    }
+}
+
+fn install(copy: &GameCopy) -> Install {
+    let steam_root = copy.steam.as_ref().map(|g| g.steam_root.clone());
     let via_steam = steam_root.as_deref().is_some_and(|root| {
         steam::launch_options(root)
             .iter()
@@ -147,26 +176,14 @@ pub fn discover(store: &Store) -> Option<Install> {
             None => "Proton".to_owned(),
         }
     };
-    match (manual, found) {
-        (Some(dir), found) => Some(Install {
-            build_id: found.filter(|g| g.dir == dir).and_then(|g| g.build_id),
-            exe_version: swofty_core::exe_version::read(&dir.join(GAME_EXE)),
-            source: Source::detect(&dir),
-            dir,
-            mode,
-            via_steam,
-            manual: true,
-        }),
-        (None, Some(g)) => Some(Install {
-            exe_version: swofty_core::exe_version::read(&g.dir.join(GAME_EXE)),
-            source: Source::detect(&g.dir),
-            dir: g.dir,
-            build_id: g.build_id,
-            mode,
-            via_steam,
-            manual: false,
-        }),
-        (None, None) => None,
+    Install {
+        dir: copy.dir.clone(),
+        build_id: copy.build_id(),
+        exe_version: copy.version(),
+        mode,
+        via_steam,
+        manual: copy.found == Found::Added,
+        source: copy.source,
     }
 }
 
@@ -199,9 +216,7 @@ impl Launch {
         if mode.is_vr() {
             c.arg("--vr");
         }
-        if install.manual {
-            c.arg("--game").arg(&install.dir);
-        }
+        c.arg("--game").arg(&install.dir);
         #[cfg(windows)]
         std::os::windows::process::CommandExt::creation_flags(&mut c, 0x0800_0000);
         let child = c

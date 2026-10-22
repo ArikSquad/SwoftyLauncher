@@ -85,6 +85,7 @@ pub struct Shell {
     pub(crate) library: Library,
     pub(crate) open_addon: Option<String>,
     pub(crate) install: Option<Install>,
+    pub(crate) copies: Vec<Install>,
     pub(crate) detected: bool,
     pub(crate) rediscover: bool,
     pub(crate) processes: Vec<GameProcess>,
@@ -114,7 +115,7 @@ pub struct Shell {
     pub(crate) tasks: Option<crate::tasks::TaskDialog>,
     pub(crate) dropping: bool,
     pub(crate) vr_profiles: BTreeSet<String>,
-    pub(crate) start_steam: bool,
+    pub(crate) start_store: bool,
     pub(crate) updates: crate::update::Updates,
     pub(crate) forms: HashMap<String, crate::blocks::FormSlot>,
     pub(crate) searches: HashMap<String, crate::blocks::SearchSlot>,
@@ -321,7 +322,7 @@ impl Shell {
         }
         let config = store.config();
         let vr_profiles = config.vr_profiles;
-        let start_steam = config.launch.start_steam;
+        let start_store = config.launch.start_store;
         let news = crate::news::News::load(&store.root);
         let mut shell = Self {
             library,
@@ -329,6 +330,7 @@ impl Shell {
             page: Page::News,
             open_addon: None,
             install: None,
+            copies: Vec::new(),
             detected: false,
             rediscover: true,
             processes: Vec::new(),
@@ -358,7 +360,7 @@ impl Shell {
             tasks: None,
             dropping: false,
             vr_profiles,
-            start_steam,
+            start_store,
             updates: crate::update::Updates::new(),
             forms: HashMap::new(),
             searches: HashMap::new(),
@@ -469,9 +471,10 @@ impl Shell {
             self.notice = Some(f.headline().to_owned());
             show_launch_failed(f, window, cx);
         }
-        if let Some(install) = probe.install {
-            let changed = !self.detected || self.install != install;
-            self.install = install;
+        if let Some(found) = probe.install {
+            let changed = !self.detected || self.install != found.active || self.copies != found.all;
+            self.install = found.active;
+            self.copies = found.all;
             self.detected = true;
             if changed || probe.merged {
                 self.reload(cx);
@@ -498,9 +501,13 @@ impl Shell {
                         .map(|f| f.headline().to_owned());
                     self.notice = Some(match &self.blocked {
                         _ if refused => "an antivirus removed mod files, so F1 25 was not started".to_owned(),
-                        _ if not_stock => {
-                            "your game files aren't the ones Steam installed; verify them in Steam".to_owned()
-                        }
+                        _ if not_stock => match self.install.as_ref().map(|i| i.source) {
+                            Some(Source::EaApp) => {
+                                "your game files aren't the ones the EA app installed; repair them in the EA app"
+                                    .to_owned()
+                            }
+                            _ => "your game files aren't the ones Steam installed; verify them in Steam".to_owned(),
+                        },
                         Some(b) if b.files.len() == 1 => {
                             "a file Swofty did not put in the game folder is in the way".to_owned()
                         }
@@ -549,7 +556,7 @@ impl Shell {
         self.library = Library::load(&self.store);
         let config = self.store.config();
         self.vr_profiles = config.vr_profiles;
-        self.start_steam = config.launch.start_steam;
+        self.start_store = config.launch.start_store;
         if matches!(self.page, Page::Section(i) if i >= self.library.sections.len()) {
             self.page = Page::Addons;
         }
@@ -635,14 +642,30 @@ impl Shell {
         }
     }
 
-    pub(crate) fn set_start_steam(&mut self, on: bool, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn set_start_store(&mut self, on: bool, window: &mut Window, cx: &mut Context<Self>) {
         let mut config = self.store.config();
-        config.launch.start_steam = on;
+        config.launch.start_store = on;
         if let Err(e) = self.store.save_config(&config) {
             window.push_notification(Notification::error(e.to_string()), cx);
         }
-        self.start_steam = config.launch.start_steam;
+        self.start_store = config.launch.start_store;
         cx.notify();
+    }
+
+    /// The game switcher: play another copy of F1 25.
+    pub(crate) fn use_copy(&mut self, dir: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        let mut config = self.store.config();
+        swofty_core::copies::set_active(&mut config, &dir);
+        if let Err(e) = self.store.save_config(&config) {
+            window.push_notification(Notification::error(e.to_string()), cx);
+            return;
+        }
+        if let Some(copy) = self.copies.iter().find(|c| c.dir == dir) {
+            self.install = Some(copy.clone());
+        }
+        self.notice = None;
+        self.rediscover = true;
+        self.reload(cx);
     }
 
     pub(crate) fn set_launch_mode(&mut self, mode: LaunchMode, window: &mut Window, cx: &mut Context<Self>) {
@@ -833,14 +856,21 @@ impl Shell {
     }
 
     pub(crate) fn locate_game(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let current = self.install.as_ref().map(|i| i.dir.display().to_string());
+        let adding = !self.copies.is_empty();
         self.prompt(
             Prompt {
-                title: "Locate F1 25",
-                description: format!("The folder that contains {}.", swofty_core::GAME_EXE),
-                initial: current.unwrap_or_default(),
-                placeholder: "/path/to/steamapps/common/F1 25",
-                ok: "Use this folder",
+                title: if adding { "Add another folder" } else { "Locate F1 25" },
+                description: format!(
+                    "The folder that contains {}, from Steam, the EA app or a copy of your own. Play uses it once it's added.",
+                    swofty_core::GAME_EXE
+                ),
+                initial: String::new(),
+                placeholder: if cfg!(windows) {
+                    r"C:\Program Files\EA Games\F1 25"
+                } else {
+                    "/path/to/F1 25"
+                },
+                ok: "Add and play this copy",
                 browse: Some(PathPromptOptions {
                     files: false,
                     directories: true,
@@ -849,13 +879,13 @@ impl Shell {
                 }),
                 action: Rc::new(|store, value| {
                     let dir = PathBuf::from(value);
-                    if !dir.join(swofty_core::GAME_EXE).is_file() {
-                        return Err(format!("{} is not in {value}", swofty_core::GAME_EXE));
-                    }
                     let mut config = store.config();
-                    config.game_dir = Some(dir);
+                    swofty_core::copies::add(&mut config, &dir)?;
                     store.save_config(&config).map_err(|e| e.to_string())?;
-                    Ok("Game folder saved".into())
+                    Ok(format!(
+                        "Added the {} copy",
+                        swofty_core::copies::store_name(Source::detect(&dir))
+                    ))
                 }),
             },
             window,
