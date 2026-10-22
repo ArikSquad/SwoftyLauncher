@@ -1223,7 +1223,7 @@ impl Render for Shell {
             window.push_notification(note, cx);
         }
         let content = match self.page {
-            Page::News => self.news_page(p, cx),
+            Page::News => self.news_page(p, short, cx),
             Page::Importer => self.importer_page(p, cx),
             Page::Tools => self.tools_page(p, cx),
             Page::Addons => self.addons_page(p, cx),

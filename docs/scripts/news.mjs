@@ -3,8 +3,13 @@
 //   node docs/scripts/news.mjs            print the feed
 //   node docs/scripts/news.mjs <file>     write it to <file>
 //
-// The docs build writes it to news.json at the site root. apps/launcher/build.rs reads the same
-// front matter (title, description, date, image, draft) for the launcher's offline copy.
+// The docs build writes it to news.json at the site root. apps/launcher/build.rs builds the same
+// feed for the launcher's offline copy.
+//
+// Each post: id ("news/<slug>" or "release/<slug>"), kind ("news" or "release"), title, date
+// (YYYY-MM-DD), summary (front matter description), image (URL or null) and url. News posts also
+// carry body: the Markdown after the front matter and the leading "# " heading, which the
+// launcher renders in full.
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -28,6 +33,18 @@ function frontMatter(text) {
     fm[line.slice(0, at).trim()] = value;
   }
   return fm;
+}
+
+function body(text) {
+  let lines = text.split(/\r?\n/);
+  if (lines[0]?.trim() === "---") {
+    const end = lines.slice(1).findIndex((l) => l.trim() === "---");
+    lines = end < 0 ? [] : lines.slice(end + 2);
+  }
+  const start = lines.findIndex((l) => l.trim() !== "");
+  lines = start < 0 ? [] : lines.slice(start);
+  if (lines[0]?.startsWith("# ")) lines = lines.slice(1);
+  return lines.join("\n").trim();
 }
 
 function gitDate(file) {
@@ -54,7 +71,8 @@ function posts(dir, kind) {
     .filter((f) => f.endsWith(".md") && f !== "index.md")
     .flatMap((f) => {
       const slug = f.slice(0, -3);
-      const fm = frontMatter(fs.readFileSync(path.join(full, f), "utf8"));
+      const text = fs.readFileSync(path.join(full, f), "utf8");
+      const fm = frontMatter(text);
       if (fm.draft === "true") return [];
       const title = fm.title || slug;
       const image = fm.image ? (fm.image.startsWith("/") ? site + fm.image : fm.image) : null;
@@ -67,6 +85,7 @@ function posts(dir, kind) {
           summary: fm.description || "",
           image,
           url: `${site}/${dir}/${slug}`,
+          ...(kind === "news" ? { body: body(text) } : {}),
         },
       ];
     });

@@ -1,6 +1,7 @@
 use std::sync::{Arc, LazyLock};
 
 use gpui_kit::component::{h_flex, v_flex};
+use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 
 pub const INVITE: &str = "https://discord.gg/STWsgyJKZS";
@@ -26,17 +27,17 @@ fn server_icon(size: f32) -> Div {
         .child(img(ICON.clone()).size_full())
 }
 
-/// The Discord invite at the top of the News page.
-pub(crate) fn banner() -> Stateful<Div> {
+/// The Discord invite at the top of the News page, shorter in `compact` windows.
+pub(crate) fn banner(compact: bool) -> Stateful<Div> {
     let white = |alpha: f32| hsla(0., 0., 1., alpha);
     h_flex()
         .id("discord-banner")
         .relative()
         .flex_shrink_0()
         .w_full()
-        .min_h(px(116.))
-        .px(px(24.))
-        .py(px(20.))
+        .min_h(px(if compact { 0. } else { 116. }))
+        .px(px(if compact { 20. } else { 24. }))
+        .py(px(if compact { 14. } else { 20. }))
         .gap(px(18.))
         .items_center()
         .rounded(px(10.))
@@ -54,7 +55,7 @@ pub(crate) fn banner() -> Stateful<Div> {
                 .size(px(150.))
                 .text_color(white(0.08)),
         )
-        .child(server_icon(68.))
+        .child(server_icon(if compact { 48. } else { 68. }))
         .child(
             v_flex()
                 .flex_1()
@@ -73,17 +74,19 @@ pub(crate) fn banner() -> Stateful<Div> {
                 )
                 .child(
                     div()
-                        .text_size(px(20.))
+                        .text_size(px(if compact { 17. } else { 20. }))
                         .font_weight(FontWeight::BOLD)
                         .child("Swofty Developments"),
                 )
-                .child(
-                    div()
-                        .text_size(px(13.))
-                        .line_height(px(18.))
-                        .text_color(white(0.82))
-                        .child(BODY),
-                ),
+                .when(!compact, |d| {
+                    d.child(
+                        div()
+                            .text_size(px(13.))
+                            .line_height(px(18.))
+                            .text_color(white(0.82))
+                            .child(BODY),
+                    )
+                }),
         )
         .child(
             h_flex()

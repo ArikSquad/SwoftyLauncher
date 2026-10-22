@@ -29,7 +29,7 @@ Once the launcher has found F1 25, you do everything from one window. This secti
 
 | Page | Covers |
 |---|---|
-| [News](/using/news) | The Discord invite, posts and release notes, and where the feed comes from |
+| [News](/using/news) | The Discord invite, news posts, changelogs, and where the feed comes from |
 | [Addons](/using/addons) | Installing, turning on, checking and removing addons; the built-in addons |
 | [Addons that ship with the launcher](/using/bundled-addons) | The addons every release installs switched off, such as F1 25 RE-Optimization |
 | [Mods and tracks](/using/mods) | Importing mods and tracks, load order, conflicts and `swofty mods` |
