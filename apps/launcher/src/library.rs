@@ -218,7 +218,7 @@ impl ProfileItem {
         if self.vanilla() {
             return "No addons".into();
         }
-        plural(self.addons.len(), "addon", "addons")
+        format!("{} on", self.addons.len())
     }
 }
 
