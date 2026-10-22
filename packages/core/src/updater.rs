@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use semver::Version;
+use semver::{Version, VersionReq};
 
 use crate::launcher::Progress;
 use crate::store::Store;
@@ -9,6 +9,7 @@ use crate::{Error, Result, managed};
 
 pub const CHECK_INTERVAL: Duration = Duration::from_secs(60);
 pub const RELEASE_RECHECK: Duration = Duration::from_secs(5 * 60);
+pub const LIST_RECHECK: Duration = Duration::from_secs(15 * 60);
 pub const UPDATED_ENV: &str = "SWOFTY_UPDATED_TO";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -196,6 +197,176 @@ pub fn check(part: Part, track: &mut Track, installed: Option<&Version>, fetch: 
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct Candidate {
+    pub release: Release,
+    pub version: Version,
+    pub needs: Option<VersionReq>,
+    pub learn_at: u64,
+}
+
+impl Candidate {
+    pub fn accepts(&self, launcher: &Version) -> bool {
+        self.needs.as_ref().is_some_and(|r| r.matches(launcher))
+    }
+
+    fn same_package(&self, release: &Release) -> bool {
+        self.release.tag_name == release.tag_name
+            && managed::package_asset(&self.release).ok() == managed::package_asset(release).ok()
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct Catalog {
+    pub latest: Track,
+    pub releases: Vec<Candidate>,
+    pub listed_for: Option<String>,
+    pub list_at: u64,
+    pub wait_until: u64,
+    pub error: Option<String>,
+}
+
+impl Catalog {
+    pub fn probe_due(&self, now: u64) -> bool {
+        self.latest.probe_due(now)
+    }
+
+    pub fn list_due(&self, now: u64) -> bool {
+        now >= self.wait_until && (now >= self.list_at || self.latest.tag != self.listed_for)
+    }
+
+    pub fn on_list(&mut self, fetched: std::result::Result<Vec<Release>, Failure>, now: u64) {
+        self.listed_for = self.latest.tag.clone();
+        let list = match fetched {
+            Ok(list) => list,
+            Err(Failure::Wait(secs, text)) => {
+                self.wait_until = now + secs.max(CHECK_INTERVAL.as_secs());
+                self.error = Some(text);
+                return;
+            }
+            Err(Failure::Failed(text)) => {
+                self.list_at = now + RELEASE_RECHECK.as_secs();
+                self.error = Some(text);
+                return;
+            }
+        };
+        let (mut next, mut unfinished) = (Vec::new(), None::<Version>);
+        for release in list.into_iter().filter(|r| !r.draft && !r.prerelease) {
+            let Some(version) = release.version() else {
+                continue;
+            };
+            if !managed::ready(&release) {
+                unfinished = unfinished.max(Some(version));
+                continue;
+            }
+            let known = self.releases.iter().find(|c| c.same_package(&release));
+            next.push(Candidate {
+                needs: known.and_then(|c| c.needs.clone()),
+                learn_at: known.map_or(0, |c| c.learn_at),
+                version,
+                release,
+            });
+        }
+        next.sort_by(|a, b| b.version.cmp(&a.version));
+        let waiting = unfinished.is_some_and(|u| next.first().is_none_or(|c| u > c.version));
+        self.list_at = now + if waiting { RELEASE_RECHECK } else { LIST_RECHECK }.as_secs();
+        self.releases = next;
+        self.error = None;
+    }
+
+    fn newer(&self, installed: Option<&Version>) -> Vec<&Candidate> {
+        self.releases
+            .iter()
+            .filter(|c| managed::newer(installed, &c.version))
+            .collect()
+    }
+
+    pub fn to_learn(&self, installed: Option<&Version>, launcher: &Version, now: u64) -> Vec<Release> {
+        let mut out = Vec::new();
+        for c in self.newer(installed) {
+            if c.accepts(launcher) {
+                break;
+            }
+            if c.needs.is_none() && now >= c.learn_at {
+                out.push(c.release.clone());
+            }
+        }
+        out
+    }
+
+    pub fn learn(
+        &mut self,
+        installed: Option<&Version>,
+        launcher: &Version,
+        now: u64,
+        mut needs: impl FnMut(&Release) -> Result<VersionReq>,
+    ) {
+        for release in self.to_learn(installed, launcher, now) {
+            let learned = needs(&release);
+            let Some(c) = self
+                .releases
+                .iter_mut()
+                .find(|c| c.release.tag_name == release.tag_name)
+            else {
+                continue;
+            };
+            match learned {
+                Ok(req) => {
+                    c.needs = Some(req);
+                    if c.accepts(launcher) {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    c.learn_at = now + RELEASE_RECHECK.as_secs();
+                    self.error = Some(format!("{} {}: {e}", managed::NAME, release.tag_name));
+                }
+            }
+        }
+    }
+
+    pub fn choose(&self, launcher: &Version, installed: Option<&Version>) -> Option<&Release> {
+        self.releases
+            .iter()
+            .find(|c| c.accepts(launcher))
+            .filter(|c| managed::newer(installed, &c.version))
+            .map(|c| &c.release)
+    }
+
+    pub fn waiting(&self, launcher: &Version, installed: Option<&Version>) -> Option<&Candidate> {
+        let chosen = self.choose(launcher, installed).and_then(Release::version);
+        self.newer(installed).into_iter().find(|c| {
+            c.needs.is_some() && !c.accepts(launcher) && chosen.as_ref().is_none_or(|v| c.version > *v)
+        })
+    }
+
+    pub fn keep(&self, installed: Option<&Version>) -> Vec<&str> {
+        self.newer(installed)
+            .into_iter()
+            .map(|c| c.release.tag_name.as_str())
+            .collect()
+    }
+}
+
+pub fn check_importer(
+    store: &Store,
+    catalog: &mut Catalog,
+    installed: Option<&Version>,
+    launcher: &Version,
+    now: u64,
+) {
+    catalog
+        .latest
+        .on_probe(probe(Part::Addon, update::CHECK_TIMEOUT), now);
+    if catalog.list_due(now) {
+        catalog.on_list(managed::fetch_releases(update::CHECK_TIMEOUT), now);
+    }
+    catalog.learn(installed, launcher, now, |r| managed::requirement(store, r));
+    if !catalog.releases.is_empty() {
+        managed::prune(store, &catalog.keep(installed));
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Phase {
     Idle,
@@ -223,11 +394,61 @@ pub fn gate(phase: &Phase, pending: bool, game_busy: bool) -> Gate {
     }
 }
 
-pub fn plan(addon: Option<&Release>, launcher: Option<&Release>) -> Vec<(Part, Release)> {
-    [(Part::Addon, addon), (Part::Launcher, launcher)]
-        .into_iter()
-        .filter_map(|(part, release)| release.map(|r| (part, r.clone())))
-        .collect()
+#[derive(Debug, Clone, Default)]
+pub struct Plan {
+    pub launcher: Option<Release>,
+    pub addon: Option<Release>,
+    pub fallback: Option<Release>,
+}
+
+impl Plan {
+    pub fn steps(&self) -> Vec<(Part, &Release)> {
+        [(Part::Launcher, &self.launcher), (Part::Addon, &self.addon)]
+            .into_iter()
+            .filter_map(|(part, release)| release.as_ref().map(|r| (part, r)))
+            .collect()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.launcher.is_none() && self.addon.is_none()
+    }
+
+    pub fn versions(&self) -> Vec<(Part, Version)> {
+        self.steps()
+            .into_iter()
+            .filter_map(|(part, r)| r.version().map(|v| (part, v)))
+            .collect()
+    }
+}
+
+// The importer is checked against the launcher that runs after this update,
+// so one run can take a launcher and the importer that needs it.
+pub fn plan(
+    catalog: &Catalog,
+    addon: Option<&Version>,
+    launcher: Option<&Release>,
+    current: &Version,
+    held: Option<&str>,
+) -> Plan {
+    let pick = |target: &Version| {
+        addon
+            .and_then(|installed| catalog.choose(target, Some(installed)))
+            .filter(|r| Some(r.tag_name.as_str()) != held)
+            .cloned()
+    };
+    let fallback = pick(current);
+    Plan {
+        launcher: launcher.cloned(),
+        addon: match launcher.and_then(Release::version) {
+            Some(next) => pick(&next),
+            None => fallback.clone(),
+        },
+        fallback,
+    }
+}
+
+pub fn follow_up(restarted: bool, plan: &Plan) -> bool {
+    restarted && plan.launcher.is_none() && plan.addon.is_some()
 }
 
 pub fn summary(parts: &[(Part, Version)]) -> String {
@@ -270,42 +491,95 @@ impl Progress for Step<'_> {
 #[derive(Debug, Default, PartialEq)]
 pub struct Ran {
     pub done: Vec<(Part, Version)>,
-    pub error: Option<String>,
+    pub failed: Vec<(Part, String, String)>,
 }
 
 impl Ran {
     pub fn restart(&self) -> bool {
-        self.error.is_none() && !self.done.is_empty()
+        self.launcher().is_some() || (!self.done.is_empty() && self.failed.is_empty())
+    }
+
+    fn version(&self, part: Part) -> Option<&Version> {
+        self.done.iter().find(|(p, _)| *p == part).map(|(_, v)| v)
     }
 
     pub fn launcher(&self) -> Option<&Version> {
-        self.done
+        self.version(Part::Launcher)
+    }
+
+    pub fn addon(&self) -> Option<&Version> {
+        self.version(Part::Addon)
+    }
+
+    pub fn failed_tag(&self, part: Part) -> Option<&str> {
+        self.failed
             .iter()
-            .find(|(part, _)| *part == Part::Launcher)
-            .map(|(_, v)| v)
+            .find(|(p, _, _)| *p == part)
+            .map(|(_, tag, _)| tag.as_str())
+    }
+
+    pub fn error(&self) -> Option<String> {
+        (!self.failed.is_empty()).then(|| {
+            self.failed
+                .iter()
+                .map(|(part, tag, e)| format!("{} {tag}: {e}", part.name()))
+                .collect::<Vec<_>>()
+                .join("; ")
+        })
+    }
+}
+
+type Installer<'a> = dyn FnMut(Part, &Release, &Version, &dyn Progress) -> Result<Version> + 'a;
+
+fn attempt(
+    ran: &mut Ran,
+    install: &mut Installer<'_>,
+    part: Part,
+    release: &Release,
+    launcher: &Version,
+    step: Step<'_>,
+) -> Option<Version> {
+    step.report(0., &format!("Updating {}", part.name()));
+    match install(part, release, launcher, &step) {
+        Ok(version) => {
+            ran.done.push((part, version.clone()));
+            Some(version)
+        }
+        Err(e) => {
+            ran.failed.push((part, release.tag_name.clone(), e.to_string()));
+            None
+        }
     }
 }
 
 pub fn run(
-    steps: &[(Part, Release)],
+    plan: &Plan,
+    current: &Version,
     progress: &dyn Progress,
-    mut install: impl FnMut(Part, &Release, &dyn Progress) -> Result<Version>,
+    mut install: impl FnMut(Part, &Release, &Version, &dyn Progress) -> Result<Version>,
 ) -> Ran {
+    let count = plan.steps().len();
     let mut ran = Ran::default();
-    for (index, (part, release)) in steps.iter().enumerate() {
+    let (mut next, mut addon, mut index) = (current.clone(), plan.addon.as_ref(), 0);
+    if let Some(release) = &plan.launcher {
         let step = Step {
             inner: progress,
             index,
-            count: steps.len(),
+            count,
         };
-        step.report(0., &format!("Updating {}", part.name()));
-        match install(*part, release, &step) {
-            Ok(version) => ran.done.push((*part, version)),
-            Err(e) => {
-                ran.error = Some(format!("{} {}: {e}", part.name(), release.tag_name));
-                break;
-            }
+        match attempt(&mut ran, &mut install, Part::Launcher, release, current, step) {
+            Some(version) => next = version,
+            None => addon = plan.fallback.as_ref(),
         }
+        index += 1;
+    }
+    if let Some(release) = addon {
+        let step = Step {
+            inner: progress,
+            index,
+            count: count.max(index + 1),
+        };
+        attempt(&mut ran, &mut install, Part::Addon, release, &next, step);
     }
     ran
 }
@@ -315,13 +589,14 @@ pub fn install(
     copy: Option<&Install>,
     part: Part,
     release: &Release,
+    launcher: &Version,
     progress: &dyn Progress,
 ) -> Result<Version> {
     if crate::process::game_running() {
         return Err(Error::Other("close F1 25 before updating".into()));
     }
     match part {
-        Part::Addon => managed::install_release(store, release, progress),
+        Part::Addon => managed::install_release(store, release, launcher, progress),
         Part::Launcher => copy
             .ok_or_else(|| Error::Other("this copy cannot update itself".into()))?
             .update(release, progress),
@@ -360,16 +635,16 @@ mod tests {
         let platform = update::asset_name(tag, os, arch).unwrap_or_else(|| "none".into());
         Release {
             tag_name: tag.into(),
-            html_url: String::new(),
             assets: vec![asset(&platform), asset(SUMS_FILE)],
+            ..Default::default()
         }
     }
 
     fn addon_release(tag: &str) -> Release {
         Release {
             tag_name: tag.into(),
-            html_url: String::new(),
             assets: vec![asset(managed::ASSET), asset(SUMS_FILE)],
+            ..Default::default()
         }
     }
 
@@ -509,61 +784,406 @@ mod tests {
         assert_eq!(gate(&failed, false, false), Gate::Play);
     }
 
+    fn catalog(releases: &[(&str, Option<&str>)]) -> Catalog {
+        let mut c = Catalog::default();
+        c.on_list(
+            Ok(releases.iter().map(|(tag, _)| addon_release(tag)).collect()),
+            0,
+        );
+        for (tag, needs) in releases {
+            let found = c
+                .releases
+                .iter_mut()
+                .find(|r| r.release.tag_name == *tag)
+                .unwrap();
+            found.needs = needs.map(|n| n.parse().unwrap());
+        }
+        c
+    }
+
+    fn tags(plan: &Plan) -> Vec<(Part, &str)> {
+        plan.steps()
+            .into_iter()
+            .map(|(part, r)| (part, r.tag_name.as_str()))
+            .collect()
+    }
+
     #[test]
-    fn installs_the_addon_before_the_launcher() {
-        let (a, l) = (addon_release("v0.5.3"), launcher_release("v1.0.9"));
-        let order: Vec<Part> = plan(Some(&a), Some(&l)).into_iter().map(|(p, _)| p).collect();
-        assert_eq!(order, [Part::Addon, Part::Launcher]);
-        assert_eq!(plan(None, Some(&l))[0].0, Part::Launcher);
-        assert!(plan(None, None).is_empty());
-        let log = Log(Mutex::default());
-        let mut seen = Vec::new();
-        let ran = run(&plan(Some(&a), Some(&l)), &log, |part, release, p| {
-            seen.push(part);
-            p.report(0.5, "Downloading");
-            Ok(release.version().unwrap())
-        });
-        assert_eq!(seen, [Part::Addon, Part::Launcher]);
-        assert!(ran.restart());
-        assert_eq!(ran.launcher(), Some(&v("1.0.9")));
-        let log = log.0.into_inner().unwrap();
-        assert!(log.contains(&(0.25, "Downloading (1 of 2)".into())), "{log:?}");
-        assert!(log.contains(&(0.75, "Downloading (2 of 2)".into())), "{log:?}");
-        assert_eq!(summary(&ran.done), "Simplified + Launcher");
-        assert_eq!(summary(&ran.done[1..]), "Launcher 1.0.9");
+    fn lists_ready_importers_newest_first() {
+        let mut c = Catalog::default();
+        let draft = Release {
+            draft: true,
+            ..addon_release("v0.9.0")
+        };
+        let pre = Release {
+            prerelease: true,
+            ..addon_release("v0.8.1")
+        };
+        let bare = Release {
+            assets: vec![],
+            ..addon_release("v0.4.0")
+        };
+        let list = vec![
+            addon_release("v0.6.0"),
+            draft,
+            pre,
+            addon_release("v0.8.0"),
+            bare,
+            addon_release("latest"),
+            addon_release("v0.7.0"),
+        ];
+        c.on_list(Ok(list.clone()), 1000);
+        let listed: Vec<&str> = c.releases.iter().map(|r| r.release.tag_name.as_str()).collect();
+        assert_eq!(listed, ["v0.8.0", "v0.7.0", "v0.6.0"]);
+        assert_eq!(c.list_at, 1000 + LIST_RECHECK.as_secs());
+        c.releases[1].needs = Some(">=1.3.0".parse().unwrap());
+        c.on_list(Ok(list), 2000);
+        assert!(
+            c.releases[1].needs.is_some(),
+            "a known requirement survives a new list"
+        );
+        let replaced = Release {
+            assets: vec![
+                Asset {
+                    size: 11,
+                    ..asset(managed::ASSET)
+                },
+                asset(SUMS_FILE),
+            ],
+            ..addon_release("v0.7.0")
+        };
+        c.on_list(Ok(vec![replaced]), 3000);
+        assert!(c.releases[0].needs.is_none(), "a replaced package is read again");
+        c.on_list(
+            Ok(vec![
+                addon_release("v0.7.0"),
+                Release {
+                    assets: vec![],
+                    ..addon_release("v0.8.0")
+                },
+            ]),
+            4000,
+        );
         assert_eq!(
-            describe(&ran.done),
-            "Simplified for Swofty 0.5.3 and Swofty Launcher 1.0.9"
+            c.list_at,
+            4000 + RELEASE_RECHECK.as_secs(),
+            "a release still uploading is looked at again sooner"
         );
     }
 
     #[test]
-    fn a_failed_step_stops_without_a_restart() {
-        let (a, l) = (addon_release("v0.5.3"), launcher_release("v1.0.9"));
+    fn lists_releases_on_a_new_latest_tag_or_every_quarter_hour() {
+        let mut c = Catalog::default();
+        assert!(c.list_due(0));
+        c.latest.on_probe(Probe::Tag("v0.6.0".into()), 1000);
+        c.on_list(Ok(vec![addon_release("v0.6.0")]), 1000);
+        assert!(!c.list_due(1060), "an unchanged latest tag costs no API call");
+        assert!(c.list_due(1000 + LIST_RECHECK.as_secs()));
+        c.latest.on_probe(Probe::Tag("v0.7.0".into()), 1120);
+        assert!(c.list_due(1120));
+        c.on_list(Err(Failure::Wait(3000, "limited".into())), 1120);
+        assert!(!c.list_due(1120 + 2999));
+        assert!(c.list_due(1120 + 3000));
+        c.on_list(Err(Failure::Failed("offline".into())), 5000);
+        assert!(!c.list_due(5060), "a failed list is not retried every minute");
+        assert!(c.list_due(5000 + RELEASE_RECHECK.as_secs()));
+        assert_eq!(c.error.as_deref(), Some("offline"));
+    }
+
+    #[test]
+    fn learns_requirements_newest_first_until_one_fits() {
+        let mut c = catalog(&[("v0.8.0", None), ("v0.7.0", None), ("v0.6.0", None)]);
+        let needs = |r: &Release| -> Result<VersionReq> {
+            Ok(match r.tag_name.as_str() {
+                "v0.8.0" => ">=1.4.0",
+                "v0.7.0" => ">=1.3.0",
+                _ => ">=1.0.4",
+            }
+            .parse()
+            .unwrap())
+        };
+        let mut asked = Vec::new();
+        c.learn(Some(&v("0.6.0")), &v("1.3.1"), 0, |r| {
+            asked.push(r.tag_name.clone());
+            needs(r)
+        });
+        assert_eq!(
+            asked,
+            ["v0.8.0", "v0.7.0"],
+            "stops at the first that fits, never reads the installed one"
+        );
+        assert!(
+            c.to_learn(Some(&v("0.6.0")), &v("1.3.1"), 0).is_empty(),
+            "each release is read once"
+        );
+        let mut c = catalog(&[("v0.8.0", None), ("v0.7.0", None)]);
+        c.learn(None, &v("1.3.1"), 100, |_| Err(Error::Other("offline".into())));
+        assert!(c.error.as_deref().unwrap().contains("offline"));
+        assert!(
+            c.to_learn(None, &v("1.3.1"), 101).is_empty(),
+            "a failed read waits"
+        );
+        assert_eq!(
+            c.to_learn(None, &v("1.3.1"), 100 + RELEASE_RECHECK.as_secs())
+                .len(),
+            2
+        );
+    }
+
+    #[test]
+    fn chooses_the_newest_importer_the_launcher_accepts() {
+        let c = catalog(&[
+            ("v0.8.0", Some(">=1.4.0")),
+            ("v0.7.0", Some(">=1.3.0")),
+            ("v0.6.0", Some(">=1.0.4")),
+        ]);
+        let installed = v("0.5.2");
+        let tag = |launcher: &str| {
+            c.choose(&v(launcher), Some(&installed))
+                .map(|r| r.tag_name.clone())
+        };
+        assert_eq!(tag("1.2.6").as_deref(), Some("v0.6.0"));
+        assert_eq!(tag("1.3.1").as_deref(), Some("v0.7.0"));
+        assert_eq!(tag("1.4.0").as_deref(), Some("v0.8.0"));
+        assert!(
+            c.choose(&v("1.3.1"), Some(&v("0.7.0"))).is_none(),
+            "never a downgrade or the same"
+        );
+        assert_eq!(
+            c.waiting(&v("1.3.1"), Some(&installed)).unwrap().version,
+            v("0.8.0")
+        );
+        assert!(c.waiting(&v("1.4.0"), Some(&installed)).is_none());
+        let unknown = catalog(&[("v0.8.0", None), ("v0.7.0", Some(">=1.3.0"))]);
+        assert_eq!(
+            unknown.choose(&v("1.3.1"), Some(&installed)).unwrap().tag_name,
+            "v0.7.0",
+            "a release whose requirement isn't known yet is passed over"
+        );
+    }
+
+    #[test]
+    fn the_incident_updates_the_launcher_and_the_importer_in_one_run() {
+        let store = managed::testing::store("incident");
+        managed::install_release(
+            &store,
+            &managed::testing::seed(&store, "0.6.0", ">=1.0.4"),
+            &v("1.2.6"),
+            &Log(Mutex::default()),
+        )
+        .unwrap();
+        let mut c = Catalog::default();
+        c.latest.on_probe(Probe::Tag("v0.7.0".into()), 0);
+        let newest = managed::testing::seed(&store, "0.7.0", ">=1.3.0");
+        c.on_list(Ok(vec![newest, addon_release("v0.6.0")]), 0);
+        let (current, installed) = (v("1.2.6"), managed::installed(&store));
+        assert_eq!(installed, Some(v("0.6.0")));
+        c.learn(installed.as_ref(), &current, 0, |r| {
+            managed::requirement(&store, r)
+        });
+        assert_eq!(c.releases[0].needs, Some(">=1.3.0".parse().unwrap()));
+
+        let alone = plan(&c, installed.as_ref(), None, &current, None);
+        assert!(
+            alone.is_empty(),
+            "1.2.6 alone is never offered an importer it can't load"
+        );
+        assert_eq!(gate(&Phase::Idle, !alone.is_empty(), false), Gate::Play);
+
+        let launcher = launcher_release("v1.3.0");
+        let both = plan(&c, installed.as_ref(), Some(&launcher), &current, None);
+        assert_eq!(tags(&both), [(Part::Launcher, "v1.3.0"), (Part::Addon, "v0.7.0")]);
+        assert_eq!(gate(&Phase::Idle, !both.is_empty(), false), Gate::Update);
         let log = Log(Mutex::default());
         let mut seen = Vec::new();
-        let ran = run(&plan(Some(&a), Some(&l)), &log, |part, release, _| {
-            seen.push(part);
+        let ran = run(&both, &current, &log, |part, release, next, progress| {
+            seen.push((part, next.clone()));
             match part {
-                Part::Addon => Err(Error::Other("SHA-256 mismatch".into())),
                 Part::Launcher => Ok(release.version().unwrap()),
+                Part::Addon => managed::install_release(&store, release, next, progress),
             }
         });
-        assert_eq!(seen, [Part::Addon], "the launcher is not touched after a failure");
-        assert!(!ran.restart() && ran.done.is_empty());
-        assert!(
-            ran.error
-                .unwrap()
-                .contains("Simplified for Swofty v0.5.3: SHA-256 mismatch")
+        assert_eq!(
+            seen,
+            [(Part::Launcher, v("1.2.6")), (Part::Addon, v("1.3.0"))],
+            "the importer is checked against the launcher it updates to"
         );
-        let ran = run(&plan(Some(&a), Some(&l)), &log, |part, release, _| match part {
-            Part::Addon => Ok(release.version().unwrap()),
-            Part::Launcher => Err(Error::Other("disk full".into())),
+        assert_eq!(ran.error(), None);
+        assert_eq!(
+            ran.done,
+            [(Part::Launcher, v("1.3.0")), (Part::Addon, v("0.7.0"))]
+        );
+        assert!(ran.restart(), "one restart, into 1.3.0");
+        assert_eq!(managed::installed(&store), Some(v("0.7.0")));
+        let after = plan(&c, managed::installed(&store).as_ref(), None, &v("1.3.0"), None);
+        assert!(after.is_empty(), "nothing is left after the restart");
+        let log = log.0.into_inner().unwrap();
+        assert!(
+            log.iter().any(|(_, t)| t == "Updating Swofty Launcher (1 of 2)"),
+            "{log:?}"
+        );
+        assert!(
+            log.iter()
+                .any(|(_, t)| t == "Updating Simplified for Swofty (2 of 2)"),
+            "{log:?}"
+        );
+        assert_eq!(summary(&ran.done), "Launcher + Simplified");
+        assert_eq!(
+            describe(&ran.done),
+            "Swofty Launcher 1.3.0 and Simplified for Swofty 0.7.0"
+        );
+        std::fs::remove_dir_all(&store.root).ok();
+    }
+
+    #[test]
+    fn an_old_launcher_update_is_followed_by_the_importer_after_the_restart() {
+        let c = catalog(&[("v0.7.0", Some(">=1.3.0")), ("v0.6.0", Some(">=1.0.4"))]);
+        let next = plan(&c, Some(&v("0.6.0")), None, &v("1.3.1"), None);
+        assert_eq!(tags(&next), [(Part::Addon, "v0.7.0")]);
+        assert!(
+            follow_up(true, &next),
+            "a launcher restarted by an update installs it on its own"
+        );
+        assert!(!follow_up(false, &next));
+        let both = plan(
+            &c,
+            Some(&v("0.6.0")),
+            Some(&launcher_release("v1.3.2")),
+            &v("1.3.1"),
+            None,
+        );
+        assert!(!follow_up(true, &both), "a pending launcher waits for a click");
+    }
+
+    #[test]
+    fn an_importer_for_a_launcher_not_out_yet_is_not_offered() {
+        let c = catalog(&[("v0.8.0", Some(">=1.4.0")), ("v0.7.0", Some(">=1.3.0"))]);
+        let installed = v("0.7.0");
+        let p = plan(&c, Some(&installed), None, &v("1.3.1"), None);
+        assert!(p.is_empty());
+        assert_eq!(gate(&Phase::Idle, !p.is_empty(), false), Gate::Play);
+        assert_eq!(
+            c.waiting(&v("1.3.1"), Some(&installed)).unwrap().version,
+            v("0.8.0")
+        );
+        let p = plan(
+            &c,
+            Some(&installed),
+            Some(&launcher_release("v1.3.2")),
+            &v("1.3.1"),
+            None,
+        );
+        assert_eq!(
+            tags(&p),
+            [(Part::Launcher, "v1.3.2")],
+            "the launcher still updates"
+        );
+        let ran = run(&p, &v("1.3.1"), &Log(Mutex::default()), |_, r, _, _| {
+            Ok(r.version().unwrap())
         });
-        assert_eq!(ran.done, [(Part::Addon, v("0.5.3"))]);
-        assert!(!ran.restart() && ran.launcher().is_none());
-        let only_addon = run(&plan(Some(&a), None), &log, |_, r, _| Ok(r.version().unwrap()));
-        assert!(only_addon.restart(), "an addon-only update restarts too");
+        assert_eq!(ran.done, [(Part::Launcher, v("1.3.2"))]);
+        assert!(ran.restart());
+    }
+
+    #[test]
+    fn a_failed_importer_still_updates_the_launcher() {
+        let c = catalog(&[("v0.7.0", Some(">=1.3.0"))]);
+        let p = plan(
+            &c,
+            Some(&v("0.6.0")),
+            Some(&launcher_release("v1.3.0")),
+            &v("1.2.6"),
+            None,
+        );
+        let mut seen = Vec::new();
+        let ran = run(&p, &v("1.2.6"), &Log(Mutex::default()), |part, release, _, _| {
+            seen.push(part);
+            match part {
+                Part::Launcher => Ok(release.version().unwrap()),
+                Part::Addon => Err(Error::Other("SHA-256 mismatch".into())),
+            }
+        });
+        assert_eq!(seen, [Part::Launcher, Part::Addon]);
+        assert_eq!(ran.launcher(), Some(&v("1.3.0")));
+        assert!(ran.restart(), "the new launcher still starts");
+        assert_eq!(ran.failed_tag(Part::Addon), Some("v0.7.0"));
+        assert!(
+            ran.error()
+                .unwrap()
+                .contains("Simplified for Swofty v0.7.0: SHA-256 mismatch")
+        );
+        let held = plan(&c, Some(&v("0.6.0")), None, &v("1.3.0"), Some("v0.7.0"));
+        assert!(held.is_empty(), "an importer that failed doesn't hold Play");
+        assert_eq!(
+            gate(&Phase::Failed("x".into()), !held.is_empty(), false),
+            Gate::Play
+        );
+    }
+
+    #[test]
+    fn a_failed_launcher_still_updates_a_compatible_importer() {
+        let c = catalog(&[("v0.8.0", Some(">=1.3.1")), ("v0.7.0", Some(">=1.3.0"))]);
+        let p = plan(
+            &c,
+            Some(&v("0.6.0")),
+            Some(&launcher_release("v1.3.1")),
+            &v("1.3.0"),
+            None,
+        );
+        assert_eq!(tags(&p), [(Part::Launcher, "v1.3.1"), (Part::Addon, "v0.8.0")]);
+        let mut seen = Vec::new();
+        let ran = run(
+            &p,
+            &v("1.3.0"),
+            &Log(Mutex::default()),
+            |part, release, next, _| {
+                seen.push((part, release.tag_name.clone(), next.clone()));
+                match part {
+                    Part::Launcher => Err(Error::Other("disk full".into())),
+                    Part::Addon => Ok(release.version().unwrap()),
+                }
+            },
+        );
+        assert_eq!(
+            seen,
+            [
+                (Part::Launcher, "v1.3.1".into(), v("1.3.0")),
+                (Part::Addon, "v0.7.0".into(), v("1.3.0"))
+            ],
+            "the importer falls back to the newest the running launcher accepts"
+        );
+        assert_eq!(ran.addon(), Some(&v("0.7.0")));
+        assert!(!ran.restart(), "the failure stays on screen");
+        assert!(ran.error().unwrap().contains("Swofty Launcher v1.3.1: disk full"));
+        let only = catalog(&[("v0.8.0", Some(">=1.3.1"))]);
+        let p = plan(
+            &only,
+            Some(&v("0.7.0")),
+            Some(&launcher_release("v1.3.1")),
+            &v("1.3.0"),
+            None,
+        );
+        let ran = run(
+            &p,
+            &v("1.3.0"),
+            &Log(Mutex::default()),
+            |part, release, _, _| match part {
+                Part::Launcher => Err(Error::Other("disk full".into())),
+                Part::Addon => Ok(release.version().unwrap()),
+            },
+        );
+        assert!(
+            ran.done.is_empty(),
+            "an importer that needs the failed launcher waits"
+        );
+        assert_eq!(ran.failed.len(), 1);
+        let addon_only = run(
+            &plan(&only, Some(&v("0.7.0")), None, &v("1.3.1"), None),
+            &v("1.3.1"),
+            &Log(Mutex::default()),
+            |_, r, _, _| Ok(r.version().unwrap()),
+        );
+        assert!(addon_only.restart(), "an importer-only update restarts too");
     }
 
     #[test]

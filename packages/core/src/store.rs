@@ -240,9 +240,13 @@ impl Store {
     }
 
     pub fn install_addon(&self, src: &Path) -> Result<AddonManifest> {
+        self.install_addon_for(src, &crate::update::current_version())
+    }
+
+    pub fn install_addon_for(&self, src: &Path, launcher: &semver::Version) -> Result<AddonManifest> {
         if src.is_file() {
             let scratch = self.addons_dir().join(".importing");
-            let result = self.install_addon_zip(src, &scratch);
+            let result = self.install_addon_zip(src, &scratch, launcher);
             std::fs::remove_dir_all(&scratch).ok();
             return result;
         }
@@ -267,7 +271,7 @@ impl Store {
                 m.id
             )));
         }
-        if let Some(why) = crate::resolver::launcher_refusal(&m, &crate::update::current_version()) {
+        if let Some(why) = crate::resolver::launcher_refusal(&m, launcher) {
             return Err(Error::Other(why));
         }
         let dest = self.addons_dir().join(&m.id);
@@ -279,14 +283,19 @@ impl Store {
         Ok(m)
     }
 
-    fn install_addon_zip(&self, zip: &Path, scratch: &Path) -> Result<AddonManifest> {
+    fn install_addon_zip(
+        &self,
+        zip: &Path,
+        scratch: &Path,
+        launcher: &semver::Version,
+    ) -> Result<AddonManifest> {
         if scratch.exists() {
             std::fs::remove_dir_all(scratch).map_err(io_err(scratch))?;
         }
         map::unzip(zip, scratch, Error::Other)?;
         let root = crate::import::addon_root(scratch)
             .ok_or_else(|| Error::Other(format!("{} has no {MANIFEST_FILE}", zip.display())))?;
-        self.install_addon(&root)
+        self.install_addon_for(&root, launcher)
     }
 
     pub fn remove_addon(&self, id: &str) -> Result<()> {
