@@ -10,6 +10,15 @@ Owner: see `subsystems.tsv`. Write-up: research/exe.md §1.
 - Hardware settings XML: `Ne_Init_HardwareSettings` (0x14401c700) parses `system/hardware_settings_config.xml` (or `_vr`) into the doc 0x146044700 through `Ne_Load_XmlFromMount` (0x14401da80, parse call `site_Ne_HwXmlParseCall`), then the player's copy through its own `_wfopen` + `fread` + parse (`site_Ne_HwConfigParseCall`). Both hand `Ne_Parse_XmlDoc_Thunk` (0x1440142c0, a .data1 thunk) a reader whose +8 is a MemStream `{vtable, data, size, pos}`; the caller frees its own buffer pointer after the parse. `Ne_Save_HardwareSettings` (0x14401e350) writes the doc with `Ne_Save_XmlDoc` (0x14401ebd0), which serialises it and calls `fwrite(text, 1, len, f)` at `site_Ne_HwXmlWriteCall`. The first load is reached from the startup function 0x1401780c0 only after its `CreateMutexW("Codemasters F1 25")` call (0x1401790ee -> 0x1443e0ad0 -> 0x1443c0560 -> 0x1443c4fa0 -> 0x1443c5e24), so a plugin loaded at the early stage hooks it first.
 - Build facts: clang unity build `F1_2025_VS2022_win64_steam_master_dx12_clang_unity.exe`; no RTTI; `__PRETTY_FUNCTION__` strings in asserts recover class and method names (search strings_ascii.txt for `game::`).
 
+## Bindings across builds
+- Spec: `re/PROTOCOL.md` §10.
+- `re/tools/bindgen.py` writes `bindings.json` for the KB build (Steam) and `bindings.<build>.json` for every other overlay in `re/db/builds/` (`bindings.ea.json`).
+- Every set holds the same gated bindings with the same patterns, resolves, anchors and statuses; an overlay changes only sections, overridden patterns, hints and unresolvable entries.
+- Core picks the set whose `build.pe_timestamp` matches the running exe and resolves each binding the same way on every build: verified `match` hint, then section scan, then string anchor.
+- `build.packed: true` marks a build whose code section is encrypted on disk; core resolves and hooks its code bindings once that code reads decrypted.
+- The EA App build (sha256 `cc506879c1c834aa…`, pe_timestamp 1789128892) is packed: its engine code is in `.rdata` (Steam `.xtls`), its RWX `.xcode` sits where Steam has `.data1`, and the code is bulk-decrypted by the window stage.
+- `re/db/ea-targets.json` and `re/db/signatures.ea.json` were retired on 2026-10-22; their fixed EA targets were dropped and the scan replaces them.
+
 ## Open
 - NeStr release path (for mods that should not leak refs).
 

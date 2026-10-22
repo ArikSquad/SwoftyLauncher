@@ -5,6 +5,7 @@ Every agent working on the exe follows this file. `re/tools/kb_lint.py` and `re/
 BRIEF.md rules still apply: never launch the game, never write into the game install, never touch the EGO GameDatabases Editor, pin heavy work with `taskset -c 2-7,10,11,14-31 nice -n 10`.
 
 The KB describes exactly one build: `F1_25.exe` sha256 `d873a1c8d2044cef2fd76c99c9d5a97649c5b815d055540995105f46619865ae` (`re/db/signatures.json` → `build`). All addresses are VAs with image base `0x140000000`.
+Every other build the loader supports is an overlay on that KB in `re/db/builds/` (§10).
 
 ## 1. Evidence levels
 
@@ -148,7 +149,7 @@ Rules: a pattern must match **exactly once** in its section on every build liste
 1. **Static.** Get every function, global and field the hook needs to L2 (decomp + xrefs + data flow in the subsystem map). Add signatures, run `sigcheck.py`.
 2. **Trace-only hook.** Write a `swofty/trace.json` entry (see `TRACE_PLUGIN.md`) for the exact site and the registers/fields your behaviour hook will rely on. File a test request (§9). The trace answers: is it hit, how often, with which register values.
 3. **Behaviour hook.** Only after the trace confirms the assumptions (items to L3) and a verifier agreed on the L2 items. Keep the trace config active alongside it for the first runs.
-4. **Every game update.** `sigcheck.py --exe <new exe>`. Every signature that still matches once gets a new `verified` entry after its target is re-checked against the decomp; anything that fails is `stale`. All L3 items drop to L2 until their tests are re-run on the new build. Nothing ships on a build with failing signatures.
+4. **Every game update.** `sigcheck.py --exe <new exe>`. Every signature that still matches once gets a new `verified` entry after its target is re-checked against the decomp; anything that fails is `stale`. All L3 items drop to L2 until their tests are re-run on the new build. Nothing ships on a build with failing signatures. A build that ships beside the KB build instead of replacing it gets an overlay (§10).
 
 ## 9. Runtime test requests
 
@@ -158,3 +159,40 @@ The lead runs tests with the user, batched into one play session. Request one wi
 - The test lists the KB items it would promote to L3, the exact build (exe sha, loader, plugin versions), the trace config, numbered user steps, and expected log lines as regexes with a pass/fail rule.
 - No test may need the user to do anything risky to their saves or install beyond dropping files into `swofty/`.
 - After the session the lead files logs under `re/traces/T###/<run>/`, and the test's owner records the verdict in the test file and promotes or demotes the items.
+
+## 10. Builds
+
+`re/db/builds/<build>.json` describes one game build the loader supports; `steam.json` is the KB build and `ea.json` the EA App build.
+
+```
+{ "schema": 1,
+  "build": { "exe": "F1_25.exe", "sha256": "...", "size": 0, "pe_timestamp": 0, "image_base": "0x140000000",
+             "distribution": "Steam|EA App", "packed": false },
+  "note": "<optional build-level text>",
+  "sections": { "<KB section>": "<this build's section>" },
+  "overrides": { "<binding id>": { "pattern": "<bytes with ??>", "note": "<why the base pattern fails here>" } },
+  "hints": { "<binding id>": { "match": "0x<rva of the pattern match start>", "func_rva": "0x<anchor function rva>" } },
+  "unresolvable": { "<binding id>": "<reason>" } }
+```
+
+| field | meaning |
+|---|---|
+| `build` | the build's identity; `packed` is `true` when its code section is encrypted on disk and decrypts at runtime |
+| `sections` | KB section name to this build's section name for every binding (EA: `.xtls` → `.rdata`); unlisted names stay |
+| `overrides` | this build's `pattern` for a binding whose KB pattern does not match there; `note` is required, and `anchor`, `resolve`, `expect` and `section` may be replaced too |
+| `hints` | `match` is the RVA where the binding's pattern match starts on this build; `func_rva` is its string anchor's function RVA; either is optional |
+| `unresolvable` | bindings that cannot resolve on this build, each with its reason |
+
+Rules:
+- `re/tools/bindgen.py` writes one bindings set per overlay from the same gated bindings: `bindings.json` for the overlay whose `build.sha256` is the KB build, `bindings.<build>.json` for every other one.
+- Every emitted binding carries a non-empty `pattern` in every set.
+- Statuses are build-independent: `stable`, `experimental`, or `unresolvable` with a `reason` from the overlay.
+- A hint is the pattern match start, never a resolved target; core verifies it by bytes and scans when it differs.
+- The KB build's hints are each signature's `match` in `signatures.json`; an overlay hint replaces it.
+- The KB build's overlay takes no overrides: its patterns are the signatures in `signatures.json`, and its `build` must agree with that file's `build`.
+- A non-KB set carries no `rva`, and carries `match` and `string_anchor.func_rva` only where its overlay hints them.
+- Each overlay has its own `pe_timestamp`, which core selects the set by.
+- Overlay entries for bindings that are not exported are ignored and listed by bindgen.
+- `re/tools/capture.py --write` updates an overlay's `hints` from a launch's `[bind]` log lines.
+- `python3 -m unittest discover -s re/tools/tests -p 'test_bindgen.py'` tests the generator; with `SWOFTY_STEAM_EXE` set to the KB exe it also checks that every exported pattern matches exactly once at its `match`.
+- `re/tools/py re/tools/bindgen.py --exe <KB exe>` runs sigcheck on every exported binding and drops any that fails.
