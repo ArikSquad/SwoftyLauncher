@@ -28,12 +28,22 @@ const METADATA: u32 = 0x1F48_12BE;
 const END: u32 = 0x32C4_15AB;
 const DIRECTORY: u32 = 0x40;
 
-/// Offline play parks the real EA AntiCheat launcher under this name while a
-/// session runs and puts it back afterwards; the parked copy is the stock one.
-const PARKED: &[(&str, &str)] = &[(
-    "EAAntiCheat.GameServiceLauncher.exe",
-    "EAAntiCheat.GameServiceLauncher.exe.bak",
-)];
+/// EA AntiCheat's launcher files sit in the game root as `EAAntiCheat.*`. EA
+/// rewrites the launcher exe and its dll on a normal start, so their sizes
+/// drift from Steam's. Modded sessions never use them, so a drifted one is
+/// logged and never blocks; offline play parks and restores the exe itself.
+fn is_eac(rel: &str) -> bool {
+    !rel.contains('/') && rel.to_ascii_lowercase().starts_with("eaanticheat.")
+}
+
+fn modified_secs(path: &Path) -> Option<f64> {
+    std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_secs_f64())
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Entry {
@@ -251,11 +261,33 @@ pub fn sha1_file(path: &Path) -> Result<[u8; 20]> {
     Ok(h.finalize().into())
 }
 
-/// What `check` found: the files that are not Steam's, and what it did to
-/// the baseline on the way.
+/// A game file that is not Steam's copy, with what was measured so a bundle
+/// can tell one blocked player's case from another's.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Foreign {
+    pub rel: String,
+    pub measured: String,
+    pub size: Option<u64>,
+    pub steam: u64,
+    pub modified: Option<f64>,
+}
+
+/// An `EAAntiCheat.*` file in the game root whose size differs from Steam's.
+/// It is reported and does not block.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EacDrift {
+    pub rel: String,
+    pub size: Option<u64>,
+    pub steam: u64,
+}
+
+/// What `check` found: the files that are not Steam's, the EA AntiCheat files
+/// that drifted without blocking, and what it did to the baseline on the way.
 #[derive(Debug, Default, PartialEq)]
 pub struct Checked {
     pub foreign: Vec<String>,
+    pub detail: Vec<Foreign>,
+    pub eac: Vec<EacDrift>,
     pub proven: usize,
     pub rerecorded: Vec<String>,
     pub swept: Option<usize>,
@@ -300,6 +332,14 @@ pub fn check(data: &Path, game: &Game, depots: &Depots) -> Result<Checked> {
             r.source = Source::Depot;
             out.rerecorded.push(rel);
         } else {
+            let size = std::fs::metadata(&live).ok().map(|m| m.len());
+            out.detail.push(Foreign {
+                rel: rel.clone(),
+                measured: rel.clone(),
+                size,
+                steam: e.size,
+                modified: modified_secs(&live),
+            });
             out.foreign.push(rel);
         }
     }
@@ -311,23 +351,37 @@ pub fn check(data: &Path, game: &Game, depots: &Depots) -> Result<Checked> {
                 continue;
             }
             swept += 1;
-            let path = PARKED
-                .iter()
-                .find(|(f, _)| f.eq_ignore_ascii_case(rel))
-                .map(|(_, parked)| game.dir.join(parked))
-                .filter(|p| p.is_file())
-                .unwrap_or_else(|| game.dir.join(rel));
-            match std::fs::metadata(&path) {
-                Ok(m) if m.len() == e.size => {}
-                Ok(_) if placed.get(rel).is_some() && placed.wrote(rel, &sha256_file(&path)?) => {}
-                _ => out.foreign.push(rel.clone()),
+            let live = game.dir.join(rel);
+            let size = std::fs::metadata(&live).ok().map(|m| m.len());
+            if size == Some(e.size)
+                || (size.is_some() && placed.get(rel).is_some() && placed.wrote(rel, &sha256_file(&live)?))
+            {
+                continue;
             }
+            if is_eac(rel) {
+                out.eac.push(EacDrift {
+                    rel: rel.clone(),
+                    size,
+                    steam: e.size,
+                });
+                continue;
+            }
+            out.detail.push(Foreign {
+                rel: rel.clone(),
+                measured: rel.clone(),
+                size,
+                steam: e.size,
+                modified: modified_secs(&live),
+            });
+            out.foreign.push(rel.clone());
         }
         out.swept = Some(swept);
         baseline.stock_checked = out.foreign.is_empty();
     }
     out.foreign.sort();
     out.foreign.dedup();
+    out.detail.sort_by(|a, b| a.rel.cmp(&b.rel));
+    out.eac.sort_by(|a, b| a.rel.cmp(&b.rel));
     if baseline != loaded {
         baseline.save(data)?;
     }
@@ -340,6 +394,8 @@ pub struct Report {
     pub at: f64,
     pub files: Vec<String>,
     pub game: PathBuf,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub detail: Vec<Foreign>,
 }
 
 impl Report {
@@ -350,7 +406,13 @@ impl Report {
                 .map_or(0.0, |d| d.as_secs_f64()),
             files,
             game: game.to_path_buf(),
+            detail: Vec::new(),
         }
+    }
+
+    pub fn with_detail(mut self, detail: Vec<Foreign>) -> Self {
+        self.detail = detail;
+        self
     }
 
     pub fn path(data: &Path) -> PathBuf {

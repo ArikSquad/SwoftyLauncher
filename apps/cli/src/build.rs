@@ -201,9 +201,11 @@ fn check_stock(store: &Store, g: &Game, out: &dyn Fn(&str)) -> Result<Option<Dep
             out(&format!(
                 "[stock] {why}; the game files are not checked against Steam"
             ));
+            heal_launcher(store, &g.dir, None, out)?;
             return Ok(None);
         }
     };
+    heal_launcher(store, &g.dir, Some(&depots as &dyn DepotHashes), out)?;
     let checked = stock::check(&store.root, g, &depots)?;
     if checked.proven > 0 {
         out(&format!(
@@ -216,14 +218,49 @@ fn check_stock(store: &Store, g: &Game, out: &dyn Fn(&str)) -> Result<Option<Dep
             "[stock] {rel} matches Steam's copy again; backed up as the original"
         ));
     }
+    for d in &checked.eac {
+        out(&format!(
+            "[stock] {} differs from Steam's copy (size {}, Steam {}); not used by modded sessions, continuing",
+            d.rel,
+            d.size.map_or("missing".to_owned(), |n| n.to_string()),
+            d.steam
+        ));
+    }
     if let Some(n) = checked.swept {
         out(&format!("[stock] {n} game file(s) checked against Steam's list"));
     }
     if !checked.foreign.is_empty() {
-        stock::Report::new(checked.foreign.clone(), &g.dir).write(&store.root)?;
+        for f in &checked.detail {
+            out(&format!(
+                "[stock] {} is not Steam's copy (measured {}, size {}, Steam {}, modified {})",
+                f.rel,
+                f.measured,
+                f.size.map_or("missing".to_owned(), |n| n.to_string()),
+                f.steam,
+                f.modified.map_or("unknown".to_owned(), |t| format!("{t:.0}"))
+            ));
+        }
+        stock::Report::new(checked.foreign.clone(), &g.dir)
+            .with_detail(checked.detail.clone())
+            .write(&store.root)?;
         return Err(swofty_core::Error::NotStock(checked.foreign).into());
     }
     Ok(Some(depots))
+}
+
+/// Clear a stale EA AntiCheat backup an interrupted session left before the
+/// stock check runs, logging what it did. Does nothing while a session is
+/// pending.
+fn heal_launcher(
+    store: &Store,
+    game: &Path,
+    depot: Option<&dyn DepotHashes>,
+    out: &dyn Fn(&str),
+) -> Result<()> {
+    for note in swofty_core::offline::heal_before_check(&store.root, game, depot)? {
+        out(&format!("[stock] {note}"));
+    }
+    Ok(())
 }
 
 /// An original that turned out not to be Steam's while the install backed it

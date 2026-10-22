@@ -308,6 +308,10 @@ impl Bundle {
             let name = file_name(&log);
             c.file(format!("state/{name}"), &log, None);
         }
+        let not_stock = store.root.join("state/not-stock.json");
+        if not_stock.is_file() {
+            c.file("state/not-stock.json".into(), &not_stock, None);
+        }
         for dir in &sessions {
             let session = file_name(dir);
             loader.extend(loader_line(
@@ -413,6 +417,8 @@ impl Bundle {
             }
             None => s.push_str("No crash report was found (the game did not write one this session)\n"),
         }
+        s.push_str("\nGame files against Steam\n");
+        s.push_str(&game_files_section(store, report.game.dir.as_deref()));
         s.push_str("\nPerformance\n");
         match perf {
             Some((label, path)) => {
@@ -693,6 +699,66 @@ fn crash_excerpt(text: &str) -> Vec<String> {
             stack += 1;
         }
     }
+    out
+}
+
+/// The stock check's last verdict and the EA AntiCheat launcher files in the
+/// game root, so a blocked player's bundle shows which file failed and what EA
+/// rewrote.
+fn game_files_section(store: &Store, game: Option<&Path>) -> String {
+    let mut s = String::new();
+    match crate::stock::Report::read(&store.root) {
+        Some(r) if !r.detail.is_empty() => {
+            s.push_str(&format!("  last launch stopped: {}\n", r.title()));
+            for f in &r.detail {
+                s.push_str(&format!(
+                    "  {} (measured {}, size {}, Steam {}, modified {})\n",
+                    f.rel,
+                    f.measured,
+                    f.size.map_or("missing".to_owned(), |n| n.to_string()),
+                    f.steam,
+                    f.modified.map_or("unknown".to_owned(), |t| format!("{t:.0}"))
+                ));
+            }
+        }
+        Some(r) => s.push_str(&format!(
+            "  last launch stopped: {} ({})\n",
+            r.title(),
+            r.files.join(", ")
+        )),
+        None => s.push_str("  No stock-check failure on record\n"),
+    }
+    let eac = game.map(eac_files).unwrap_or_default();
+    if eac.is_empty() {
+        s.push_str("  No EAAntiCheat.* files found in the game folder\n");
+    }
+    for line in eac {
+        s.push_str(&format!("  {line}\n"));
+    }
+    s
+}
+
+fn eac_files(game: &Path) -> Vec<String> {
+    let mut out: Vec<String> = std::fs::read_dir(game)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if !name.to_ascii_lowercase().starts_with("eaanticheat.") {
+                return None;
+            }
+            let meta = e.metadata().ok();
+            let size = meta.as_ref().map_or("?".to_owned(), |m| m.len().to_string());
+            let modified = meta
+                .as_ref()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map_or("?".to_owned(), |d| d.as_secs().to_string());
+            Some(format!("{name} (size {size}, modified {modified})"))
+        })
+        .collect();
+    out.sort();
     out
 }
 

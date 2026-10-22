@@ -156,6 +156,61 @@ fn the_parked_ea_launcher_and_the_launchers_own_leftovers_are_not_foreign() {
     assert!(c.foreign.is_empty(), "{:?}", c.foreign);
 }
 
+const EAC_DLL: &str = "EAAntiCheat.GameServiceLauncher.dll";
+
+#[test]
+fn ea_anticheat_launcher_files_drift_without_blocking() {
+    let f = Fixture::new("eac-drift");
+    f.write(EAC, b"ea rewrote the launcher exe on a normal start");
+    f.write(EAC_DLL, b"ea rewrote the dll too");
+    let d = depots(&[(EAC, b"stock exe"), (EAC_DLL, b"stock dll")]);
+    let c = stock::check(&f.data, &f.game, &d).unwrap();
+    assert!(c.foreign.is_empty(), "{:?}", c.foreign);
+    assert_eq!(c.eac.len(), 2, "both drifted files are reported, neither blocks");
+    assert!(
+        f.baseline().stock_checked,
+        "a drifted anti-cheat file still lets the sweep finish"
+    );
+}
+
+#[test]
+fn a_stock_launcher_exe_with_a_stale_backup_is_not_foreign() {
+    let f = Fixture::new("eac-stale-bak");
+    f.write(EAC, b"stock exe");
+    f.write(&format!("{EAC}.bak"), b"a stale backup of a different size");
+    let d = depots(&[(EAC, b"stock exe")]);
+    let c = stock::check(&f.data, &f.game, &d).unwrap();
+    assert!(c.foreign.is_empty());
+    assert!(c.eac.is_empty(), "the live exe matches Steam, nothing to report");
+    assert!(f.baseline().stock_checked);
+}
+
+#[test]
+fn modified_game_data_still_blocks_even_with_eac_drift() {
+    let f = Fixture::new("eac-and-data");
+    f.write(EAC, b"ea rewrote this");
+    f.write("F1_25.exe", b"modded exe");
+    f.write(UI, b"modded ui");
+    let d = depots(&[
+        (EAC, b"stock exe"),
+        ("F1_25.exe", b"stock exe bytes"),
+        (UI, b"stock ui"),
+    ]);
+    let c = stock::check(&f.data, &f.game, &d).unwrap();
+    let mut want = vec!["F1_25.exe".to_owned(), UI.to_owned()];
+    want.sort();
+    assert_eq!(c.foreign, want, "real game data still stops the launch");
+    assert_eq!(c.eac.len(), 1, "the anti-cheat file is reported, not blocked");
+    assert!(
+        !f.baseline().stock_checked,
+        "a foreign game file keeps the sweep open"
+    );
+    let exe = c.detail.iter().find(|x| x.rel == "F1_25.exe").unwrap();
+    assert_eq!(exe.measured, "F1_25.exe");
+    assert_eq!(exe.size, Some(b"modded exe".len() as u64));
+    assert_eq!(exe.steam, b"stock exe bytes".len() as u64);
+}
+
 #[test]
 fn files_steam_does_not_list_are_left_alone() {
     let f = Fixture::new("unlisted");
