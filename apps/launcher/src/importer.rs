@@ -128,7 +128,7 @@ impl Shell {
         }
         self.updates.adding = true;
         let store = self.store.clone();
-        let offered = self.updates.addon.offer(None).cloned();
+        let offered = self.updates.missing_addon().cloned();
         cx.spawn_in(window, async move |this, cx| {
             let result = cx
                 .background_executor()
@@ -137,7 +137,8 @@ impl Shell {
                         Some(r) => r,
                         None => managed::fetch_latest(FETCH_TIMEOUT).map_err(|e| e.to_string())?,
                     };
-                    managed::install_release(&store, &release, &Reporter(Shared::default()))
+                    let launcher = swofty_core::update::current_version();
+                    managed::install_release(&store, &release, &launcher, &Reporter(Shared::default()))
                         .map_err(|e| e.to_string())
                 })
                 .await;

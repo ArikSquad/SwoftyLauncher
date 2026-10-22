@@ -236,7 +236,7 @@ The launcher's update check reads `"updates"` in `$DATA/config.json`:
 
 Older configs may still hold `skip`, `checked_at` and `latest` under `"updates"`, and `checked_at` under `"managed"`. The launcher ignores them and drops them the next time it saves the config.
 
-The launcher reads the latest release tag from the `releases/latest` redirect on github.com, which doesn't count against GitHub's API rate limit. It calls the GitHub API once for each new release, to get its downloads, and waits for `Retry-After` or the rate limit reset when GitHub refuses a request.
+The launcher reads the latest release tag from the `releases/latest` redirect on github.com, which doesn't count against GitHub's API rate limit. It calls the GitHub API once for each new launcher release, to get its downloads, and waits for `Retry-After` or the rate limit reset when GitHub refuses a request. For Simplified for Swofty, it lists the 20 newest releases through the GitHub API when it opens, when the latest tag changes and every 15 minutes. It reads each new release's launcher requirement once, from a `swofty.json` release asset when there is one and from the package otherwise.
 
 To test an update, set `SWOFTY_UPDATE_PRETEND_VERSION=0.1.0`. The launcher and `swofty update` will treat the running version as `0.1.0`.
 
