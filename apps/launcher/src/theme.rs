@@ -1,5 +1,5 @@
 use gpui_kit::component::{Theme, ThemeMode};
-use gpui_kit::{App, Global, Hsla, px, rgb};
+use gpui_kit::{Anchor, App, Global, Hsla, hsla, px, rgb};
 
 #[derive(Clone, Copy)]
 pub struct Palette {
@@ -115,6 +115,9 @@ pub fn init(cx: &mut App) {
         t.success = p.success;
         t.warning = p.warning;
         t.danger = p.error;
+        t.overlay = hsla(0., 0., 0., 0.55);
+        t.notification.placement = Anchor::BottomRight;
+        t.notification.margins.bottom = px(crate::play_bar::HEIGHT + 16.);
     });
     cx.set_global(p);
 }

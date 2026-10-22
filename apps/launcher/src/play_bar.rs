@@ -8,6 +8,8 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 
 use crate::game::{self, ago, duration};
+
+pub(crate) const HEIGHT: f32 = 72.;
 use crate::library::plural;
 use crate::pages::avatar;
 use crate::shell::{Page, PlayState, Shell};
@@ -420,7 +422,7 @@ impl Shell {
     pub(crate) fn play_bar(&self, p: Palette, wide: bool, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.play_state();
         h_flex()
-            .h(px(72.))
+            .h(px(HEIGHT))
             .flex_shrink_0()
             .bg(p.chrome)
             .border_t_1()
