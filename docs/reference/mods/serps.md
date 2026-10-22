@@ -59,7 +59,7 @@ swofty build
 
 The mod's id is `<author>.<name>`: both lowercased, each run of other characters turned into `-`. `RM Designs` and `Scuderia AlphaTauri ORLEN` give `rm-designs.scuderia-alphatauri-orlen`. Without either, the id comes from the file name. Importing an id that's already in the library replaces that mod, and every profile keeps its place and switch.
 
-`swofty build` prints the mod's ops among the rest. Read it for conflicts with other mods and addons, and for ops waiting on the in-game loader. The **Mods** page shows the same counts on the mod's row ([Mods and tracks](/using/mods#read-a-mod-s-row)).
+`swofty build` prints the mod's ops among the rest. Read it for conflicts with other mods and addons, and for ops waiting on the in-game loader. The **Mods** page shows the same counts on the mod's row ([Mods and tracks](/using/addons#check-an-addon)).
 
 ## What the importer accepts
 
