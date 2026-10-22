@@ -1,25 +1,25 @@
 ---
-title: Mod Importer
-description: Turn mods and community tracks into Swofty addons with the Mod Importer, made with Team Simplified.
+title: Simplified Importer
+description: Turn mods and community tracks into Swofty addons with the Simplified Importer, made with Team Simplified.
 ---
 
-# Mod Importer
+# Simplified Importer
 
-The **Mod Importer** turns a mod into a Swofty addon. It's made with Team Simplified and comes with the launcher as their addon, **Mod Importer** (id `teamsimplified.mods`). After an import, the mod is an ordinary addon on the [Addons](/using/addons) page: you turn it on per profile, set its place in the load order and check its conflicts there.
+The **Simplified Importer** turns a mod into a Swofty addon. It's made with Team Simplified and comes with the launcher as their addon, **Simplified Importer** (id `teamsimplified.mods`). After an import, the mod is an ordinary addon on the [Addons](/using/addons) page: you turn it on per profile, set its place in the load order and check its conflicts there.
 
 Anything that already has a `swofty.json` is an addon; install it on the [Addons](/using/addons) page instead.
 
 ## Import a mod or track
 
-1. Open **Mod Importer** in the sidebar.
+1. Open **Simplified Importer** in the sidebar.
 2. Drop the mod anywhere on the launcher window, or select **Choose a mod…**. You can import:
    - a zip, 7z or RAR archive, or a folder, with files laid out like the game folder;
    - a `.serps` package made with Simplified Studio;
    - a community track zip, or a download zip that holds one;
    - a modded `gamedatabases.2025.bin`.
-3. The Mod Importer compares the mod with the game's clean files, makes an addon of what it changes, installs it and turns it on in the active profile. The launcher then opens **Addons** and highlights the new addon.
+3. The Simplified Importer compares the mod with the game's clean files, makes an addon of what it changes, installs it and turns it on in the active profile. The launcher then opens **Addons** and highlights the new addon.
 
-The game folders can sit at the top of the mod, up to three folders down, or in a folder named like `F1 25`. The Mod Importer leaves out `.exe`, `.dll` and `.asi` files and names them in the result. It can't read encrypted archives.
+The game folders can sit at the top of the mod, up to three folders down, or in a folder named like `F1 25`. The Simplified Importer leaves out `.exe`, `.dll` and `.asi` files and names them in the result. It can't read encrypted archives.
 
 Importing the same mod again replaces its addon and keeps its place and switch in every profile.
 
@@ -48,7 +48,7 @@ Drop a track zip on the launcher without unpacking it. It becomes a track addon 
 
 ## Mods from an earlier version
 
-Before 1.3.0, mods lived in a library on a **Mods** page. The first time 1.3.0 starts, the Mod Importer converts every mod in that library into an addon, in each profile's order and with the same switches. A dialog lists each mod with a tick when it converts or a cross and the reason when it can't. A large library may convert over more than one start; **Convert now** on the Mod Importer page converts the rest.
+Before 1.3.0, mods lived in a library on a **Mods** page. The first time 1.3.0 starts, the Simplified Importer converts every mod in that library into an addon, in each profile's order and with the same switches. A dialog lists each mod with a tick when it converts or a cross and the reason when it can't. A large library may convert over more than one start; **Convert now** on the Simplified Importer page converts the rest.
 
 The library stays in `$DATA/addon-data/teamsimplified.mods/library/` as the source for **Re-import**.
 

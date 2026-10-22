@@ -53,6 +53,13 @@ pub(crate) fn badge(icon: IconName, size: f32, p: Palette) -> Div {
     tile(size, p).child(Icon::new(icon).size(px(size * 0.5)).text_color(p.text_muted))
 }
 
+/// The race track mark (The Noun Project, RaceTrack 7280751, licensed) for track
+/// addons without an icon of their own.
+pub(crate) fn track_badge(size: f32, p: Palette) -> Div {
+    const TRACK: &[u8] = include_bytes!("../assets/track.svg");
+    tile(size, p).child(svg().data(TRACK).size(px(size * 0.55)).text_color(p.text_muted))
+}
+
 pub(crate) fn logo(size: f32) -> Div {
     static LOGO: LazyLock<Arc<Image>> = LazyLock::new(|| {
         Arc::new(Image::from_bytes(
@@ -696,7 +703,7 @@ impl Shell {
                     div()
                         .text_size(px(13.))
                         .text_color(p.text_placeholder)
-                        .child("Starts with SwoftyMod and the Mod Importer"),
+                        .child("Starts with SwoftyMod and the Simplified Importer"),
                 )
                 .on_click(cx.listener(|this, _, window, cx| this.profile_prompt(None, false, window, cx)))
                 .into_any_element(),

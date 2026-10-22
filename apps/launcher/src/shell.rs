@@ -47,7 +47,7 @@ impl Page {
         match self {
             Self::News => "News",
             Self::Addons => "Addons",
-            Self::Importer => "Mod Importer",
+            Self::Importer => "Simplified Importer",
             Self::Tools => "Tools",
             Self::Profiles => "Profiles",
             Self::Database => "DB Editor",
@@ -1108,7 +1108,7 @@ impl Shell {
     }
 
     /// The addon panels the sidebar lists: the DB Editor, then every addon
-    /// page except the Mod Importer's own pages.
+    /// page except the Simplified Importer's own pages.
     fn panels(&self, p: Palette, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let importer = self.importer_section();
         let db = Page::Database;
@@ -1146,7 +1146,6 @@ impl Shell {
         let big = [
             (Page::News, None),
             (Page::Addons, Some(self.library.listed().count())),
-            (Page::Importer, None),
             (Page::Tools, None),
             (Page::Profiles, Some(self.library.profiles.len())),
         ];
@@ -1172,6 +1171,14 @@ impl Shell {
                     .flex_shrink_0()
                     .gap(px(2.))
                     .children(big.map(|(page, count)| self.big_nav(page, count, p, cx))),
+            )
+            .child(
+                v_flex()
+                    .flex_shrink_0()
+                    .pt(px(if short { 4. } else { 12. }))
+                    .gap(px(6.))
+                    .child(label("SIMPLIFIED FOR SWOFTY", p).px(px(8.)))
+                    .child(self.big_nav(Page::Importer, None, p, cx)),
             )
             .child(
                 v_flex()

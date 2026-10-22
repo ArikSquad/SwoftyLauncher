@@ -19,7 +19,7 @@ use swofty_core::manifest::{Category, Kind, MANIFEST_FILE};
 use swofty_core::profile::VANILLA;
 
 use crate::library::{AddonItem, Changes, Source, plural};
-use crate::pages::{GUTTER, addon_icon, badge, chevron, fact, label, logo, tag};
+use crate::pages::{GUTTER, addon_icon, badge, chevron, fact, label, logo, tag, track_badge};
 use crate::shell::{Page, Shell};
 use crate::theme::{Palette, palette};
 
@@ -123,6 +123,31 @@ impl Facet {
             Self::Source(s) => s.label(),
             Self::State(s) => s.label(),
         }
+    }
+}
+
+/// Addons that load first, in this order: SwoftyMod, then Simplified for Swofty.
+/// Nothing is placed above them.
+const PINNED: [&str; 2] = [swofty_core::builtin::CORE_ID, swofty_core::managed::ID];
+
+/// How far `id`, at `from` among `addons`, moves to land on `to`, kept below
+/// the pinned addons.
+fn pinned_delta(addons: &[swofty_core::profile::ProfileAddon], id: &str, from: usize, to: usize) -> isize {
+    let floor = addons
+        .iter()
+        .filter(|a| a.id != id)
+        .enumerate()
+        .filter(|(_, a)| PINNED.contains(&a.id.as_str()))
+        .last()
+        .map_or(0, |(i, _)| i + 1);
+    to.max(floor) as isize - from as isize
+}
+
+/// The icon an addon without its own shows: a race track for tracks, else a box.
+fn fallback_icon(m: &AddonItem, size: f32, p: Palette) -> Div {
+    match m.category() {
+        Some(Category::Tracks) => track_badge(size, p),
+        _ => badge(IconName::Package, size, p),
     }
 }
 
@@ -619,10 +644,62 @@ impl Shell {
         let (Some(a), Some(b)) = (at(id), at(target)) else {
             return;
         };
-        if a != b {
-            let (id, delta) = (id.to_owned(), b as isize - a as isize);
+        let delta = pinned_delta(addons, id, a, b);
+        if delta != 0 {
+            let id = id.to_owned();
             self.update_profile(window, cx, |p| p.move_addon(&id, delta));
         }
+    }
+
+    /// Whether the list shows `id` among the addons that are on.
+    fn listed_on(&self, id: &str) -> bool {
+        let (order, loaded) = self.ordered();
+        order[..loaded].iter().any(|m| m.manifest.id == id)
+    }
+
+    /// Drops `id` on `target`: onto an addon that is on, it turns on and takes that
+    /// place in the load order; onto one that is off, it turns off.
+    fn drop_onto(&mut self, id: &str, target: &str, window: &mut Window, cx: &mut Context<Self>) {
+        match (self.listed_on(id), self.listed_on(target)) {
+            (true, true) => {
+                if self
+                    .library
+                    .listed()
+                    .any(|m| m.manifest.id == id && self.movable(m))
+                {
+                    self.move_onto(id, target, window, cx);
+                }
+            }
+            (false, true) => {
+                let registry = self.library.registry.clone();
+                let (id, target) = (id.to_owned(), target.to_owned());
+                self.update_profile(window, cx, |p| {
+                    registry.set_enabled(p, &id, true)?;
+                    let at = |x: &str| p.addons.iter().position(|a| a.id == x);
+                    match (at(&id), at(&target)) {
+                        (Some(a), Some(b)) => match pinned_delta(&p.addons, &id, a, b) {
+                            0 => Ok(()),
+                            delta => p.move_addon(&id, delta),
+                        },
+                        _ => Ok(()),
+                    }
+                });
+            }
+            (true, false) => self.set_addon_enabled(id, false, window, cx),
+            (false, false) => {}
+        }
+    }
+
+    /// Drops `id` on a group's heading: ON turns it on, OFF turns it off.
+    fn drop_into(&mut self, id: &str, on: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if self.listed_on(id) != on {
+            self.set_addon_enabled(id, on, window, cx);
+        }
+    }
+
+    /// Addons that can be dragged between ON and OFF, and turned on or off.
+    fn switchable(&self, m: &AddonItem) -> bool {
+        !self.vanilla() && !m.locked
     }
 
     fn move_step(&mut self, id: &str, up: bool, window: &mut Window, cx: &mut Context<Self>) {
@@ -638,7 +715,11 @@ impl Shell {
     }
 
     fn movable(&self, m: &AddonItem) -> bool {
-        !self.vanilla() && m.enabled && !m.locked && !m.manifest.is_builtin()
+        !self.vanilla()
+            && m.enabled
+            && !m.locked
+            && !m.manifest.is_builtin()
+            && !PINNED.contains(&m.manifest.id.as_str())
     }
 
     /// Turns off every addon except those that are always on and those whose
@@ -949,7 +1030,7 @@ impl Shell {
             if short {
                 "Mods convert into addons"
             } else {
-                "Mods convert into Swofty addons in the Mod Importer."
+                "Mods convert into Swofty addons using the Simplified Importer."
             },
         )
         .border_color(p.border_variant)
@@ -958,9 +1039,9 @@ impl Shell {
                 .outline()
                 .small()
                 .label(if roomy {
-                    "Go to Mod Importer"
+                    "Go to Simplified Importer"
                 } else {
-                    "Mod Importer"
+                    "Simplified Importer"
                 })
                 .on_click(cx.listener(|this, _, _, cx| this.open_page(Page::Importer, cx))),
         );
@@ -1123,23 +1204,13 @@ impl Shell {
         let mut children: Vec<AnyElement> = Vec::new();
         let mut scroll_to = None;
         let mut last_group = None;
+        if !vanilla && !shown.iter().any(|(i, _)| *i < loaded) {
+            children.push(self.group_heading(Some(true), true, true, p, cx));
+        }
         for (i, id) in &shown {
             let group = (!vanilla).then_some(*i < loaded);
             if group != last_group {
-                let title = match group {
-                    Some(true) => format!("ON IN {} · LOAD ORDER", self.library.profile.name.to_uppercase()),
-                    Some(false) => "OFF".to_owned(),
-                    None => "INSTALLED".to_owned(),
-                };
-                children.push(
-                    div()
-                        .px(px(12.))
-                        .pt(px(if children.is_empty() { 8. } else { 14. }))
-                        .pb(px(6.))
-                        .flex_shrink_0()
-                        .child(label(title, p))
-                        .into_any_element(),
-                );
+                children.push(self.group_heading(group, children.is_empty(), false, p, cx));
                 last_group = group;
             }
             let fade = highlight.filter(|(h, _)| h == id).map(|(_, k)| *k);
@@ -1153,6 +1224,9 @@ impl Shell {
             if !split && self.open_addon.as_ref() == Some(id) {
                 children.push(self.addon_detail(id, true, p, cx));
             }
+        }
+        if !vanilla && last_group != Some(false) {
+            children.push(self.group_heading(Some(false), children.is_empty(), true, p, cx));
         }
         if let Some(ix) = scroll_to {
             self.addons.scroll_pending = false;
@@ -1243,6 +1317,52 @@ impl Shell {
             .into_any_element()
     }
 
+    /// A group's heading in the list. ON and OFF take a dragged addon, which turns
+    /// it on or off; an empty group says so.
+    fn group_heading(
+        &self,
+        group: Option<bool>,
+        first: bool,
+        empty: bool,
+        p: Palette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let title = match group {
+            Some(true) => format!("ON IN {} · LOAD ORDER", self.library.profile.name.to_uppercase()),
+            Some(false) => "OFF".to_owned(),
+            None => "INSTALLED".to_owned(),
+        };
+        let heading = v_flex()
+            .id(SharedString::from(format!("group-{group:?}")))
+            .px(px(12.))
+            .pt(px(if first { 8. } else { 14. }))
+            .pb(px(6.))
+            .gap(px(6.))
+            .flex_shrink_0()
+            .child(label(title, p))
+            .when(empty, |d| {
+                d.child(
+                    div()
+                        .py(px(10.))
+                        .text_size(px(12.))
+                        .text_color(p.text_placeholder)
+                        .child(match group {
+                            Some(true) => "Drag an addon here to turn it on",
+                            _ => "Drag an addon here to turn it off",
+                        }),
+                )
+            });
+        let Some(on) = group else {
+            return heading.into_any_element();
+        };
+        heading
+            .drag_over::<DraggedAddon>(move |s, _, _, _| s.bg(p.hover))
+            .on_drop(
+                cx.listener(move |this, d: &DraggedAddon, window, cx| this.drop_into(&d.id, on, window, cx)),
+            )
+            .into_any_element()
+    }
+
     fn list_row(
         &self,
         m: &AddonItem,
@@ -1254,7 +1374,7 @@ impl Shell {
         let man = &m.manifest;
         let id = man.id.clone();
         let selected = self.open_addon.as_ref() == Some(&id);
-        let movable = self.movable(m);
+        let draggable = self.switchable(m);
         let pairs = self.live_pairs(m);
         let lost = pairs.iter().filter(|pr| pr.loser == id).count();
         let won = pairs.len() - lost;
@@ -1284,9 +1404,9 @@ impl Shell {
         let icon = match &m.icon {
             _ if man.is_builtin() => logo(28.),
             Some(icon) => addon_icon(icon, 28., p),
-            None => badge(IconName::Package, 28., p),
+            None => fallback_icon(m, 28., p),
         };
-        let grip = div().w(px(14.)).flex_shrink_0().when(movable, |d| {
+        let grip = div().w(px(14.)).flex_shrink_0().when(draggable, |d| {
             d.child(
                 Icon::new(IconName::GripVertical)
                     .size(px(14.))
@@ -1466,19 +1586,27 @@ impl Shell {
                     cx.notify();
                 }
             }));
-        if !movable {
-            return row.into_any_element();
-        }
-        let dragged = DraggedAddon {
-            id: id.clone(),
-            name: man.name.clone().into(),
+        let row = match self.vanilla() {
+            true => row,
+            false => {
+                let target = id.clone();
+                row.drag_over::<DraggedAddon>(move |s, _, _, _| s.bg(p.hover).border_color(p.accent))
+                    .on_drop(cx.listener(move |this, d: &DraggedAddon, window, cx| {
+                        this.drop_onto(&d.id, &target, window, cx)
+                    }))
+            }
         };
-        row.on_drag(dragged, |d, _, _, cx| cx.new(|_| d.clone()))
-            .drag_over::<DraggedAddon>(move |s, _, _, _| s.bg(p.hover).border_color(p.accent))
-            .on_drop(
-                cx.listener(move |this, d: &DraggedAddon, window, cx| this.move_onto(&d.id, &id, window, cx)),
-            )
-            .into_any_element()
+        let row = match draggable {
+            true => {
+                let dragged = DraggedAddon {
+                    id: id.clone(),
+                    name: man.name.clone().into(),
+                };
+                row.on_drag(dragged, |d, _, _, cx| cx.new(|_| d.clone()))
+            }
+            false => row,
+        };
+        row.into_any_element()
     }
 
     fn changes_of(&mut self, id: &str) -> Changes {
@@ -1551,7 +1679,7 @@ impl Shell {
             .child(match &m.icon {
                 _ if man.is_builtin() => logo(40.),
                 Some(icon) => addon_icon(icon, 40., p),
-                None => badge(IconName::Package, 40., p),
+                None => fallback_icon(m, 40., p),
             })
             .child(
                 v_flex()
@@ -1707,17 +1835,6 @@ impl Shell {
                     .icon(IconName::Database)
                     .label("Edit in DB Editor")
                     .on_click(cx.listener(move |this, _, _, cx| this.db_edit_addon(&id, cx)))
-                    .into_any_element(),
-            );
-        }
-        if m.source == Source::Importer {
-            actions.push(
-                Button::new("detail-importer")
-                    .outline()
-                    .small()
-                    .icon(IconName::FolderInput)
-                    .label("Open in Mod Importer")
-                    .on_click(cx.listener(|this, _, _, cx| this.open_page(Page::Importer, cx)))
                     .into_any_element(),
             );
         }
@@ -2048,5 +2165,39 @@ impl Shell {
             )
             .children(items)
             .into_any_element()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use swofty_core::profile::ProfileAddon;
+
+    use super::pinned_delta;
+
+    fn addons(ids: &[&str]) -> Vec<ProfileAddon> {
+        ids.iter()
+            .map(|id| ProfileAddon {
+                id: (*id).into(),
+                enabled: true,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn nothing_moves_above_swoftymod_or_simplified_for_swofty() {
+        let list = addons(&["swofty.core", "teamsimplified.mods", "a", "b"]);
+        assert_eq!(
+            pinned_delta(&list, "b", 3, 0),
+            -1,
+            "b stops below the pinned addons"
+        );
+        assert_eq!(pinned_delta(&list, "b", 3, 2), -1);
+        assert_eq!(pinned_delta(&list, "a", 2, 3), 1);
+        let list = addons(&["swofty.core", "a", "teamsimplified.mods", "b"]);
+        assert_eq!(
+            pinned_delta(&list, "a", 1, 1),
+            1,
+            "an addon above them moves below"
+        );
     }
 }

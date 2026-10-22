@@ -5,16 +5,16 @@ description: Install addons, find them with search and filters, turn them on per
 
 # Addons
 
-Everything the launcher loads is an addon: a folder with a `swofty.json`. A data addon changes the game's database, text, archives and files; a code addon adds an engine plugin, a launcher page or both. Mods you download for the game folder become addons through the [Mod Importer](/using/mods), and changes you make in the [DB Editor](/using/db-editor) save as addons.
+Everything the launcher loads is an addon: a folder with a `swofty.json`. A data addon changes the game's database, text, archives and files; a code addon adds an engine plugin, a launcher page or both. Mods you download for the game folder become addons through the [Simplified Importer](/using/mods), and changes you make in the [DB Editor](/using/db-editor) save as addons.
 
 ## Install an addon
 
 The two cards at the top of the **Addons** page are the ways in:
 
 - **Installing a Swofty Addon?** Drop a `.swoftyaddon`, a zip of an addon or an addon folder on the card, or click it to choose a file. **Choose a folder…** picks an addon folder. You can also drop an addon anywhere on the launcher window.
-- **Installing a mod?** **Go to Mod Importer** opens the [Mod Importer](/using/mods), which turns the mod into an addon.
+- **Installing a mod?** **Go to Simplified Importer** opens the [Simplified Importer](/using/mods), which turns the mod into an addon.
 
-A file that isn't an addon, and that no addon such as the Mod Importer imports, opens a dialog that names it. The dialog lists up to five files. **Go to Mod Importer** opens the [Mod Importer](/using/mods), and **Read the addon docs** opens the [addon reference](/reference/addons/) in your browser.
+A file that isn't an addon, and that no addon such as the Simplified Importer imports, opens a dialog that names it. The dialog lists up to five files. **Go to Simplified Importer** opens the [Simplified Importer](/using/mods), and **Read the addon docs** opens the [addon reference](/reference/addons/) in your browser.
 
 The launcher copies the addon to `$DATA/addons/<id>/`, opens **Addons** and highlights it. Installing an addon with an id that's already installed replaces it. A new addon starts off in every profile.
 
@@ -26,7 +26,7 @@ Type in the search box on the left to search names, ids, authors and description
 |---|---|
 | Category | What the addon is for: Tracks, Liveries, Cars, Drivers & teams, Seasons, Database, Gameplay, UI, Audio, Tools, Other, or Uncategorised. Built-in addons show no category. |
 | Type | What it changes: Database, Archives, Text & UI, Files, Code |
-| Source | Built in, DB Editor, Mod Importer, Installed. Each row shows its source as a tag with the same name. |
+| Source | Built in, DB Editor, Simplified, Installed. Each row shows its source as a tag with the same name. |
 | State | On, Off, Has conflicts, Update available |
 
 Each value shows how many addons match. **Clear** removes every filter. An open panel closes when its addon no longer matches.
@@ -35,7 +35,7 @@ On a window less than 760 pixels tall, the install cards shrink to one row.
 
 ## Turn addons on or off
 
-Each row has a switch for the active [profile](/using/profiles). The next time you press **Play**, the launcher builds the profile with the change.
+The list has two groups for the active [profile](/using/profiles): **On** and **Off**. Use the switch on a row, or drag the row into the other group, to turn it on or off. Dropped on a row that is on, an addon turns on in that place in the load order. The next time you press **Play**, the launcher builds the profile with the change.
 
 Some addons, such as Driver Manager, change what your careers store. Turning one of those off asks first: careers you played with it may not load without it. Select **Turn off anyway** to go ahead, or **Cancel** to leave it on.
 
@@ -45,7 +45,7 @@ In the `vanilla` profile the list is read-only. Switch to a modded profile to tu
 
 ## Load order
 
-Addons that are on are listed first, in load order. When two addons change the same thing, the one lower in the list wins. Drag a row, or use the arrows in its panel, to move it. Rows that are always on have no drag handle.
+Addons that are on are listed first, in load order. When two addons change the same thing, the one lower in the list wins. Drag a row, or use the arrows in its panel, to move it. Rows that are always on have no drag handle. Built-in addons can be dragged between **On** and **Off** but keep their place in the load order. SwoftyMod and Simplified for Swofty always load first: nothing can be dragged above them.
 
 After a conflict check, a row that is on shows **Loses to** with the number of addons lower in the list that replace some of its changes, or **Wins over** with the number it replaces. The badges go away when an addon is turned on, turned off or moved, until the next check.
 
@@ -59,7 +59,7 @@ Select a row to open its panel: description, author, version, source, whether it
 
 Select a conflict to see what it covers, grouped by archive, database table, text or folder. **Details** lists the items, ten at first; **Show all** lists the rest.
 
-An addon from the DB Editor has **Edit in DB Editor**. An addon from the Mod Importer has **Open in Mod Importer**.
+An addon from the DB Editor has **Edit in DB Editor**.
 
 ## Change its settings
 
@@ -76,7 +76,7 @@ Removing a DB Editor addon deletes its changes. To keep them, select **Export** 
 | Addon | What it does |
 |---|---|
 | **SwoftyMod** | Loads addons in game and adds **ADDON SETTINGS**. It's always on in modded profiles |
-| **Simplified for Swofty** | Team Simplified's addon: the [Mod Importer](/using/mods). The launcher installs it, [keeps it up to date](/using/updating#simplified-for-swofty) and keeps it on |
+| **Simplified for Swofty** | Team Simplified's addon: the [Simplified Importer](/using/mods). The launcher installs it, [keeps it up to date](/using/updating#simplified-for-swofty) and keeps it on |
 
 Each release also installs a few addons switched off, such as xanpavle's F1 25 RE-Optimization; see [Addons that ship with the launcher](/using/bundled-addons).
 
@@ -98,7 +98,7 @@ Add `--profile <name>` to work on a profile other than the active one. For an ad
 
 ## Next
 
-- [Mod Importer](/using/mods): turn a mod into an addon.
+- [Simplified Importer](/using/mods): turn a mod into an addon.
 - [DB Editor](/using/db-editor): change the game database and save it as an addon.
 - [Profiles](/using/profiles): keep different sets of addons apart.
 - To make an addon, see [Addons](/reference/addons/) in the developer docs.

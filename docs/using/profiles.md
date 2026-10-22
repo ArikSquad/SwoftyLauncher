@@ -7,7 +7,7 @@ description: Create, switch, rename, duplicate and delete profiles, each with it
 
 Use a profile to keep a whole setup together: which addons are on, their load order and every addon setting. When you want to swap setups, switch profiles. Each one keeps its own saves.
 
-To play F1 25 exactly as shipped, choose `vanilla`, the built-in profile with nothing installed. You can't edit it. Every modded profile includes the [built-in addons](/using/addons#built-in-addons), SwoftyMod and the Mod Importer.
+To play F1 25 exactly as shipped, choose `vanilla`, the built-in profile with nothing installed. You can't edit it. Every modded profile includes the [built-in addons](/using/addons#built-in-addons), SwoftyMod and the Simplified Importer.
 
 ## Create a profile
 
@@ -16,7 +16,7 @@ To play F1 25 exactly as shipped, choose `vanilla`, the built-in profile with no
 3. Type a name using letters, digits, `-` and `_`.
 4. Select **Create**.
 
-Your new profile starts with the built-in addons and nothing else. To fill out your setup, turn on addons on the [Addons](/using/addons) page and convert mods in the [Mod Importer](/using/mods).
+Your new profile starts with the built-in addons and nothing else. To fill out your setup, turn on addons on the [Addons](/using/addons) page and convert mods in the [Simplified Importer](/using/mods).
 
 ## Switch profile
 

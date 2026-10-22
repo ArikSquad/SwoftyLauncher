@@ -192,7 +192,7 @@ fn steps(edited: &Edited, source: Source, p: Palette) -> impl IntoElement {
         .child(step(
             3,
             "Add mods the safe way",
-            "Use the Mod Importer below to add a mod as an addon Swofty installs and removes cleanly.",
+            "Use the Simplified Importer below to add a mod as an addon Swofty installs and removes cleanly.",
             p,
         ))
         .when(edited.leftovers(), |d| {
@@ -252,7 +252,7 @@ fn footer(shell: WeakEntity<Shell>, leftovers: bool, p: Palette) -> DialogFooter
                         .outline()
                         .h(px(36.))
                         .px(px(14.))
-                        .label("Go to Mod Importer")
+                        .label("Go to Simplified Importer")
                         .on_click(move |_, window, cx| {
                             window.close_dialog(cx);
                             importer.update(cx, |s, cx| s.open_page(Page::Importer, cx)).ok();

@@ -515,9 +515,9 @@ impl Shell {
                         }),
                 );
             let mods = if one {
-                "Mods like this one go through the Mod Importer, which turns them into addons."
+                "Mods like this one go through the Simplified Importer, which turns them into addons."
             } else {
-                "Mods like these go through the Mod Importer, which turns them into addons."
+                "Mods like these go through the Simplified Importer, which turns them into addons."
             };
             alert
                 .width(px(540.))
@@ -537,7 +537,7 @@ impl Shell {
                             Button::new("not-addon-importer")
                                 .primary()
                                 .icon(IconName::ArrowRight)
-                                .label("Go to Mod Importer")
+                                .label("Go to Simplified Importer")
                                 .on_click(move |_, window, cx| {
                                     window.close_dialog(cx);
                                     shell.update(cx, |s, cx| s.open_page(Page::Importer, cx)).ok();

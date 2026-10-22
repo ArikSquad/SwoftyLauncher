@@ -144,7 +144,7 @@ export default defineConfigWithTheme<DocsThemeConfig>({
               { text: "News", link: "/using/news" },
               { text: "Addons", link: "/using/addons" },
               { text: "Addons that ship with the launcher", link: "/using/bundled-addons" },
-              { text: "Mod Importer", link: "/using/mods" },
+              { text: "Simplified Importer", link: "/using/mods" },
               { text: "Profiles", link: "/using/profiles" },
               { text: "In-game addon settings", link: "/using/swofty-mod" },
               { text: "Steam and EA app copies", link: "/using/game-copies" },
