@@ -46,7 +46,7 @@ The launcher doesn't start Steam for a game folder outside a Steam library, or i
 
 From 1.3.1, **Play** on an [EA app copy](/using/game-copies) runs in this order:
 
-1. The launcher starts the EA app when it's closed and waits up to 90 seconds for `EADesktop.exe`. The status line reads **Starting the EA app…**.
+1. The launcher starts the EA app when it's closed and waits up to 90 seconds for `EADesktop.exe`. On Windows it runs `EALauncher.exe`. On Linux it runs `ea_launch_command` without the link. The status line reads **Starting the EA app…**.
 2. It installs your profile and offline play into the game folder.
 3. It hands the EA app the launch link `origin2://game/launch?offerIds=<ids>&autoDownload=1`, with `&cmdParams=-vr` for **Play in VR**. The IDs are the `<contentID>` values in the game folder's `__Installer/installerdata.xml`. The status line reads **Starting F1 25 through the EA app…**.
 4. It waits for F1 25 to start and close, including a second copy the EA app starts, then rolls the game folder back.
@@ -58,7 +58,7 @@ When F1 25 hasn't started 3 minutes after the link, the launcher opens the EA ap
 | Windows | An `EADesktop.exe` process | The `origin2` handler in `HKEY_CLASSES_ROOT\origin2\shell\open\command`; otherwise `EALauncher.exe` from `HKEY_LOCAL_MACHINE\SOFTWARE\Electronic Arts\EA Desktop` or `Program Files\Electronic Arts\EA Desktop\EA Desktop` |
 | Linux | An `EADesktop.exe` process under Wine | The `ea_launch_command` setting; see [The EA app copy on Linux](/using/game-copies#the-ea-app-copy-on-linux) |
 
-On Windows, `ea_launch_command` replaces the handler when it's set.
+On Windows, `ea_launch_command` replaces the handler when it's set. The EA app registers the handler with an unquoted path, and the launcher runs everything up to `.exe` as the program.
 
 When the EA app doesn't come up, the launch stops with one of these messages:
 
@@ -79,7 +79,7 @@ When the EA app doesn't come up, the launch stops with one of these messages:
 [ea app] F1 25 started (pid 5120)
 ```
 
-`swofty doctor` shows whether the EA app runs and how the link reaches it, in its `ea app` and `ea app hand-off` rows. `swofty run --direct` starts an EA app copy through Proton instead, without the EA app.
+`swofty doctor` shows whether the EA app runs and how the link reaches it, in its `ea app` and `ea app hand-off` rows. `swofty run --direct` starts an EA app copy through Proton instead, without the EA app. `swofty game launch` hands the EA app the launch link for the copy as it's installed, without your profile or offline play.
 
 ## Linux: the Steam wrapper
 

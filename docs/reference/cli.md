@@ -254,9 +254,12 @@ Shows whether Steam is running and signed in, with what the launcher read it fro
 swofty game list
 swofty game use <steam|ea|folder>
 swofty game add <folder>
+swofty game launch [--vr] [--no-start-store] [--game <dir>]
 ```
 
 From 1.3.1. `list` shows every copy of F1 25 the launcher found, with its store, version and folder, and `*` next to the active one. `use` picks the copy that `run`, `apply`, `build` and the launcher play. `add` adds a folder with `F1_25.exe` and makes it the active copy. See [Steam and EA app copies](/using/game-copies).
+
+`launch` asks the EA app to start the EA app copy as it's installed, without your profile or offline play, so EA AntiCheat runs. It starts the EA app first when it's closed, prints the game's process ID once F1 25 starts, and exits. `--vr` passes `-vr`. It works only on an EA app copy.
 
 ## `swofty doctor`
 

@@ -29,11 +29,15 @@ The folder becomes the active copy. A folder with `__Installer/installerdata.xml
 | Copy | Found from |
 |---|---|
 | Steam | The Steam library that has app 3059520 |
-| EA app on Windows | `Install Dir` under `HKEY_LOCAL_MACHINE\SOFTWARE\Codemasters\F1_25`, then the Windows uninstall entries, then `Program Files\EA Games` |
+| EA app on Windows | `Install Dir` under `HKEY_LOCAL_MACHINE\SOFTWARE\Codemasters\F1_25`, then the Windows uninstall entries, then the EA app's download folders, then `Program Files\EA Games` |
 | EA app on Linux | Added with **Add another folder…** |
 | Any other folder | Added with **Add another folder…** |
 
 An EA app copy needs `F1_25.exe` and `__Installer/installerdata.xml` in its folder.
+
+The EA app's download folders are the `downloadinplacedir` lines in `%ProgramData%\EA Desktop\machine.ini` and `%LOCALAPPDATA%\Electronic Arts\EA Desktop\user_<id>.ini`.
+
+An added folder that no longer has the game shows as **Folder not found** in the switcher, and **Play** uses the first copy found instead.
 
 ## The store starts with the game
 
@@ -58,6 +62,7 @@ On Linux, the launcher hands the EA app a launch link through a command you set.
 ```
 
 - `ea_launch_command` runs with `sh -c`. It must reach the EA app that is already running when there is one, in the same Wine prefix.
+- When the EA app is closed, **Play** runs `ea_launch_command` with `{url}` left out to start it, then waits up to 90 seconds for `EADesktop.exe`. When that command exits with an error, the launch link starts the EA app instead.
 - `ea_prefix` is the EA app's Wine prefix: the folder with `user.reg`, or the Proton folder that holds `pfx`. The launcher writes the in-game loader's DLL setting there.
 
 Without `ea_launch_command`, **Play** on the EA app copy stops with a message naming the setting.
@@ -70,10 +75,12 @@ swofty game use steam
 swofty game use ea
 swofty game use "/games/F1 25"
 swofty game add "/games/F1 25"
+swofty game launch --vr
 ```
 
 - `swofty game list` shows each copy's store, version and folder, with `*` next to the active one.
 - `swofty game use` picks the active copy by store (`steam`, `ea`) or folder.
 - `swofty game add` adds a folder and makes it the active copy.
+- `swofty game launch` asks the EA app to start the EA app copy as it's installed, without your profile or offline play. Add `--vr` for VR.
 - `--game <dir>` on any command plays that folder for one run.
 - `swofty doctor` lists every copy and marks the active one.
