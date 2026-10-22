@@ -1562,13 +1562,18 @@ impl Shell {
         let note = match report {
             _ if self.vanilla() => format!("{VANILLA} has no addons to conflict"),
             None => "Not checked yet. Checking plans this profile's build without installing it.".to_owned(),
+            Some(r) if !r.is_current(&self.library.profile) => format!(
+                "Checked {}, before addons were turned on, off or moved. Check again to update it.",
+                ago(r.built_at)
+            ),
             Some(r) if self.changed_since(id, r.built_at) => format!(
                 "Checked {}, before this addon last changed. Check again to include it.",
                 ago(r.built_at)
             ),
             Some(r) => format!("Checked {}", ago(r.built_at)),
         };
-        let stale = report.is_some_and(|r| self.changed_since(id, r.built_at));
+        let stale = report
+            .is_some_and(|r| !r.is_current(&self.library.profile) || self.changed_since(id, r.built_at));
         let pairs: Vec<&Pair> = self.pairs_of(id).collect();
         let rows: Vec<AnyElement> = pairs
             .iter()

@@ -410,6 +410,7 @@ pub(crate) fn build_as(store: &Store, profile: &str, game: &Game, checking: bool
         profile: profile.into(),
         built_at: crate::conflicts::now(),
         pairs: Vec::new(),
+        order: p.enabled().map(str::to_owned).collect(),
     };
     if p.is_vanilla() {
         built.plan = Plan::vanilla();
@@ -621,6 +622,7 @@ pub(crate) fn build_as(store: &Store, profile: &str, game: &Game, checking: bool
     let (lines_at, warnings_at) = (built.lines.len(), built.warnings.len());
     if let Some(saved) = Saved::load(&built.overlay, &built.buildhash).filter(|s| s.usable(store, game)) {
         saved.restore(&mut built);
+        built.report.order = p.enabled().map(str::to_owned).collect();
         crate::write_json(&crate::conflicts::path(store, profile), &built.report)?;
         return Ok(built);
     }
@@ -1004,7 +1006,10 @@ pub(crate) fn build_as(store: &Store, profile: &str, game: &Game, checking: bool
     let (report, within) = crate::conflicts::summarise(profile, &planned.conflicts, &record);
     built.warnings.extend(report.pairs.iter().map(|p| p.line(&name)));
     built.warnings.extend(within);
-    built.report = report;
+    built.report = Report {
+        order: built.report.order.clone(),
+        ..report
+    };
     built.conflicts = planned.conflicts;
     built.waiting = planned.waiting;
     if !built.plan.is_vanilla() {
@@ -2101,6 +2106,7 @@ mod tests {
             built.warnings
         );
         let report = crate::conflicts::last(&store, "default").unwrap();
+        assert!(report.is_current(&store.profile("default").unwrap()));
         assert_eq!(report.pairs, checked.pairs);
         assert_eq!(report.pairs, built.report.pairs);
         let pair = &report.pairs[0];

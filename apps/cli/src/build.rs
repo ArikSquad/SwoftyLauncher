@@ -551,7 +551,7 @@ mod tests {
         let mut report = Report {
             profile: "default".into(),
             built_at: 1.0,
-            pairs: Vec::new(),
+            ..Report::default()
         };
         let names = BTreeMap::from([("t.b".to_owned(), "Second".to_owned())]);
         assert_eq!(
