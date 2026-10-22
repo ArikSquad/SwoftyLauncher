@@ -9,16 +9,16 @@ The **DB Editor** page edits F1 25's game database, `gamedatabases.2025.bin`: dr
 
 ## Save your changes as an addon
 
-The changes you make are a draft until you save them. The launcher saves the draft after every change, and it's still there when the launcher opens again. The top of the page names what you're editing, **New addon** or the name of an addon, and says **Unsaved changes** with their number, or **Saved**.
+The changes you make are a draft until you save them. The launcher saves the draft after every change, and it's still there when the launcher opens again. The top of the page names what you're editing, **New addon** or the name of an addon, and says how many changes are not saved to the addon yet, or **Saved**. On a narrow window, the buttons move above the name.
 
 - **Save as Addon** turns a new draft into an addon. Give it a name, an author, a category and a description. The new addon is turned on in the active profile, and the launcher switches to **Addons** with the addon highlighted. **Vanilla** stays stock, so an addon saved there stays off.
 - **Save** writes your changes into the addon you're editing and switches to **Addons**.
-- **Discard changes** puts the addon back to what's saved, or a new draft back to no changes.
+- **Discard changes** puts the addon back to how it was last saved, or a new draft back to no changes.
 - **Edit in DB Editor** on an addon's row on **Addons** opens it here. With unsaved changes to another addon, the DB Editor asks whether to save them, discard them or stay.
 - **New addon** starts a new draft from the game's stock values.
 - **Details…** changes the name, version, author, category and description of the addon you're editing.
 
-DB Editor addons are ordinary addons. **Addons** lists them with the tag **Built from DB Editor**, turns them on and off, sets their order and removes them. When two addons change the same value, the one lower in the list wins. The launcher writes the changes into the game folder when the game starts and rolls the folder back when it exits.
+DB Editor addons are ordinary addons. **Addons** lists them with the tag **DB Editor**, turns them on and off, sets their order and removes them. When two addons change the same value, the one lower in the list wins. The launcher writes the changes into the game folder when the game starts and rolls the folder back when it exits.
 
 A value another DB Editor addon that's on also changes says so, and says which change wins.
 
@@ -56,7 +56,7 @@ A page shows its rows in a table. Pages with a choice above the table, such as t
 
 ## Changes
 
-**Changes** lists every change in the draft, with the game's value and yours. Revert one change there, or every change with **Revert all changes**. Reverted changes are unsaved until you save.
+**All changes** at the top of the page lists every change in the draft, with the game's value and yours. Each change is named by its page's row and column, such as **Default Driver › Race number**; a change no page shows is named by its key path. Revert one change there, or every change with **Revert all changes**. Reverted changes are unsaved until you save.
 
 ## Import
 

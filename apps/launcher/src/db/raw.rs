@@ -99,10 +99,24 @@ fn shape(path: &str) -> String {
         .join(".")
 }
 
+fn title_case(word: &str) -> String {
+    word.split(['_', '-'])
+        .filter(|w| !w.is_empty())
+        .map(|w| {
+            let mut c = w.chars();
+            c.next()
+                .map(|f| f.to_uppercase().chain(c).collect::<String>())
+                .unwrap_or_default()
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 pub(crate) struct ChangeItem {
     pub group: Option<String>,
     pub edit: Option<Edit>,
     pub name: String,
+    pub path: Option<String>,
     pub node: Option<NodeId>,
 }
 
@@ -689,18 +703,36 @@ impl Shell {
         let mut groups: Vec<(String, Vec<ChangeItem>)> = Vec::new();
         for e in &self.db.draft.edits.edits {
             let node = catalog.node_of_key(e.key);
+            let mut path = Some(e.path.clone().unwrap_or_else(|| hex(e.key)));
             let (name, group) = match node {
                 Some(n) if e.stock.is_some() => {
-                    let (name, _) = friendly(&catalog, n);
+                    let (mut name, row) = friendly(&catalog, n);
                     let group = match table_of(&catalog, n) {
                         Some(t) => {
-                            let path = catalog.path(t);
-                            let shaped = shape(&path);
-                            self.db
-                                .modules
-                                .iter()
-                                .find(|m| shape(&m.rows) == shaped)
-                                .map_or(path, |m| m.title.clone())
+                            let table = catalog.path(t);
+                            let shaped = shape(&table);
+                            let module = self.db.modules.iter().find(|m| shape(&m.rows) == shaped);
+                            if let (Some(m), Some(row)) = (module, row) {
+                                let r = catalog.node(row);
+                                let rel = name.split_once(" › ").map_or("", |(_, rel)| rel);
+                                let field = m.fields.iter().find(|f| f.path == rel);
+                                let label = r.label.clone().unwrap_or_else(|| r.name.clone());
+                                let shown = self
+                                    .db
+                                    .view
+                                    .as_ref()
+                                    .filter(|v| v.module == m.id)
+                                    .and_then(|v| v.view.rows.iter().find(|x| x.label == label))
+                                    .map(|x| x.name.clone())
+                                    .filter(|n| !n.is_empty())
+                                    .or_else(|| r.display.clone())
+                                    .unwrap_or_else(|| title_case(&label));
+                                if let Some(f) = field {
+                                    name = format!("{shown} › {}", f.label);
+                                    path = None;
+                                }
+                            }
+                            module.map_or(table, |m| m.title.clone())
                         }
                         None if catalog.node(catalog.node(n).parent.unwrap_or(0)).kind
                             == NodeKind::Unnamed =>
@@ -720,6 +752,7 @@ impl Shell {
                 group: None,
                 edit: Some(e.clone()),
                 name,
+                path,
                 node,
             };
             match groups.iter_mut().find(|(g, _)| *g == group) {
@@ -733,6 +766,7 @@ impl Shell {
                 group: Some(format!("{g} · {}", items.len())),
                 edit: None,
                 name: String::new(),
+                path: None,
                 node: None,
             });
             out.extend(items);
@@ -844,8 +878,8 @@ impl Shell {
             None => "removed".to_owned(),
         };
         let origin = match &e.origin {
-            Origin::Typed => "Typed".to_owned(),
-            Origin::Imported(f) => format!("Imported from {f}"),
+            Origin::Typed => None,
+            Origin::Imported(f) => Some(format!("Imported from {f}")),
         };
         h_flex()
             .id(SharedString::from(format!("db-change-{key:x}")))
@@ -860,7 +894,7 @@ impl Shell {
             .child(
                 v_flex()
                     .flex_1()
-                    .min_w_0()
+                    .min_w(px(160.))
                     .child(
                         div()
                             .text_size(px(13.))
@@ -868,23 +902,23 @@ impl Shell {
                             .truncate()
                             .child(it.name.clone()),
                     )
-                    .child(
+                    .children(it.path.clone().map(|path| {
                         div()
                             .text_size(px(11.))
                             .text_color(p.text_placeholder)
                             .truncate()
-                            .child(e.path.clone().unwrap_or_else(|| hex(key))),
-                    ),
+                            .child(path)
+                    })),
             )
             .child(
                 h_flex()
-                    .w(px(300.))
+                    .w(px(220.))
                     .flex_shrink_0()
                     .gap(px(8.))
                     .text_size(px(13.))
                     .child(
                         div()
-                            .max_w(px(130.))
+                            .max_w(px(100.))
                             .truncate()
                             .text_color(p.text_muted)
                             .child(stock),
@@ -903,15 +937,17 @@ impl Shell {
                             .child(new),
                     ),
             )
-            .child(
-                div()
-                    .w(px(170.))
-                    .flex_shrink_0()
-                    .text_size(px(12.))
-                    .text_color(p.text_muted)
-                    .truncate()
-                    .child(origin),
-            )
+            .when_some(origin.filter(|_| self.content_width >= 1100.), |d, origin| {
+                d.child(
+                    div()
+                        .w(px(170.))
+                        .flex_shrink_0()
+                        .text_size(px(12.))
+                        .text_color(p.text_muted)
+                        .truncate()
+                        .child(origin),
+                )
+            })
             .child(
                 Button::new(SharedString::from(format!("db-change-revert-{key:x}")))
                     .ghost()

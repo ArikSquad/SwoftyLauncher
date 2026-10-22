@@ -20,6 +20,7 @@ use crate::theme::{Palette, palette};
 const ROW_H: f32 = 40.;
 const NAME_W: f32 = 220.;
 const MOVE_W: f32 = 56.;
+const NARROW: f32 = 1100.;
 
 pub(crate) fn notice(
     id: &'static str,
@@ -129,7 +130,7 @@ pub(crate) fn nav_row(
 }
 
 impl Shell {
-    fn db_header(&self, p: Palette, cx: &mut Context<Self>) -> impl IntoElement {
+    fn db_header(&self, p: Palette, cx: &mut Context<Self>) -> AnyElement {
         let profile = self.library.profile.name.clone();
         let ready = self.db.catalog().is_some();
         let n = self.db.draft.edits.len();
@@ -152,7 +153,8 @@ impl Shell {
         let (state, color) = match (unsaved, &bound) {
             (0, Some(_)) => ("Saved".to_owned(), p.success),
             (0, None) => ("No changes yet".to_owned(), p.text_placeholder),
-            (k, _) => (format!("Unsaved changes · {k}"), p.warning),
+            (k, Some(_)) => (format!("{k} not saved to the addon"), p.warning),
+            (k, None) => (format!("{k} not saved yet"), p.warning),
         };
         let pill = h_flex()
             .h(px(22.))
@@ -232,11 +234,65 @@ impl Shell {
                 Button::new("db-changes")
                     .outline()
                     .icon(IconName::ListChecks)
-                    .label(format!("Changes ({n})"))
+                    .label(format!("All changes ({n})"))
                     .disabled(!ready)
                     .on_click(cx.listener(|this, _, _, cx| this.db_go(Nav::Changes, cx))),
             )
             .child(save);
+        let title = div()
+            .text_size(px(18.))
+            .font_weight(FontWeight::SEMIBOLD)
+            .child("DB Editor");
+        let line = h_flex()
+            .gap(px(10.))
+            .min_w_0()
+            .child(
+                Icon::new(if bound.is_some() {
+                    IconName::Pencil
+                } else {
+                    IconName::PackagePlus
+                })
+                .size(px(14.))
+                .text_color(p.text_muted),
+            )
+            .child(
+                div()
+                    .min_w(px((target.chars().count() as f32 * 7.).min(160.)))
+                    .flex_shrink(1.)
+                    .text_size(px(13.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .truncate()
+                    .child(target),
+            )
+            .children(place.map(|t| {
+                div()
+                    .text_size(px(13.))
+                    .flex_shrink_0()
+                    .text_color(if broken { p.error } else { p.text_muted })
+                    .child(t)
+            }))
+            .when(!broken, |d| d.child(pill))
+            .children(turn_on)
+            .children(discard)
+            .children(details)
+            .children(fresh);
+        if self.content_width < NARROW {
+            return v_flex()
+                .px(px(GUTTER))
+                .pt(px(22.))
+                .pb(px(16.))
+                .gap(px(10.))
+                .flex_shrink_0()
+                .child(
+                    h_flex()
+                        .gap(px(16.))
+                        .items_center()
+                        .child(title.flex_1())
+                        .child(actions),
+                )
+                .child(line)
+                .into_any_element();
+        }
         h_flex()
             .px(px(GUTTER))
             .pt(px(22.))
@@ -244,67 +300,24 @@ impl Shell {
             .gap(px(16.))
             .items_end()
             .flex_shrink_0()
-            .child(
-                v_flex()
-                    .flex_1()
-                    .min_w_0()
-                    .gap(px(8.))
-                    .child(
-                        div()
-                            .text_size(px(18.))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child("DB Editor"),
-                    )
-                    .child(
-                        h_flex()
-                            .gap(px(10.))
-                            .min_w_0()
-                            .child(
-                                Icon::new(if bound.is_some() {
-                                    IconName::Pencil
-                                } else {
-                                    IconName::PackagePlus
-                                })
-                                .size(px(14.))
-                                .text_color(p.text_muted),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(13.))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .truncate()
-                                    .child(target),
-                            )
-                            .children(place.map(|t| {
-                                div()
-                                    .text_size(px(13.))
-                                    .flex_shrink_0()
-                                    .text_color(if broken { p.error } else { p.text_muted })
-                                    .child(t)
-                            }))
-                            .when(!broken, |d| d.child(pill))
-                            .children(turn_on)
-                            .children(discard)
-                            .children(details)
-                            .children(fresh),
-                    ),
-            )
+            .child(v_flex().flex_1().min_w_0().gap(px(8.)).child(title).child(line))
             .child(h_flex().gap(px(8.)).pb(px(2.)).child(actions))
+            .into_any_element()
     }
 
     pub(crate) fn db_page(&mut self, p: Palette, cx: &mut Context<Self>) -> AnyElement {
         let career = Self::career_link();
         let career_label = match self.db_link_state(&career) {
-            LinkState::Open => "Open Career Editor".to_owned(),
-            LinkState::Off(_) => "Turn on Career Editor".to_owned(),
-            LinkState::Missing => "Get Career Editor".to_owned(),
+            LinkState::Open => "Open Career Mode Editor".to_owned(),
+            LinkState::Off(_) => "Turn on Career Mode Editor".to_owned(),
+            LinkState::Missing => "Get Career Mode Editor".to_owned(),
         };
         let strip = notice(
             "db-career-notice",
             IconName::Info,
             p.accent,
             "Changes apply when you press Play, to careers you start afterwards. To edit a career in \
-             progress, use Career Editor."
+             progress, use Career Mode Editor."
                 .into(),
             p,
         )
@@ -965,29 +978,17 @@ impl Shell {
                             .flex_shrink_0()
                             .gap(px(8.))
                             .child(
-                                v_flex()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .child(
-                                        div()
-                                            .text_size(px(13.))
-                                            .font_weight(FontWeight::MEDIUM)
-                                            .truncate()
-                                            .child(if r.name.is_empty() {
-                                                r.label.clone()
-                                            } else {
-                                                r.name.clone()
-                                            }),
-                                    )
-                                    .when(!r.name.is_empty() && r.name != r.label, |d| {
-                                        d.child(
-                                            div()
-                                                .text_size(px(11.))
-                                                .text_color(p.text_placeholder)
-                                                .truncate()
-                                                .child(r.label.clone()),
-                                        )
-                                    }),
+                                v_flex().flex_1().min_w_0().child(
+                                    div()
+                                        .text_size(px(13.))
+                                        .font_weight(FontWeight::MEDIUM)
+                                        .truncate()
+                                        .child(if r.name.is_empty() {
+                                            r.label.clone()
+                                        } else {
+                                            r.name.clone()
+                                        }),
+                                ),
                             )
                             .when(shared, |d| {
                                 d.child(
@@ -1080,7 +1081,7 @@ impl Shell {
                 .text_color(p.text_placeholder)
                 .whitespace_nowrap()
                 .truncate()
-                .child(if spec.optional { "inherited" } else { "—" })
+                .child(if spec.optional { "Default" } else { "—" })
                 .into_any_element();
         };
         let kind = kind_of(spec.kind, cell.tag);

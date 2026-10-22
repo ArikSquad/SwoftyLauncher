@@ -115,7 +115,7 @@ impl Shell {
             |m| m.author.clone(),
         );
         Form {
-            name: input(name, "Faster pit stops", cx),
+            name: input(name, "e.g. Faster pit stops", cx),
             version: m.map(|m| input(m.version.to_string(), "1.0.0", cx)),
             author: input(author, "Your name", cx),
             description: input(
@@ -155,8 +155,9 @@ impl Shell {
             "Vanilla stays stock: turn the addon on in another profile to use it.".to_owned()
         } else {
             format!(
-                "{} become an addon, turned on in {}.",
+                "{} {} an addon, turned on in {}.",
                 plural(n, "change", "changes"),
+                if n == 1 { "becomes" } else { "become" },
                 self.library.profile.name
             )
         };
@@ -287,7 +288,7 @@ impl Shell {
         }
         let shell = cx.entity().downgrade();
         let body = match self.db_bound() {
-            Some(info) => format!("{} goes back to its saved changes.", info.name),
+            Some(info) => format!("This puts {} back to how it was last saved.", info.name),
             None => "The new addon goes back to no changes.".to_owned(),
         };
         window.open_alert_dialog(cx, move |alert, _, _| {

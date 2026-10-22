@@ -14,7 +14,7 @@ use swofty_core::manifest::{AddonManifest, AddonOption, Binds, OptionType};
 use swofty_core::profile::VANILLA;
 use swofty_core::store::ProfileDeletion;
 
-use crate::library::{AddonIcon, ProfileItem};
+use crate::library::{AddonIcon, ProfileItem, plural};
 use crate::shell::{Page, Prompt, Shell, SliderSlot};
 use crate::theme::{Palette, palette};
 
@@ -179,14 +179,14 @@ pub(crate) fn chevron(open: bool, p: Palette) -> Icon {
 fn deletion_summary(plan: &ProfileDeletion, p: Palette) -> impl IntoElement {
     let name = &plan.name;
     let removed = if plan.saves {
-        "Its choice of addons and mods, their settings, its build cache and its saves are deleted."
+        "Its choice of addons, their settings, its build cache and its saves are deleted."
     } else {
-        "Its choice of addons and mods, their settings and its build cache are deleted."
+        "Its choice of addons, their settings and its build cache are deleted."
     };
     v_flex()
         .gap(px(12.))
         .child(div().text_size(px(13.)).text_color(p.text).child(format!(
-            "{removed} Installed addons and mods stay in the library, and other profiles don't change."
+            "{removed} Installed addons stay on the Addons page, and other profiles don't change."
         )))
         .when_some(plan.switch_to.clone(), |d, to| {
             d.child(
@@ -656,8 +656,7 @@ impl Shell {
     }
 
     pub(crate) fn profiles_page(&mut self, p: Palette, wide: bool, cx: &mut Context<Self>) -> AnyElement {
-        let subtitle =
-            "Each profile is its own set of addons and mods. Play starts F1 25 with the active one.".into();
+        let subtitle = "Each profile is its own set of addons. Play starts F1 25 with the active one.".into();
         let actions = Button::new("new-profile")
             .outline()
             .icon(IconName::Plus)
@@ -697,7 +696,7 @@ impl Shell {
                     div()
                         .text_size(px(13.))
                         .text_color(p.text_placeholder)
-                        .child("Starts with SwoftyMod and Simplified for Swofty"),
+                        .child("Starts with SwoftyMod and the Mod Importer"),
                 )
                 .on_click(cx.listener(|this, _, window, cx| this.profile_prompt(None, false, window, cx)))
                 .into_any_element(),
@@ -740,8 +739,7 @@ impl Shell {
         self.prompt(
             Prompt {
                 title,
-                description: "Letters, digits, - and _. Each profile keeps its own addons, mods and saves."
-                    .into(),
+                description: "Letters, digits, - and _. Each profile keeps its own addons and saves.".into(),
                 initial,
                 placeholder: "my-profile",
                 ok,
@@ -831,12 +829,7 @@ impl Shell {
             v_flex()
                 .gap(px(3.))
                 .child(label("CONTENTS", p))
-                .child(
-                    div()
-                        .text_size(px(13.))
-                        .line_height(px(19.))
-                        .child("No addons, no mods"),
-                )
+                .child(div().text_size(px(13.)).line_height(px(19.)).child("No addons"))
                 .child(
                     div()
                         .text_size(px(13.))
@@ -877,7 +870,7 @@ impl Shell {
                     .outline()
                     .small()
                     .icon(IconName::ArrowRightLeft)
-                    .label("Switch to this")
+                    .label("Use this profile")
                     .on_click(
                         cx.listener(move |this, _, window, cx| this.switch_profile(&switch, window, cx)),
                     )
@@ -947,7 +940,11 @@ impl Shell {
                                 div()
                                     .text_size(px(12.))
                                     .text_color(p.text_muted)
-                                    .child(item.summary()),
+                                    .child(if vanilla {
+                                        item.summary()
+                                    } else {
+                                        format!("{} on", plural(item.addons.len(), "addon", "addons"))
+                                    }),
                             ),
                     )
                     .when(active, |d| {

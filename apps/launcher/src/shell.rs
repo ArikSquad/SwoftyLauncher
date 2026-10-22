@@ -119,6 +119,7 @@ pub struct Shell {
     pub(crate) cell: Option<crate::blocks::CellEdit>,
     pub(crate) pending_cells: HashMap<String, String>,
     pub(crate) content_width: f32,
+    pub(crate) short: bool,
     pub(crate) ticking: bool,
     painted: Instant,
     pub(crate) live_n: u64,
@@ -373,6 +374,7 @@ impl Shell {
             cell: None,
             pending_cells: HashMap::new(),
             content_width: 900.,
+            short: false,
             ticking: false,
             painted: Instant::now(),
             live_n: 0,
@@ -804,6 +806,14 @@ impl Shell {
     pub(crate) fn remove_addon(&mut self, id: &str, name: &str, window: &mut Window, cx: &mut Context<Self>) {
         const REMOVES: &str = "Its files are deleted and it is taken out of every profile. \
                                You can install it again later.";
+        const REMOVES_DB: &str = "Your DB Editor changes are deleted and it is taken out of every profile. \
+                                  To keep them, use Share addon (.zip) in the DB Editor's Export menu first.";
+        let db_editor = self
+            .library
+            .addons
+            .iter()
+            .any(|a| a.manifest.id == id && a.source == crate::library::Source::DbEditor);
+        let removes = if db_editor { REMOVES_DB } else { REMOVES };
         let shell = cx.entity().downgrade();
         let store = self.store.clone();
         let id = id.to_owned();
@@ -818,29 +828,32 @@ impl Shell {
         window.open_alert_dialog(cx, move |alert, _, _| {
             let (shell, store, id, name) = (shell.clone(), store.clone(), id.clone(), name.clone());
             let alert = match &warning {
-                Some(w) => saves_alert(alert, w, Some(REMOVES), p).ok_text("Remove anyway"),
+                Some(w) => saves_alert(alert, w, Some(removes), p).ok_text("Remove anyway"),
                 None => alert
                     .title(format!("Remove {name}?"))
-                    .description(REMOVES)
+                    .description(removes)
                     .ok_text("Remove addon"),
             };
-            alert.show_cancel(true).on_ok(move |_, window, cx| {
-                match store.remove_addon(&id) {
-                    Ok(()) => {
-                        window.push_notification(Notification::success(format!("Removed {name}")), cx);
-                        shell
-                            .update(cx, |s, cx| {
-                                s.open_addon = None;
-                                s.reload(cx);
-                            })
-                            .ok();
+            alert
+                .ok_variant(ButtonVariant::Danger)
+                .show_cancel(true)
+                .on_ok(move |_, window, cx| {
+                    match store.remove_addon(&id) {
+                        Ok(()) => {
+                            window.push_notification(Notification::success(format!("Removed {name}")), cx);
+                            shell
+                                .update(cx, |s, cx| {
+                                    s.open_addon = None;
+                                    s.reload(cx);
+                                })
+                                .ok();
+                        }
+                        Err(e) => {
+                            window.push_notification(Notification::error(e.to_string()), cx);
+                        }
                     }
-                    Err(e) => {
-                        window.push_notification(Notification::error(e.to_string()), cx);
-                    }
-                }
-                true
-            })
+                    true
+                })
         });
     }
 
@@ -1031,9 +1044,12 @@ impl Shell {
 
     fn big_art(&self, page: Page) -> NavArt {
         let glyph = (page == Page::Importer)
-            .then(|| self.importer_section())
-            .flatten()
-            .and_then(|i| self.library.sections.get(i)?.icon.clone());
+            .then(|| {
+                self.importer_section()
+                    .and_then(|i| self.library.sections.get(i)?.icon.clone())
+                    .or_else(|| self.library.importer_icon.clone())
+            })
+            .flatten();
         match glyph {
             Some(AddonIcon::Glyph(data)) => NavArt::Glyph(data),
             Some(AddonIcon::Image(image)) => NavArt::Image(image),
@@ -1228,6 +1244,7 @@ impl Render for Shell {
         let p = palette(cx);
         let wide = window.viewport_size().width > px(1500.);
         let short = window.viewport_size().height < px(760.);
+        self.short = short;
         self.content_width =
             (f32::from(window.viewport_size().width) - 220. - 2. * crate::pages::GUTTER).max(320.);
         self.sync_sliders(window, cx);

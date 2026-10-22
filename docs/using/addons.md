@@ -24,12 +24,14 @@ Type in the search box on the left to search names, ids, authors and description
 
 | Filter | Values |
 |---|---|
-| Category | What the addon is for: Tracks, Liveries, Cars, Drivers & teams, Seasons, Database, Gameplay, UI, Audio, Tools, Other, or Uncategorised |
+| Category | What the addon is for: Tracks, Liveries, Cars, Drivers & teams, Seasons, Database, Gameplay, UI, Audio, Tools, Other, or Uncategorised. Built-in addons show no category. |
 | Type | What it changes: Database, Archives, Text & UI, Files, Code |
-| Source | Built in, Built from DB Editor, Imported by Mod Importer, Installed |
+| Source | Built in, DB Editor, Mod Importer, Installed. Each row shows its source as a tag with the same name. |
 | State | On, Off, Has conflicts, Update available |
 
-Each value shows how many addons match. **Clear** removes every filter.
+Each value shows how many addons match. **Clear** removes every filter. An open panel closes when its addon no longer matches.
+
+On a window less than 760 pixels tall, the install cards shrink to one row.
 
 ## Turn addons on or off
 
@@ -37,19 +39,23 @@ Each row has a switch for the active [profile](/using/profiles). The next time y
 
 Some addons, such as Driver Manager, change what your careers store. Turning one of those off asks first: careers you played with it may not load without it. Select **Turn off anyway** to go ahead, or **Cancel** to leave it on.
 
-**Turn off all** turns off every addon except those that show **Always on** and those that would ask about your saves; the launcher names those.
+**Turn off all** turns off every addon except those that show **Always on** and those that would ask about your saves; the launcher names those. **Undo** on the message that follows turns the same addons back on in their old order.
 
 In the `vanilla` profile the list is read-only. Switch to a modded profile to turn addons on.
 
 ## Load order
 
-Addons that are on are listed first, in load order. When two addons change the same thing, the one lower in the list wins. Drag a row, or use the arrows in its panel, to move it.
+Addons that are on are listed first, in load order. When two addons change the same thing, the one lower in the list wins. Drag a row, or use the arrows in its panel, to move it. Rows that are always on have no drag handle.
+
+After a conflict check, a row that is on shows **Loses to** with the number of addons lower in the list that replace some of its changes, or **Wins over** with the number it replaces. The badges go away when an addon is turned on, turned off or moved, until the next check.
 
 ## Check an addon
 
-Select a row to open its panel: description, author, version, source, the game builds it was made for, what it changes (database values, archive resources, text, files, tracks), its settings and its conflicts.
+Select a row to open its panel: description, author, version, source, whether it works with your game version, what it changes (database values, game assets, text, files, tracks), its settings and its conflicts. **Game version** says **Works with this game version**, or names the game build the addon was made for next to yours. **Advanced** shows the addon's id.
 
-**Conflicts** lists the addons this one overrides and the ones that override it, with what they both change. The list comes from the profile's last build. **Check conflicts** builds the profile again without starting the game and refreshes the list. The list says it is out of date after an addon is turned on, turned off or moved, or after the addon itself changes. Play waits while a check runs.
+**Conflicts** lists the addons this one overrides and the ones that override it, with what they both change. The list comes from the profile's last build. **Check conflicts**, at the top of the page and in the panel, builds the profile again without starting the game and refreshes the list. The list says it is out of date after an addon is turned on, turned off or moved, or after the addon itself changes. Play waits while a check runs.
+
+Select a conflict to see what it covers, grouped by archive, database table, text or folder. **Details** lists the items, ten at first; **Show all** lists the rest.
 
 An addon from the DB Editor has **Edit in DB Editor**. An addon from the Mod Importer has **Open in Mod Importer**.
 
@@ -60,6 +66,8 @@ Change a value under **Settings** in the addon's panel. **Reset to defaults** pu
 ## Remove an addon
 
 Select **Remove** in the addon's panel and confirm. Removing an addon deletes its files and takes it out of every profile. Built-in addons can't be removed.
+
+Removing a DB Editor addon deletes its changes. To keep them, select **Export** › **Share addon (.zip)** in the [DB Editor](/using/db-editor) first.
 
 ## Built-in addons
 
