@@ -8,7 +8,7 @@
   --exe-size N    size of the exe on disk (a dump does not record it); the core uses hints only when it matches
   --scan          ignore match hints, as SWOFTY_RESOLVE=scan does
   --json          print the per-binding results as JSON
-  --compare EXE   also flag code bindings whose surroundings or callee differ from the Steam exe's
+  --compare EXE   also flag bindings whose match surroundings or callee differ from the Steam exe's
 
 The image is a PE file or a flat dump whose file offset is the RVA (a file starting with MZ whose length is its
 SizeOfImage). Both are read with the PE header found in the image itself, as the core reads its own module.
@@ -509,13 +509,13 @@ def similarity(a, b):
 
 
 def compare(ref_img, ref_doc, ref_results, img, doc, results, context=0.4, callee=0.5):
-    """Flag bindings that resolve on both builds but probably not to the same code. A pattern made of protector
+    """Flag bindings that resolve on both builds but probably not to the same place. A pattern made of protector
     filler can match once elsewhere, so the bytes around the match (outside the pattern) and, for a call, the
     callee's first bytes must look like the reference build's."""
     ref = {b['id']: (b, r) for b, r in zip(ref_doc['bindings'], ref_results)}
     out = []
     for b, r in zip(doc['bindings'], results):
-        if b['id'] not in ref or b.get('kind') not in CODE_KINDS or r['target'] is None:
+        if b['id'] not in ref or r['target'] is None:
             continue
         rb, rr = ref[b['id']]
         if rr['target'] is None:
@@ -569,8 +569,8 @@ def main(argv=None):
     ap.add_argument('--scan', action='store_true', help='ignore match hints, as SWOFTY_RESOLVE=scan does')
     ap.add_argument('--json', action='store_true')
     ap.add_argument('--all', action='store_true', help='also list resolved bindings')
-    ap.add_argument('--compare', metavar='STEAM_EXE', help='also check that each code binding lands on the same code as on '
-                                                           'the KB build (Steam set, hints used)')
+    ap.add_argument('--compare', metavar='STEAM_EXE', help='also check that each binding lands on the same code as on the KB '
+                                                           'build (Steam set, hints used)')
     a = ap.parse_args(argv)
     if bool(a.build) == bool(a.set):
         ap.error('pass exactly one of --build and --set')

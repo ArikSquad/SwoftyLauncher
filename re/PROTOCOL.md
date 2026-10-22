@@ -197,8 +197,8 @@ Rules:
 - A set whose overlay maps sections carries that map as its top-level `sections`; core sends scans of a KB section name by core code and addons there.
 - `python3 -m unittest discover -s re/tools/tests` runs the generator, capture and verifier tests with the standard library; CI runs it in the native job.
 - With `SWOFTY_STEAM_EXE` set to the KB exe, the tests also check that every exported pattern matches exactly once at its `match` and that the Steam set resolves by hint and by scan.
-- With `SWOFTY_EA_DUMP` set to a decrypted EA image dump, the tests check that the EA set resolves by hint and by scan; with both set, they also check that each EA code binding lands on the same code as on Steam.
+- With `SWOFTY_EA_DUMP` set to a decrypted EA image dump, the tests check that the EA set resolves by hint and by scan; with both set, they also check that each EA binding lands on the same code as on Steam.
 - `re/tools/bindverify.py --build <name> --image <exe or flat dump>` resolves a set against a static image with core's rules: the byte-checked `match` hint, then a unique section scan, then the string anchor, then `resolve`, `expect` and the target section; a packed set also defers code that reads encrypted.
-- `bindverify.py --compare <KB exe>` flags code bindings whose surrounding bytes or callee differ from the KB build's, which catches a pattern that matches once on the wrong code.
+- `bindverify.py --compare <KB exe>` flags bindings whose match surroundings or callee differ from the KB build's, which catches a pattern that matches once on the wrong code.
 - `native/build.sh` runs bindverify on the emitted sets when `SWOFTY_STEAM_EXE` or `SWOFTY_EA_DUMP` is set.
 - `re/tools/py re/tools/bindgen.py --exe <KB exe>` runs sigcheck on every exported binding and drops any that fails.

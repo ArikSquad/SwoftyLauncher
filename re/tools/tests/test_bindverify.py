@@ -189,7 +189,7 @@ class EaDump(unittest.TestCase):
             self.assertEqual(bad, [], method)
 
     @unittest.skipUnless(os.environ.get('SWOFTY_STEAM_EXE'), 'set SWOFTY_STEAM_EXE to compare against the KB build')
-    def test_every_code_binding_lands_on_the_steam_code(self):
+    def test_every_binding_lands_on_the_steam_code(self):
         ea, d = bindverify.Image(os.environ['SWOFTY_EA_DUMP']), bindverify.gen_set('ea')
         steam, sd = bindverify.Image(os.environ['SWOFTY_STEAM_EXE']), bindverify.gen_set('steam')
         odd = bindverify.compare(steam, sd, bindverify.verify(steam, sd), ea, d, bindverify.verify(ea, d))
