@@ -1,0 +1,14 @@
+{
+ "schema": 1,
+ "build": {
+  "exe": "F1_25.exe",
+  "sha256": "cc506879c1c834aa54d3478b2f2133d2ec243f2f2d313397631145ea618ff7f4",
+  "size": 342936448,
+  "pe_timestamp": 1789128892,
+  "image_base": "0x140000000",
+  "distribution": "EA App",
+  "packed": true
+ },
+ "overrides": {},
+ "unresolvable": {}
+}
