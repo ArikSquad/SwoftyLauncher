@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use gpui_kit::assets::IconName;
-use gpui_kit::component::button::{Button, ButtonVariants};
+use gpui_kit::component::button::{Button, ButtonVariant, ButtonVariants};
 use gpui_kit::component::menu::{ContextMenuExt, DropdownMenu, PopupMenuItem};
 use gpui_kit::component::notification::Notification;
 use gpui_kit::component::switch::Switch;
@@ -24,7 +24,7 @@ use crate::blocks::{At, search_id};
 use crate::game::Install;
 use crate::library::{AddonIcon, SectionItem, plural};
 use crate::pages::{GUTTER, badge, chevron, fact, label, monogram, names, stat, tag, tile};
-use crate::shell::Shell;
+use crate::shell::{Page, Shell};
 use crate::theme::Palette;
 
 pub(crate) type Shared = Arc<Mutex<Option<(f32, String)>>>;
@@ -418,17 +418,17 @@ impl Shell {
         let reporter = Reporter(shared.clone());
         self.follow_progress(shared, cx);
         cx.spawn_in(window, async move |this, cx| {
-            let (mut done, failed, fresh) = cx
+            let (mut done, failed, unclaimed, fresh) = cx
                 .background_executor()
                 .spawn(async move {
                     let before = installed(&store);
-                    let (done, failed) =
+                    let (done, failed, unclaimed) =
                         import_all(&store, &registry, &profile, install.as_ref(), &paths, &reporter);
                     let fresh = installed_since(&before, &installed(&store));
                     if let Ok(mut p) = reporter.0.lock() {
                         *p = None;
                     }
-                    (done, failed, fresh)
+                    (done, failed, unclaimed, fresh)
                 })
                 .await;
             if fresh.len() > 1 {
@@ -447,6 +447,9 @@ impl Shell {
                 if !failed.is_empty() {
                     window.push_notification(Notification::error(failed.join("\n")), cx);
                 }
+                if !unclaimed.is_empty() {
+                    s.show_not_addons(&unclaimed, window, cx);
+                }
                 s.rediscover = true;
                 s.reload(cx);
                 if let Some(id) = fresh.first() {
@@ -457,6 +460,94 @@ impl Shell {
         })
         .detach();
         cx.notify();
+    }
+
+    fn show_not_addons(&self, paths: &[PathBuf], window: &mut Window, cx: &mut Context<Self>) {
+        const SHOWN: usize = 5;
+        let one = paths.len() == 1;
+        let names: Vec<String> = paths.iter().take(SHOWN).map(|p| file_name(p)).collect();
+        let more = paths.len().saturating_sub(SHOWN);
+        let shell = cx.entity().downgrade();
+        window.open_alert_dialog(cx, move |alert, _, cx| {
+            let p = crate::theme::palette(cx);
+            let shell = shell.clone();
+            let files = v_flex()
+                .gap(px(8.))
+                .child(if one {
+                    "The launcher can't install this file as an addon:"
+                } else {
+                    "The launcher can't install these files as addons:"
+                })
+                .child(
+                    v_flex()
+                        .px(px(12.))
+                        .py(px(8.))
+                        .gap(px(4.))
+                        .rounded(px(8.))
+                        .bg(p.background)
+                        .border_1()
+                        .border_color(p.border_variant)
+                        .text_color(p.text)
+                        .children(names.iter().map(|n| {
+                            h_flex()
+                                .gap(px(8.))
+                                .items_center()
+                                .child(
+                                    Icon::new(IconName::File)
+                                        .size(px(14.))
+                                        .text_color(p.text_placeholder),
+                                )
+                                .child(div().min_w_0().truncate().child(n.clone()))
+                        }))
+                        .when(more > 0, |d| {
+                            d.child(
+                                div()
+                                    .text_color(p.text_placeholder)
+                                    .child(format!("and {more} more")),
+                            )
+                        }),
+                );
+            let mods = if one {
+                "Mods like this one go through the Mod Importer, which turns them into addons."
+            } else {
+                "Mods like these go through the Mod Importer, which turns them into addons."
+            };
+            alert
+                .width(px(540.))
+                .title(if one {
+                    "That isn't a Swofty addon"
+                } else {
+                    "Those aren't Swofty addons"
+                })
+                .description(files)
+                .child(
+                    v_flex()
+                        .gap(px(10.))
+                        .child(drop_choice(
+                            IconName::FolderInput,
+                            "Trying to add a mod?",
+                            mods,
+                            Button::new("not-addon-importer")
+                                .primary()
+                                .icon(IconName::ArrowRight)
+                                .label("Go to Mod Importer")
+                                .on_click(move |_, window, cx| {
+                                    window.close_dialog(cx);
+                                    shell.update(cx, |s, cx| s.open_page(Page::Importer, cx)).ok();
+                                }),
+                            p,
+                        ))
+                        .child(drop_choice(
+                            IconName::BookOpen,
+                            "Making a Swofty addon?",
+                            "An addon is a folder with a swofty.json.",
+                            crate::tools::web_link("not-addon-docs", "Read the addon docs", ADDON_DOCS, p),
+                            p,
+                        )),
+                )
+                .ok_text("Close")
+                .ok_variant(ButtonVariant::Secondary)
+        });
     }
 
     pub(crate) fn follow_progress(&mut self, shared: Shared, cx: &mut Context<Self>) {
@@ -1175,6 +1266,57 @@ fn installed_since(
     fresh.into_iter().map(|(id, _)| id.clone()).collect()
 }
 
+const ADDON_DOCS: &str = "https://f1.swofty.net/reference/addons/";
+
+fn drop_choice(
+    icon: IconName,
+    title: &str,
+    text: &str,
+    action: impl IntoElement,
+    p: Palette,
+) -> impl IntoElement {
+    h_flex()
+        .p(px(14.))
+        .gap(px(14.))
+        .items_start()
+        .rounded(px(10.))
+        .border_1()
+        .border_color(p.border_variant)
+        .bg(p.background)
+        .child(
+            div()
+                .size(px(34.))
+                .flex_shrink_0()
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(8.))
+                .bg(p.selected)
+                .child(Icon::new(icon).size(px(17.)).text_color(p.accent_hover)),
+        )
+        .child(
+            v_flex()
+                .flex_1()
+                .min_w_0()
+                .gap(px(4.))
+                .child(
+                    div()
+                        .text_size(px(14.))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(p.text)
+                        .child(title.to_owned()),
+                )
+                .child(
+                    div()
+                        .text_size(px(13.))
+                        .line_height(px(19.))
+                        .text_color(p.text_muted)
+                        .child(text.to_owned()),
+                )
+                .child(h_flex().pt(px(6.)).child(action)),
+        )
+}
+
 fn import_all(
     store: &Store,
     registry: &Registry,
@@ -1182,13 +1324,10 @@ fn import_all(
     install: Option<&Install>,
     paths: &[PathBuf],
     progress: &Reporter,
-) -> (Vec<String>, Vec<String>) {
+) -> (Vec<String>, Vec<String>, Vec<PathBuf>) {
     let (batches, unclaimed) = import::route_all(registry, paths);
     let mut done = Vec::new();
-    let mut failed: Vec<String> = unclaimed
-        .iter()
-        .map(|p| format!("No addon imports {}", file_name(p)))
-        .collect();
+    let mut failed = Vec::new();
     let mut game_files = None;
     for (route, paths) in batches {
         match route {
@@ -1217,7 +1356,7 @@ fn import_all(
             }
         }
     }
-    (done, failed)
+    (done, failed, unclaimed)
 }
 
 #[cfg(test)]

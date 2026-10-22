@@ -14,6 +14,8 @@ The two cards at the top of the **Addons** page are the ways in:
 - **Installing a Swofty Addon?** Drop a `.swoftyaddon`, a zip of an addon or an addon folder on the card, or click it to choose a file. **Choose a folder…** picks an addon folder. You can also drop an addon anywhere on the launcher window.
 - **Installing a mod?** **Go to Mod Importer** opens the [Mod Importer](/using/mods), which turns the mod into an addon.
 
+A file that isn't an addon, and that no addon such as the Mod Importer imports, opens a dialog that names it. The dialog lists up to five files. **Go to Mod Importer** opens the [Mod Importer](/using/mods), and **Read the addon docs** opens the [addon reference](/reference/addons/) in your browser.
+
 The launcher copies the addon to `$DATA/addons/<id>/`, opens **Addons** and highlights it. Installing an addon with an id that's already installed replaces it. A new addon starts off in every profile.
 
 ## Find an addon
