@@ -24,7 +24,7 @@ Your addon needs a `swofty.json` at its root. This is where you give it a name, 
 | Field | Type | Value |
 |---|---|---|
 | `schema_version` | integer | `1`. |
-| `id` | string | Choose a lowercase dotted id with at least two parts, each part `[a-z0-9_-]`, such as `author.my-addon`. The `swofty.` prefix is reserved. |
+| `id` | string | Choose a lowercase dotted id with at least two parts, each part `[a-z0-9_-]`, such as `author.my-addon`. The `swofty.` prefix is reserved. The `dbedit.` prefix is kept for addons the DB Editor saves, and the launcher refuses to install any other addon with it. |
 | `name` | string | Display name. |
 | `version` | string | Semver, such as `1.0.0`. |
 | `author` | string | Display author. |
@@ -32,7 +32,7 @@ Your addon needs a `swofty.json` at its root. This is where you give it a name, 
 | `license` | string? | SPDX identifier, such as `MIT`. |
 | `homepage` | string? | A URL. |
 | `icon` | string? | A path inside your addon, shown on the Tools page and your addon's sidebar pages. Use an `.svg` for a one-colour glyph in the launcher's icon style, or a square `.png`, `.jpg` or `.webp` to show the image as it is. |
-| `kind` | string[] | What the addon touches: `database`, `erp`, `text`, `ui`, `files`, `native`. |
+| `kind` | string[] | What the addon touches: `database`, `erp`, `text`, `ui`, `files`, `native`. `text` needs launcher 1.3.0 or later, and an earlier launcher rejects the manifest. |
 | `category` | string? | What the addon is for ([category](#category)). |
 | `origin` | object? | The tool and file the addon was made from ([origin](#origin)). |
 

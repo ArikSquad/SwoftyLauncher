@@ -8,9 +8,9 @@ pub const INVITE: &str = "https://discord.gg/STWsgyJKZS";
 pub const LABEL: &str = "Join the Discord";
 
 const BODY: &str = "Get help from the developers and hear about new releases and addons first.";
-const LOGO: &[u8] = include_bytes!("../assets/discord.svg");
-const BLURPLE: u32 = 0x5865f2;
-const BLURPLE_HOVER: u32 = 0x4752c4;
+pub(crate) const LOGO: &[u8] = include_bytes!("../assets/discord.svg");
+pub(crate) const BLURPLE: u32 = 0x5865f2;
+pub(crate) const BLURPLE_HOVER: u32 = 0x4752c4;
 
 fn server_icon(size: f32) -> Div {
     static ICON: LazyLock<Arc<Image>> = LazyLock::new(|| {

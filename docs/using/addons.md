@@ -49,7 +49,7 @@ Addons that are on are listed first, in load order. When two addons change the s
 
 Select a row to open its panel: description, author, version, source, the game builds it was made for, what it changes (database values, archive resources, text, files, tracks), its settings and its conflicts.
 
-**Conflicts** lists the addons this one overrides and the ones that override it, with what they both change. The list comes from the profile's last build. **Check conflicts** builds the profile again without starting the game and refreshes the list.
+**Conflicts** lists the addons this one overrides and the ones that override it, with what they both change. The list comes from the profile's last build. **Check conflicts** builds the profile again without starting the game and refreshes the list. The list says it is out of date after an addon is turned on, turned off or moved, or after the addon itself changes. Play waits while a check runs.
 
 An addon from the DB Editor has **Edit in DB Editor**. An addon from the Mod Importer has **Open in Mod Importer**.
 

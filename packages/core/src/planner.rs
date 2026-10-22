@@ -120,6 +120,8 @@ pub struct Planner<'a> {
     items: Vec<Op>,
     planned: Planned,
     writers: BTreeMap<Target, Vec<Origin>>,
+    // Origins in the order their first op came, which is load order.
+    ranks: Vec<Origin>,
     removals: usize,
     fields: BTreeMap<String, BTreeMap<String, Vec<String>>>,
     skipped: Vec<String>,
@@ -205,6 +207,7 @@ impl<'a> Planner<'a> {
             items: Vec::new(),
             planned: Planned::default(),
             writers: BTreeMap::new(),
+            ranks: Vec::new(),
             removals: 0,
             fields: BTreeMap::new(),
             skipped: Vec::new(),
@@ -264,6 +267,7 @@ impl<'a> Planner<'a> {
     }
 
     pub fn push(&mut self, op: Op) {
+        self.rank(&op.origin);
         if let Some((target, replaces)) = target(&op.op) {
             self.write(target, &op.origin, replaces);
         }
@@ -340,6 +344,107 @@ impl<'a> Planner<'a> {
         }
     }
 
+    fn rank(&mut self, origin: &Origin) -> usize {
+        if self.ranks.last() == Some(origin) {
+            return self.ranks.len() - 1;
+        }
+        match self.ranks.iter().position(|o| o == origin) {
+            Some(at) => at,
+            None => {
+                self.ranks.push(origin.clone());
+                self.ranks.len() - 1
+            }
+        }
+    }
+
+    fn overrides(&mut self, target: &Target, winner: &Origin, lost: Vec<Origin>) {
+        if lost.is_empty() {
+            return;
+        }
+        let conflicts = &mut self.planned.conflicts;
+        match conflicts.iter_mut().find(|c| c.target == *target) {
+            Some(c) => {
+                let before = std::mem::replace(&mut c.winner, winner.clone());
+                for o in std::iter::once(before).chain(lost) {
+                    if o != *winner && !c.overridden.contains(&o) {
+                        c.overridden.push(o);
+                    }
+                }
+                c.overridden.retain(|o| o != winner);
+            }
+            None => conflicts.push(Conflict {
+                target: target.clone(),
+                winner: winner.clone(),
+                overridden: lost,
+            }),
+        }
+    }
+
+    // Splits the other writers of `target` into those before `origin` in load
+    // order, which it overrides and which leave the list, and the latest after it.
+    fn split(
+        &mut self,
+        target: &Target,
+        origin: &Origin,
+        keep_earlier: bool,
+    ) -> (Vec<Origin>, Option<Origin>) {
+        let mine = self.rank(origin);
+        let ws = self.writers.get(target).cloned().unwrap_or_default();
+        let (mut earlier, mut later, mut kept) = (Vec::new(), None, Vec::new());
+        for w in ws {
+            let rank = self.rank(&w);
+            if w == *origin || rank > mine {
+                if rank > mine && later.as_ref().is_none_or(|(r, _)| rank > *r) {
+                    later = Some((rank, w.clone()));
+                }
+                kept.push(w);
+            } else {
+                if keep_earlier {
+                    kept.push(w.clone());
+                }
+                earlier.push(w);
+            }
+        }
+        if let Some(ws) = self.writers.get_mut(target) {
+            *ws = kept;
+        }
+        (earlier, later.map(|(_, w)| w))
+    }
+
+    // A whole-resource write overrides the earlier slice writes into that
+    // resource, and a slice write overrides the earlier whole-resource writes on
+    // that slice, while a later write of either kind overrides it.
+    fn across(&mut self, target: &Target, origin: &Origin) -> Vec<Origin> {
+        let others: Vec<Target> = match target {
+            Target::Slice { erp, uri, .. } => vec![Target::Resource {
+                erp: erp.clone(),
+                uri: uri.clone(),
+            }],
+            Target::Resource { erp, uri } => {
+                let slice = |slice| Target::Slice {
+                    erp: erp.clone(),
+                    uri: uri.clone(),
+                    slice,
+                };
+                self.writers
+                    .range(slice(0)..=slice(usize::MAX))
+                    .map(|(t, _)| t.clone())
+                    .collect()
+            }
+            _ => return Vec::new(),
+        };
+        let mut lost = Vec::new();
+        for other in others {
+            let whole = matches!(other, Target::Resource { .. });
+            let (earlier, later) = self.split(&other, origin, whole);
+            if let Some(winner) = later {
+                self.overrides(&other, &winner, vec![origin.clone()]);
+            }
+            lost.extend(earlier);
+        }
+        lost
+    }
+
     fn write(&mut self, target: Target, origin: &Origin, replaces: bool) {
         if !self.touched.contains_key(&origin.addon) {
             self.touched.insert(origin.addon.clone(), Touched::default());
@@ -350,28 +455,22 @@ impl<'a> Planner<'a> {
             Target::Group(_) => false,
             _ => touched.other.insert(target.clone()),
         };
-        let writers = self.writers.entry(target.clone()).or_default();
         if replaces {
-            let lost: Vec<Origin> = writers.drain(..).filter(|w| w != origin).collect();
-            let conflicts = &mut self.planned.conflicts;
-            match conflicts.iter_mut().find(|c| c.target == target) {
-                _ if lost.is_empty() => {}
-                Some(c) => {
-                    let before = std::mem::replace(&mut c.winner, origin.clone());
-                    for o in std::iter::once(before).chain(lost) {
-                        if o != *origin && !c.overridden.contains(&o) {
-                            c.overridden.push(o);
-                        }
-                    }
-                    c.overridden.retain(|o| o != origin);
+            let (mut lost, later) = self.split(&target, origin, false);
+            for w in self.across(&target, origin) {
+                if !lost.contains(&w) {
+                    lost.push(w);
                 }
-                None => conflicts.push(Conflict {
-                    target,
-                    winner: origin.clone(),
-                    overridden: lost,
-                }),
+            }
+            match later {
+                Some(winner) => {
+                    lost.push(origin.clone());
+                    self.overrides(&target, &winner, lost);
+                }
+                None => self.overrides(&target, origin, lost),
             }
         }
+        let writers = self.writers.entry(target).or_default();
         if !writers.contains(origin) {
             writers.push(origin.clone());
         }
@@ -614,6 +713,54 @@ mod tests {
         );
         let shown: Vec<String> = planned.conflicts.iter().map(Conflict::to_string).collect();
         assert_eq!(shown, ["r in a.erp: c overrides a, b", "x/y.dds: d overrides c"]);
+    }
+
+    #[test]
+    fn whole_resource_and_slice_writes_override_each_other_by_load_order() {
+        let features = Features::default();
+        let opt_in = BTreeSet::new();
+        let put = r#"{"op":"erp.put-resource","erp":"a.erp","resource":"r","source":"x.erp"}"#;
+        let merge = r#"{"op":"erp.merge-slices","erp":"a.erp","resource":"r","source":"x.erp"}"#;
+        let slice = |slice| Target::Slice {
+            erp: "a.erp".into(),
+            uri: "r".into(),
+            slice,
+        };
+        let shown =
+            |p: Planner| -> Vec<String> { p.finish().conflicts.iter().map(Conflict::to_string).collect() };
+
+        let mut p = Planner::new(&features, &opt_in);
+        p.push(op("a", merge));
+        p.push(op("b", put));
+        p.replaced(slice(1), &origin("a"));
+        assert_eq!(shown(p), ["r in a.erp: b overrides a"]);
+
+        let mut p = Planner::new(&features, &opt_in);
+        p.push(op("a", put));
+        p.push(op("b", merge));
+        p.replaced(slice(1), &origin("b"));
+        p.replaced(slice(2), &origin("b"));
+        assert_eq!(
+            shown(p),
+            [
+                "slice 1 of r in a.erp: b overrides a",
+                "slice 2 of r in a.erp: b overrides a"
+            ]
+        );
+
+        let mut p = Planner::new(&features, &opt_in);
+        p.push(op("a", merge));
+        p.replaced(slice(0), &origin("a"));
+        p.push(op("b", put));
+        p.push(op("c", merge));
+        p.replaced(slice(0), &origin("c"));
+        assert_eq!(
+            shown(p),
+            [
+                "r in a.erp: b overrides a",
+                "slice 0 of r in a.erp: c overrides b"
+            ]
+        );
     }
 
     #[test]

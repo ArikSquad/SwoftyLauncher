@@ -864,7 +864,54 @@ pub enum Effect {
     SetAddonEnabled(bool),
     Open(PathBuf),
     /// Switches to the Addons page and highlights this addon.
-    ShowAddon(String),
+    ShowAddon(Shown),
+}
+
+/// A `show_addon` target: the addon's id, or `{ "id", "notice" }` to also
+/// show the notice as a notification.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Shown {
+    Id(String),
+    With {
+        id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        notice: Option<String>,
+    },
+}
+
+impl Shown {
+    pub fn new(id: impl Into<String>, notice: impl Into<String>) -> Self {
+        Self::With {
+            id: id.into(),
+            notice: Some(notice.into()),
+        }
+    }
+
+    pub fn id(&self) -> &str {
+        match self {
+            Self::Id(id) | Self::With { id, .. } => id,
+        }
+    }
+
+    pub fn notice(&self) -> Option<&str> {
+        match self {
+            Self::Id(_) => None,
+            Self::With { notice, .. } => notice.as_deref(),
+        }
+    }
+}
+
+impl From<String> for Shown {
+    fn from(id: String) -> Self {
+        Self::Id(id)
+    }
+}
+
+impl From<&str> for Shown {
+    fn from(id: &str) -> Self {
+        Self::Id(id.into())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1064,6 +1111,42 @@ mod tests {
             serde_json::from_str::<Effect>(r#"{"show_addon":"you.okayama"}"#).unwrap(),
             Effect::ShowAddon("you.okayama".into())
         );
+    }
+
+    #[test]
+    fn show_addon_takes_an_id_or_an_id_with_a_notice() {
+        let old: Effect = serde_json::from_str(r#"{"show_addon":"you.okayama"}"#).unwrap();
+        let Effect::ShowAddon(shown) = &old else {
+            panic!("show_addon")
+        };
+        assert_eq!((shown.id(), shown.notice()), ("you.okayama", None));
+        assert_eq!(
+            serde_json::to_value(&old).unwrap(),
+            serde_json::json!({ "show_addon": "you.okayama" })
+        );
+        let new: Effect =
+            serde_json::from_str(r#"{"show_addon":{"id":"you.okayama","notice":"Imported Okayama"}}"#)
+                .unwrap();
+        assert_eq!(
+            new,
+            Effect::ShowAddon(Shown::new("you.okayama", "Imported Okayama"))
+        );
+        let Effect::ShowAddon(shown) = &new else {
+            panic!("show_addon")
+        };
+        assert_eq!(
+            (shown.id(), shown.notice()),
+            ("you.okayama", Some("Imported Okayama"))
+        );
+        assert_eq!(
+            serde_json::from_value::<Effect>(serde_json::to_value(&new).unwrap()).unwrap(),
+            new
+        );
+        let bare: Effect = serde_json::from_str(r#"{"show_addon":{"id":"you.okayama"}}"#).unwrap();
+        let Effect::ShowAddon(shown) = &bare else {
+            panic!("show_addon")
+        };
+        assert_eq!((shown.id(), shown.notice()), ("you.okayama", None));
     }
 
     #[test]

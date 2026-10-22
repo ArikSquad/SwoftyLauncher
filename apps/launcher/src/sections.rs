@@ -395,9 +395,12 @@ impl Shell {
                 cx.open_with_system(&path);
                 cx.notify();
             }
-            Ok(Effect::ShowAddon(id)) => {
+            Ok(Effect::ShowAddon(shown)) => {
+                if let Some(text) = shown.notice() {
+                    window.push_notification(Notification::info(text.to_owned()), cx);
+                }
                 self.reload(cx);
-                self.show_addon(&id, cx);
+                self.show_addon(shown.id(), cx);
             }
             Err(e) => {
                 window.push_notification(Notification::error(e), cx);
@@ -641,6 +644,16 @@ impl Shell {
             .collect();
         let width = self.content_width;
         let mut search_bar = None;
+        let mut footer = view.footer.clone().map(|f| {
+            div()
+                .flex_shrink_0()
+                .py(px(10.))
+                .border_t_1()
+                .border_color(p.border_variant)
+                .text_size(px(12.))
+                .text_color(p.text_placeholder)
+                .child(f)
+        });
         let body = match &view.body {
             Body::List {
                 rows,
@@ -683,6 +696,7 @@ impl Shell {
                         .into_any_element()
                 } else {
                     self.list(SharedString::from(format!("section-{addon}-{id}")), rows, p)
+                        .children(footer.take().map(|f| f.mt(px(16.))))
                         .into_any_element()
                 }
             }
@@ -712,6 +726,7 @@ impl Shell {
                     };
                     self.block_at(at, b, p, cx)
                 }))
+                .children(footer.take())
                 .into_any_element(),
         };
         v_flex()
@@ -725,17 +740,7 @@ impl Shell {
             .children(notices)
             .children(search_bar.map(|s| h_flex().px(px(GUTTER)).pb(px(12.)).flex_shrink_0().child(s)))
             .child(body)
-            .children(view.footer.clone().map(|f| {
-                div()
-                    .flex_shrink_0()
-                    .px(px(GUTTER))
-                    .py(px(10.))
-                    .border_t_1()
-                    .border_color(p.border_variant)
-                    .text_size(px(12.))
-                    .text_color(p.text_placeholder)
-                    .child(f)
-            }))
+            .children(footer.map(|f| f.mx(px(GUTTER))))
             .into_any_element()
     }
 

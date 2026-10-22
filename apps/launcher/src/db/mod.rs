@@ -6,7 +6,7 @@ mod save;
 use std::collections::HashMap;
 use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, LazyLock};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, SystemTime};
 
 use gpui_kit::assets::IconName;
@@ -14,6 +14,7 @@ use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::notification::Notification;
 use gpui_kit::component::{WindowExt, v_flex};
 use gpui_kit::*;
+use swofty_core::dbedit::draft::{DraftFile, Opened, Written};
 use swofty_core::dbedit::package::{self, Incoming, PackageInfo};
 use swofty_core::dbedit::{
     Catalog, Draft, Edit, Edits, Hit, ImportReport, Kind, LinkSpec, Module, ModuleView, NodeId, NodeKind,
@@ -27,6 +28,7 @@ use crate::shell::{Page, Shell};
 pub(crate) use fields::Slots;
 
 const DEBOUNCE: Duration = Duration::from_millis(120);
+const PERSIST_DELAY: Duration = Duration::from_millis(300);
 pub(crate) const CAREER_EDITOR: &str = "swofty.career-editor";
 const CAREER_EDITOR_URL: &str = "https://f1.swofty.net/using/career-editor";
 
@@ -87,6 +89,15 @@ pub(crate) struct Db {
     /// The changes being edited; `draft.edits` is what every view shows.
     pub draft: Draft,
     draft_read: bool,
+    file: Arc<Mutex<DraftFile>>,
+    persist_gen: u64,
+    /// Changes not yet written to the draft file.
+    unwritten: bool,
+    writing: bool,
+    /// Another launcher window wrote a newer draft; nothing is written until the player picks one.
+    pub newer: bool,
+    others_gen: u64,
+    _quit: Subscription,
     index: HashMap<u64, usize>,
     /// Why the draft's addon could not be read; editing stays off until it reads.
     pub addon_error: Option<String>,
@@ -137,13 +148,23 @@ pub(crate) struct CellEdit {
 }
 
 impl Db {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(cx: &mut Context<Shell>) -> Self {
         Self {
             load: Load::Idle,
             game: None,
             modules: &[],
             draft: Draft::default(),
             draft_read: false,
+            file: Arc::default(),
+            persist_gen: 0,
+            unwritten: false,
+            writing: false,
+            newer: false,
+            others_gen: 0,
+            _quit: cx.on_app_quit(|s: &mut Shell, _| {
+                s.db_flush_now();
+                async {}
+            }),
             index: HashMap::new(),
             addon_error: None,
             addons: Vec::new(),
@@ -337,6 +358,10 @@ pub(crate) fn guarded<T>(f: impl FnOnce() -> Result<T, String>) -> Result<T, Str
         .unwrap_or_else(|_| Err("The database editor is not available in this build.".into()))
 }
 
+fn lock(file: &Mutex<DraftFile>) -> std::sync::MutexGuard<'_, DraftFile> {
+    file.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 pub(crate) fn text<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
 }
@@ -466,39 +491,180 @@ impl Shell {
             self.db_read_draft();
         }
         self.db_sync_addon(false, cx);
-        let profile = self.library.profile.name.clone();
-        self.db.others = Arc::new(
-            guarded(|| package::enabled_changes(&self.store, &profile).map_err(text)).unwrap_or_default(),
-        );
+        self.db_load_others(cx);
+    }
+
+    // Reads every enabled DB Editor addon off the UI thread for "Also changed by".
+    fn db_load_others(&mut self, cx: &mut Context<Self>) {
+        self.db.others_gen += 1;
+        let at = self.db.others_gen;
+        let (store, profile) = (self.store.clone(), self.library.profile.name.clone());
+        cx.spawn(async move |this, cx| {
+            let others = cx
+                .background_executor()
+                .spawn(async move {
+                    guarded(|| package::enabled_changes(&store, &profile).map_err(text)).unwrap_or_default()
+                })
+                .await;
+            this.update(cx, |s, cx| {
+                if s.db.others_gen == at {
+                    s.db.others = Arc::new(others);
+                    cx.notify();
+                }
+            })
+            .ok();
+        })
+        .detach();
     }
 
     // Reads the autosaved draft once; a file that does not read is set aside.
     fn db_read_draft(&mut self) {
         self.db.draft_read = true;
-        match guarded(|| Draft::load(&self.store).map_err(text)) {
-            Ok(d) => self.db.draft = d,
-            Err(e) => {
-                let body = match guarded(|| Draft::set_aside(&self.store).map_err(text)) {
-                    Ok(kept) => format!("{e}\nIt was kept as {}", kept.display()),
-                    Err(_) => e,
-                };
-                self.db.toasts.push(
-                    Notification::error(body)
-                        .title("The DB Editor draft could not be read")
-                        .autohide(false),
-                );
+        let store = self.store.clone();
+        let opened = guarded(|| Ok(lock(&self.db.file).open(&store)));
+        let body = match opened {
+            Ok(Opened::Read(d)) => {
+                self.db.draft = d;
+                None
             }
+            Ok(Opened::SetAside { error, kept }) => {
+                Some(format!("{error}\nIt was kept as {}", kept.display()))
+            }
+            Ok(Opened::Stuck { error }) => {
+                self.db.save_error = Some(format!(
+                    "Your changes are not saved to the draft until the damaged draft file is moved: {error}"
+                ));
+                Some(error)
+            }
+            Err(e) => Some(e),
+        };
+        if let Some(body) = body {
+            self.db.toasts.push(
+                Notification::error(body)
+                    .title("The DB Editor draft could not be read")
+                    .autohide(false),
+            );
         }
         self.db.reindex();
     }
 
-    /// Writes the draft to disk after every change.
-    pub(crate) fn db_persist(&mut self) {
+    /// Writes the draft to disk off the UI thread once changes stop for a moment.
+    pub(crate) fn db_persist(&mut self, cx: &mut Context<Self>) {
+        self.db.unwritten = true;
+        self.db.persist_gen += 1;
+        let at = self.db.persist_gen;
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(PERSIST_DELAY).await;
+            this.update(cx, |s, cx| {
+                if s.db.persist_gen == at {
+                    s.db_flush(cx);
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// Starts writing the draft's unwritten changes now.
+    pub(crate) fn db_flush(&mut self, cx: &mut Context<Self>) {
+        if !self.db.unwritten || self.db.writing || self.db.newer {
+            return;
+        }
+        self.db.unwritten = false;
+        self.db.writing = true;
+        let (store, draft, file) = (self.store.clone(), self.db.draft.clone(), self.db.file.clone());
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { guarded(|| lock(&file).write(&store, &draft).map_err(text)) })
+                .await;
+            this.update(cx, |s, cx| {
+                s.db.writing = false;
+                s.db_written(result, cx);
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn db_written(&mut self, result: Result<Written, String>, cx: &mut Context<Self>) {
+        match result {
+            Ok(Written::Saved) => self.db.save_error = None,
+            Ok(Written::Newer) => {
+                self.db.unwritten = true;
+                self.db.newer = true;
+            }
+            Err(e) => {
+                self.db.unwritten = true;
+                self.db.save_error = Some(format!("Your changes could not be saved to the draft: {e}"));
+                cx.notify();
+                return;
+            }
+        }
+        if self.db.unwritten && !self.db.newer {
+            self.db_persist(cx);
+        }
+        cx.notify();
+    }
+
+    /// Writes pending draft changes when the player leaves the DB Editor.
+    pub(crate) fn db_leaving(&mut self, to: Page, cx: &mut Context<Self>) {
+        if self.page == Page::Database && to != Page::Database {
+            self.db_flush(cx);
+        }
+    }
+
+    /// Writes the draft before the launcher quits.
+    pub(crate) fn db_flush_now(&mut self) {
+        if !self.db.unwritten || self.db.newer {
+            return;
+        }
+        let (store, draft) = (self.store.clone(), &self.db.draft);
+        if let Ok(Written::Saved) = guarded(|| lock(&self.db.file).write(&store, draft).map_err(text)) {
+            self.db.unwritten = false;
+        }
+    }
+
+    /// Replaces this window's draft with the newer one another window wrote.
+    pub(crate) fn db_take_newer(&mut self, cx: &mut Context<Self>) {
+        self.db.newer = false;
+        self.db.unwritten = false;
+        self.db.persist_gen += 1;
+        self.db.draft_read = false;
+        self.db_read_draft();
+        self.db.seen = None;
+        self.db.errors.clear();
+        self.db.cell = None;
+        self.db.slots = Slots::default();
+        self.db_sync_addon(true, cx);
+        self.db_changed(None, false, cx);
+    }
+
+    /// Keeps this window's draft, writing it over the one another window wrote.
+    pub(crate) fn db_keep_mine(&mut self, cx: &mut Context<Self>) {
         let store = self.store.clone();
-        let draft = &mut self.db.draft;
-        self.db.save_error = guarded(|| draft.save(&store).map_err(text))
-            .err()
-            .map(|e| format!("Your changes could not be saved to the draft: {e}"));
+        guarded(|| {
+            lock(&self.db.file).adopt(&store);
+            Ok(())
+        })
+        .ok();
+        self.db.newer = false;
+        self.db_persist(cx);
+        cx.notify();
+    }
+
+    // Another window wrote the draft while this one had nothing to write: take it.
+    fn db_follow_draft(&mut self, cx: &mut Context<Self>) {
+        if self.db.unwritten || self.db.writing || self.db.newer {
+            return;
+        }
+        let store = self.store.clone();
+        if guarded(|| Ok(lock(&self.db.file).is_newer(&store))).unwrap_or(false) {
+            self.db_take_newer(cx);
+            self.db.toasts.push(Notification::info(
+                "Another launcher window changed the draft, so it was reloaded.",
+            ));
+        }
     }
 
     // Follows the draft's addon on disk: removed, damaged, or saved by another writer.
@@ -525,7 +691,7 @@ impl Shell {
             }
             self.db.addon_error = None;
             self.db.seen = None;
-            self.db_persist();
+            self.db_persist(cx);
             self.db_changed(None, false, cx);
             return;
         }
@@ -543,7 +709,7 @@ impl Shell {
                 let dirty = self.db.draft.is_dirty();
                 self.db.draft.rebase(pkg.edits.edits, stamp);
                 self.db.addon_error = None;
-                self.db_persist();
+                self.db_persist(cx);
                 if reload && !quiet {
                     let name = self.db_draft_name();
                     self.db.toasts.push(Notification::info(if dirty {
@@ -576,9 +742,13 @@ impl Shell {
         cx.notify();
     }
 
-    /// The poll's check: another writer (the CLI, a second window) changed the draft's addon.
+    /// The poll's check: another writer (the CLI, a second window) changed the draft or its addon.
     pub(crate) fn db_poll(&mut self, cx: &mut Context<Self>) {
-        if self.page == crate::shell::Page::Database && self.db.draft.addon.is_some() {
+        if self.page != crate::shell::Page::Database {
+            return;
+        }
+        self.db_follow_draft(cx);
+        if self.db.draft.addon.is_some() {
             self.db_sync_addon(false, cx);
         }
     }
@@ -647,12 +817,9 @@ impl Shell {
         self.db.errors.clear();
         self.db.cell = None;
         self.db.slots = Slots::default();
-        self.db_persist();
+        self.db_persist(cx);
         self.db.toasts.extend(toast);
-        let profile = self.library.profile.name.clone();
-        self.db.others = Arc::new(
-            guarded(|| package::enabled_changes(&self.store, &profile).map_err(text)).unwrap_or_default(),
-        );
+        self.db_load_others(cx);
         self.db_changed(None, false, cx);
     }
 
@@ -930,7 +1097,7 @@ impl Shell {
         self.db.rev += 1;
         self.db.reindex();
         if save {
-            self.db_persist();
+            self.db_persist(cx);
         }
         let edit = key.and_then(|k| self.db.edit(k).cloned());
         if let (Some(key), Some(catalog), Some(slot)) =

@@ -269,7 +269,7 @@ impl Shell {
     fn db_after_save(&mut self, id: String, then: Option<Then>, cx: &mut Context<Self>) {
         self.db.addon_error = None;
         self.db.seen = None;
-        self.db_persist();
+        self.db_persist(cx);
         self.reload(cx);
         match then {
             Some(t) => self.db_then(t, cx),

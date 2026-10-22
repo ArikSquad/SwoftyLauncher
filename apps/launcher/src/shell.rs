@@ -14,6 +14,7 @@ use gpui_kit::component::{Icon, TitleBar, WindowExt, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use swofty_core::crash::StartFailure;
+use swofty_core::install::Source;
 use swofty_core::launch;
 use swofty_core::process::{GameProcess, stop_game};
 use swofty_core::quarantine;
@@ -25,7 +26,7 @@ use swofty_core::store::Store;
 use swofty_core::view::View;
 
 use crate::game::{self, Install, Launch, Probe};
-use crate::library::{AddonIcon, Library, TRACKS_SECTION};
+use crate::library::{AddonIcon, Library};
 use crate::pages::{addon_icon, label};
 use crate::theme::{Palette, palette};
 
@@ -73,6 +74,7 @@ pub enum PlayState {
     Launching,
     Restoring,
     Running,
+    Checking,
     Crashed(SessionRecord),
 }
 
@@ -376,7 +378,7 @@ impl Shell {
             live_n: 0,
             highlight: None,
             addons: crate::addons::AddonsPage::new(window, cx),
-            db: crate::db::Db::new(),
+            db: crate::db::Db::new(cx),
             news,
             tools: Default::default(),
             _console_closed: console_closed,
@@ -571,6 +573,9 @@ impl Shell {
         if self.install.is_none() {
             return PlayState::NotInstalled;
         }
+        if self.addons.checking {
+            return PlayState::Checking;
+        }
         match &self.session {
             Some(s)
                 if s.crashed()
@@ -587,6 +592,14 @@ impl Shell {
         let Some(install) = self.install.clone() else {
             return;
         };
+        if install.source == Source::EaApp {
+            self.ea_app_unsupported(window, cx);
+            return;
+        }
+        if self.addons.checking {
+            window.push_notification(Notification::info("Play when the conflict check finishes."), cx);
+            return;
+        }
         if !swofty_core::offline::is_accepted(&self.store.root) {
             self.confirm_offline_play(window, cx);
             return;
@@ -966,6 +979,7 @@ impl Shell {
     }
 
     pub(crate) fn open_page(&mut self, page: Page, cx: &mut Context<Self>) {
+        self.db_leaving(page, cx);
         self.page = page;
         if let Some(i) = self.open_section().filter(|i| !self.section_loaded(*i)) {
             self.fetch_views(Some(i), cx);
@@ -1082,8 +1096,7 @@ impl Shell {
             cx,
         )];
         for (i, s) in self.library.sections.iter().enumerate() {
-            let simplified = s.addon == swofty_core::managed::ID;
-            if Some(i) == importer || (simplified && s.spec.id == TRACKS_SECTION) {
+            if Some(i) == importer || s.is_importer_tracks() {
                 continue;
             }
             let addon = self.library.addons.iter().find(|a| a.manifest.id == s.addon);

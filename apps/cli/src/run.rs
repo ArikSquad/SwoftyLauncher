@@ -49,7 +49,7 @@ pub struct RunArgs {
         help = "Build and install the profile (database, tracks) before the game starts, and roll it back when it exits"
     )]
     apply: bool,
-    #[arg(long, help = "Game folder (default: discovered from Steam)")]
+    #[arg(long, help = crate::GAME_HELP)]
     game: Option<PathBuf>,
     #[arg(
         long,
@@ -74,6 +74,7 @@ pub fn run(store: &Store, profile: &str, args: RunArgs) -> Result<ExitCode> {
     if wrapped {
         return wrapper(store, profile, &args, &g);
     }
+    crate::build::supported(&g)?;
     let game = g.dir.clone();
     if let Some(running) = game_processes().first() {
         if !args.restart {

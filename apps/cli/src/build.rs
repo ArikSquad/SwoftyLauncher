@@ -4,7 +4,7 @@ use std::process::ExitCode;
 use anyhow::{Context, Result, bail};
 use swofty_core::baseline::DepotHashes;
 use swofty_core::build::GVDB;
-use swofty_core::install::{Game, Installer};
+use swofty_core::install::{EA_APP_UNSUPPORTED, Game, Installer, Source};
 use swofty_core::recovery::{Blocked, Scope, SessionLock};
 use swofty_core::settings::SETTINGS_FILE;
 use swofty_core::stock::{self, Depots};
@@ -20,6 +20,13 @@ pub const UI_ERPS: &[&str] = &[
 ];
 pub fn game(store: &Store, explicit: Option<PathBuf>) -> Result<Game> {
     Ok(Game::locate(&store.root, game_dir(store, explicit)?)?)
+}
+
+pub fn supported(g: &Game) -> Result<()> {
+    if Source::detect(&g.dir) == Source::EaApp {
+        bail!("{}: {EA_APP_UNSUPPORTED}", g.dir.display());
+    }
+    Ok(())
 }
 
 /// `--game`, else the folder picked with Locate F1 25 in the launcher, else Steam's copy.
@@ -132,7 +139,8 @@ fn conflicts_text(
         for item in &pair.items {
             out.push_str(&format!("  {item}\n"));
         }
-        let more = (pair.database + pair.resources + pair.files).saturating_sub(pair.items.len());
+        let more =
+            (pair.database + pair.resources + pair.files + pair.strings).saturating_sub(pair.items.len());
         if more > 0 && pair.items.len() >= swofty_core::conflicts::MAX_ITEMS {
             out.push_str(&format!("  and {more} more\n"));
         }
@@ -229,6 +237,7 @@ fn not_stock(store: &Store, g: &Game, r: swofty_core::Result<()>) -> swofty_core
 
 pub fn apply(store: &Store, profile: &str, game: Option<PathBuf>) -> Result<ExitCode> {
     let g = self::game(store, game)?;
+    supported(&g)?;
     let out = |l: &str| println!("{l}");
     let Some(lock) = SessionLock::try_acquire(&store.root)? else {
         bail!("a modded session is running or rolling back; close F1 25 and try again");
@@ -551,7 +560,7 @@ mod tests {
         let mut report = Report {
             profile: "default".into(),
             built_at: 1.0,
-            pairs: Vec::new(),
+            ..Report::default()
         };
         let names = BTreeMap::from([("t.b".to_owned(), "Second".to_owned())]);
         assert_eq!(
@@ -571,5 +580,13 @@ mod tests {
             conflicts_text(&report, &names),
             "Second overrides t.a on 1 database value and 1 file\n  rules.laps\n  x/a.dds\n"
         );
+        let max = swofty_core::conflicts::MAX_ITEMS;
+        report.pairs[0] = Pair {
+            database: max,
+            strings: 2,
+            items: vec!["rules.laps".into(); max],
+            ..report.pairs[0].clone()
+        };
+        assert!(conflicts_text(&report, &names).ends_with("  and 3 more\n"));
     }
 }

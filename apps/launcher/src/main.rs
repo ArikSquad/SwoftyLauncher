@@ -5,6 +5,7 @@ mod blocks;
 mod console;
 mod db;
 mod discord;
+mod ea_app;
 mod game;
 mod importer;
 mod library;

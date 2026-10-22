@@ -1237,6 +1237,29 @@ mod tests {
     }
 
     #[test]
+    fn other_addons_cannot_take_a_db_editor_id() {
+        let cat = cat();
+        let s = store("taken-id");
+        let mut p = Package::create(&s, "My changes").unwrap();
+        p.edits.set(&cat, fnv1a64(NUM), "33").unwrap();
+        p.save(&s, &cat).unwrap();
+        let plain = |id: &str| {
+            let dir = s.root.join("incoming").join(id);
+            std::fs::create_dir_all(&dir).unwrap();
+            let m = format!(
+                r#"{{"schema_version":1,"id":"{id}","name":"x","version":"1.0.0","author":"x","compat":{{"game":"f1_25"}}}}"#
+            );
+            std::fs::write(dir.join(MANIFEST_FILE), m).unwrap();
+            s.install_addon(&dir).unwrap_err().to_string()
+        };
+        assert!(plain(&p.id).contains("is a DB Editor addon you have"));
+        assert_eq!(Package::open(&s, &p.id).unwrap().edits, p.edits);
+        assert!(plain("dbedit.other").contains("prefix is kept"));
+        assert!(!dir(&s, "dbedit.other").exists());
+        std::fs::remove_dir_all(&s.root).ok();
+    }
+
+    #[test]
     fn imports_json_exports_as_new_packages() {
         let s = store("json");
         let cat = cat();

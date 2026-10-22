@@ -16,6 +16,9 @@ pub const ERP_FILE: &str = "erp.json";
 pub const TEXT_FILE: &str = "text.json";
 pub const TRACKS_FILE: &str = "tracks.json";
 const CODE: [&str; 6] = ["dll", "exe", "asi", "so", "dylib", "bat"];
+/// `swofty.` for the launcher's own addons, `dbedit.` for the DB Editor's.
+const RESERVED: [&str; 2] = ["swofty.", "dbedit."];
+const MAX_DEPTH: usize = 64;
 
 #[derive(Debug, Clone)]
 pub struct AddonBuilder {
@@ -138,6 +141,9 @@ impl AddonBuilder {
             ops.insert("erp".into(), serde_json::json!([ERP_FILE]));
             kind.push("erp");
         }
+        if !self.text.is_empty() {
+            kind.push("text");
+        }
         let assets: Vec<&str> = [
             (TEXT_FILE, self.text.is_empty()),
             (TRACKS_FILE, self.tracks.is_empty()),
@@ -193,8 +199,8 @@ impl AddonBuilder {
         if !valid_id(&self.id) {
             return fail("id must be lowercase dotted [a-z0-9._-] with at least two parts".into());
         }
-        if self.id.starts_with("swofty.") {
-            return fail("the swofty. prefix is reserved".into());
+        if let Some(prefix) = RESERVED.iter().find(|p| self.id.starts_with(*p)) {
+            return fail(format!("the {prefix} prefix is reserved"));
         }
         if self.name.trim().is_empty() {
             return fail("the addon needs a name".into());
@@ -207,6 +213,10 @@ impl AddonBuilder {
                 "{} must be a relative path inside the game folder",
                 f.target
             ));
+        }
+        let named = self.sources.keys().chain(self.files.iter().map(|f| &f.target));
+        if let Some(rel) = named.into_iter().find(|r| is_code(Path::new(r))) {
+            return fail(format!("{rel} is a program; a generated addon carries data only"));
         }
         let mut targets = std::collections::BTreeSet::new();
         if let Some(f) = self.files.iter().find(|f| !targets.insert(f.target.as_str())) {
@@ -256,14 +266,14 @@ impl AddonBuilder {
         self.check()?;
         let m = self.manifest()?;
         for from in self.sources.values() {
-            refuse_code(from)?;
+            refuse_code(from, 0)?;
         }
         if std::fs::read_dir(dir).is_ok_and(|mut d| d.next().is_some()) {
             return Err(Error::Other(format!("{} is not empty", dir.display())));
         }
         mkdir(dir)?;
         for (rel, from) in &self.sources {
-            copy(from, &dir.join(rel))?;
+            copy(from, &dir.join(rel), 0)?;
         }
         let mut out = vec![(MANIFEST_FILE, serde_json::to_value(&m).expect("serialisable"))];
         if !self.database.ops.is_empty() {
@@ -309,19 +319,39 @@ fn mkdir(dir: &Path) -> Result<()> {
     })
 }
 
-fn refuse_code(path: &Path) -> Result<()> {
-    if path.is_dir() {
-        let entries = std::fs::read_dir(path).map_err(|source| Error::Io {
-            path: path.into(),
-            source,
-        })?;
-        for e in entries.flatten() {
-            refuse_code(&e.path())?;
+fn io(path: &Path) -> impl FnOnce(std::io::Error) -> Error {
+    let path = path.to_path_buf();
+    move |source| Error::Io { path, source }
+}
+
+fn is_code(path: &Path) -> bool {
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or_default();
+    CODE.iter().any(|c| ext.eq_ignore_ascii_case(c))
+}
+
+/// Whether `path` is a folder, refusing links, which could leave the source or loop.
+fn is_dir(path: &Path, depth: usize) -> Result<bool> {
+    let meta = std::fs::symlink_metadata(path).map_err(io(path))?;
+    if meta.file_type().is_symlink() {
+        return Err(Error::Other(format!(
+            "{} is a link; a generated addon copies plain files and folders",
+            path.display()
+        )));
+    }
+    if depth > MAX_DEPTH {
+        return Err(Error::Other(format!("{} is nested too deep", path.display())));
+    }
+    Ok(meta.is_dir())
+}
+
+fn refuse_code(path: &Path, depth: usize) -> Result<()> {
+    if is_dir(path, depth)? {
+        for e in std::fs::read_dir(path).map_err(io(path))? {
+            refuse_code(&e.map_err(io(path))?.path(), depth + 1)?;
         }
         return Ok(());
     }
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or_default();
-    match CODE.iter().any(|c| ext.eq_ignore_ascii_case(c)) {
+    match is_code(path) {
         true => Err(Error::Other(format!(
             "{} is a program; a generated addon carries data only",
             path.display()
@@ -330,15 +360,12 @@ fn refuse_code(path: &Path) -> Result<()> {
     }
 }
 
-fn copy(from: &Path, to: &Path) -> Result<()> {
-    let io = |path: &Path| {
-        let path = path.to_path_buf();
-        move |source| Error::Io { path, source }
-    };
-    if from.is_dir() {
+fn copy(from: &Path, to: &Path, depth: usize) -> Result<()> {
+    if is_dir(from, depth)? {
         mkdir(to)?;
-        for e in std::fs::read_dir(from).map_err(io(from))?.flatten() {
-            copy(&e.path(), &to.join(e.file_name()))?;
+        for e in std::fs::read_dir(from).map_err(io(from))? {
+            let e = e.map_err(io(from))?;
+            copy(&e.path(), &to.join(e.file_name()), depth + 1)?;
         }
         return Ok(());
     }
@@ -353,6 +380,7 @@ fn copy(from: &Path, to: &Path) -> Result<()> {
 mod tests {
     use super::*;
     use crate::asset::{FileKind, OpFile};
+    use crate::manifest::Kind;
 
     fn tmp(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("swofty-builder-{name}-{}", std::process::id()));
@@ -407,6 +435,7 @@ mod tests {
             format!(">={}", launcher_floor())
         );
         assert!(launcher_floor() <= Version::new(1, 3, 0));
+        assert_eq!(m.kind, [Kind::Database, Kind::Erp, Kind::Text, Kind::Files]);
         assert_eq!(m.operations.database, [DATABASE_FILE]);
         assert_eq!(m.operations.erp, [ERP_FILE]);
         assert_eq!(m.operations.assets, [TEXT_FILE, TRACKS_FILE]);
@@ -453,7 +482,7 @@ mod tests {
             assert!(!out.exists(), "{e}");
             e
         };
-        for id in ["Okayama", "single", "swofty.okayama"] {
+        for id in ["Okayama", "single", "swofty.okayama", "dbedit.okayama"] {
             let mut b = base.clone();
             b.id = id.into();
             refused(&b);
@@ -484,8 +513,35 @@ mod tests {
             },
         });
         assert!(refused(&b).contains("own folder"));
+        let mut b = base.clone();
+        b.source("bin/x64/version.dll", root.join("r.bin"));
+        assert!(refused(&b).contains("data only"));
+        let mut b = base.clone();
+        b.file(root.join("a.dds"), "bin/x64/dinput8.DLL");
+        assert!(refused(&b).contains("data only"));
         std::fs::write(root.join("okayama/plugin.dll"), "MZ").unwrap();
         assert!(refused(&base).contains("data only"));
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_links_in_sources() {
+        let root = tmp("links");
+        let out = root.join("out");
+        let base = sample(&root);
+        std::os::unix::fs::symlink(&root, root.join("okayama/loop")).unwrap();
+        let e = base.write(&out).unwrap_err().to_string();
+        assert!(e.contains("is a link") && !out.exists(), "{e}");
+        std::fs::remove_file(root.join("okayama/loop")).unwrap();
+        std::os::unix::fs::symlink("/etc/hostname", root.join("okayama/host")).unwrap();
+        assert!(base.write(&out).unwrap_err().to_string().contains("is a link"));
+        std::fs::remove_file(root.join("okayama/host")).unwrap();
+        let mut b = base.clone();
+        std::os::unix::fs::symlink(root.join("a.dds"), root.join("linked.dds")).unwrap();
+        b.file(root.join("linked.dds"), "livery_package_shared/b.dds");
+        assert!(b.write(&out).unwrap_err().to_string().contains("is a link"));
+        base.write(&out).unwrap();
         std::fs::remove_dir_all(&root).ok();
     }
 }
