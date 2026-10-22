@@ -47,7 +47,7 @@ Inside each file, the prefix on an op names its kind:
 | `db.set`, `db.add-row` | As in [database operations](/reference/ops/database) | Change a field, or copy a row |
 | `db.remove-row`, `db.list-append`, `db.list-remove` | As in [database operations](/reference/ops/database) | Not built yet: a build with one fails |
 | `db.put-record` | `key` (a path, or `0x` and 16 hex digits), `type` (the tag), `value` (hex bytes) | Write one raw record |
-| `db.remove-record` | `key` | Remove one record |
+| `db.remove-record` | `key`, optional `allow_stock_removal` | Remove one record. A stock record stays unless `allow_stock_removal` is `true` ([Removing stock records](/reference/ops/database#removing-stock-records)) |
 | `lang.set` | `language` (a code, or `*` for every language), `key`, `value` | Set one string |
 | `lang.table` | `language`, `source` (an `.lng` file) | Set every string in a table |
 | `lang.default` | `language`, `key`, `value` | Set one string before every `lang.set` and `lang.table`, which win over it ([In-game text](/reference/data/text)) |
