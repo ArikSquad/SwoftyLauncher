@@ -100,6 +100,7 @@ The importer compares each file with the clean files of the installed game build
 - Removals apply only when `game_version` matches the installed game. Otherwise they're dropped, and the mod's row says how many and which version the package was made for.
 - A database change touches only the records the package changed, and archives merge one resource at a time.
 - Every resource a mod adds or changes goes into an overlay of the `2025_asset_groups/` archive it belongs to. A changed resource may change size there.
+- Resources a mod carries in a `shader_package_2025/` archive stay in that archive. The launcher merges them into the game's copy and writes it into the game files, and each GPU build of the archive gets its own copy.
 - Team logo texture arrays in `ui_texture*` archives merge slice by slice across every enabled mod.
 - When a team rename package fills in the game's own text for the teams it doesn't rename, those defaults don't undo another mod's rename.
 - A special livery row the package adds is reported as owned, so the livery shows in the picker.
