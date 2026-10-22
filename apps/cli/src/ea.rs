@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Result, anyhow, bail};
 use swofty_core::ea_app::{self, Handoff};
 use swofty_core::install::{Game, Source};
-use swofty_core::process::{game_processes, stop_process};
+use swofty_core::process::{GameProcess, game_processes, stop_process};
 use swofty_core::recovery::Scope;
 use swofty_core::steam_client;
 use swofty_core::store::Store;
@@ -137,17 +137,23 @@ fn detach(c: &mut std::process::Command) -> std::io::Result<Child> {
     c.spawn()
 }
 
-fn new_copy(before: &[u32]) -> Option<u32> {
+/// A game started since `before` that is not another copy's than `game`'s.
+fn new_copy(game: &Path, before: &[u32]) -> Option<u32> {
     game_processes()
         .into_iter()
+        .find(|g| !before.contains(&g.pid) && !g.elsewhere(game))
         .map(|g| g.pid)
-        .find(|p| !before.contains(p))
 }
 
-fn wait_for_game(before: &[u32], timeout: Duration, handoff: &mut Option<Child>) -> Result<Option<u32>> {
+fn wait_for_game(
+    game: &Path,
+    before: &[u32],
+    timeout: Duration,
+    handoff: &mut Option<Child>,
+) -> Result<Option<u32>> {
     let since = Instant::now();
     loop {
-        if let Some(pid) = new_copy(before) {
+        if let Some(pid) = new_copy(game, before) {
             return Ok(Some(pid));
         }
         if ending() {
@@ -189,7 +195,7 @@ pub fn start(store: &Store, game: &Path, args: &[String], session: &Path, before
             None
         }
     };
-    let pid = match wait_for_game(before, HANDOFF_TIMEOUT, &mut handoff)? {
+    let pid = match wait_for_game(game, before, HANDOFF_TIMEOUT, &mut handoff)? {
         Some(pid) => pid,
         None => {
             if let Some(mut open) = ea_app::opener(&h) {
@@ -200,7 +206,7 @@ pub fn start(store: &Store, game: &Path, args: &[String], session: &Path, before
                 "F1 25 did not start from the launch link; press Play on F1 25 in the EA app",
             );
             stage.set("Press Play on F1 25 in the EA app");
-            wait_for_game(before, PRESS_PLAY_TIMEOUT, &mut None)?.ok_or_else(|| {
+            wait_for_game(game, before, PRESS_PLAY_TIMEOUT, &mut None)?.ok_or_else(|| {
                 anyhow!(
                     "F1 25 was not started from the EA app within {} min; the game files are rolled back",
                     PRESS_PLAY_TIMEOUT.as_secs() / 60
@@ -209,7 +215,7 @@ pub fn start(store: &Store, game: &Path, args: &[String], session: &Path, before
         }
     };
     say("ea app", &format!("F1 25 started (pid {pid})"));
-    Ok(Started { handoff })
+    Ok(Started { pid, handoff })
 }
 
 /// An EA app copy started by the EA app as it is installed, with nothing
@@ -243,7 +249,7 @@ pub fn launch_installed(store: &Store, g: &Game, vr: bool, opted_out: bool) -> R
     #[cfg(unix)]
     std::os::unix::process::CommandExt::process_group(&mut c, 0);
     let mut child = Some(c.spawn().map_err(|e| anyhow!("could not run {h}: {e}"))?);
-    let pid = wait_for_game(&[], HANDOFF_TIMEOUT, &mut child)?.ok_or_else(|| {
+    let pid = wait_for_game(&g.dir, &[], HANDOFF_TIMEOUT, &mut child)?.ok_or_else(|| {
         anyhow!(
             "F1 25 did not start within {} min of the launch link; press Play on F1 25 in the EA app",
             HANDOFF_TIMEOUT.as_secs() / 60
@@ -273,17 +279,19 @@ fn command_line(_: u32) -> Option<String> {
 }
 
 pub struct Started {
+    pid: u32,
     handoff: Option<Child>,
 }
 
-/// Until every copy of F1 25 started since the launch has closed.
-pub fn wait(before: &[u32], started: Started, mut tick: impl FnMut()) -> i32 {
+/// Until every game of this copy started since the launch has closed. Only
+/// the game the EA app started for the session, and games that are this
+/// copy's, are closed on a stop.
+pub fn wait(game: &Path, before: &[u32], started: Started, mut tick: impl FnMut()) -> i32 {
     let mut asked = false;
     loop {
-        let running: Vec<u32> = game_processes()
+        let running: Vec<GameProcess> = game_processes()
             .into_iter()
-            .map(|g| g.pid)
-            .filter(|p| !before.contains(p))
+            .filter(|g| !before.contains(&g.pid) && !g.elsewhere(game))
             .collect();
         if running.is_empty() {
             break;
@@ -295,8 +303,8 @@ pub fn wait(before: &[u32], started: Started, mut tick: impl FnMut()) -> i32 {
                 "info",
                 "asked to stop: closing F1 25, then rolling its game files back",
             );
-            for pid in running {
-                stop_process(pid).ok();
+            for g in running.iter().filter(|g| g.pid == started.pid || g.is_in(game)) {
+                stop_process(g.pid).ok();
             }
         }
         std::thread::sleep(Duration::from_millis(200));
