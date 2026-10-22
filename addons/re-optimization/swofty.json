@@ -32,7 +32,7 @@
       "id": "enforce_mode",
       "type": "choice",
       "label": "In-engine enforcement",
-      "description": "Applies the tuned shadow, fog, crowd and texture streaming values where the engine reads them, after the graphics preset. Cheaper uses the lower of your preset's value and the tuned value. Target always uses the tuned value. Off leaves the engine's values. Applies on the next launch.",
+      "description": "Sets the tuned shadow, fog, crowd and texture streaming values in the engine after the graphics preset. Cheaper keeps the lower of yours and the tuned one, Target always uses the tuned one, Off changes nothing. Applies next launch.",
       "values": [
         { "value": "cheaper", "label": "Cheaper" },
         { "value": "target", "label": "Target" },
@@ -45,7 +45,7 @@
       "id": "pin_effects",
       "type": "toggle",
       "label": "Pin effects",
-      "description": "With enforcement on, keeps sky-shadow low LOD, the 32-bit sky shadow map, crowd shadows, god rays, lens streak and motion blur v2 off. In Target mode it also keeps rain, track heat haze, ground cover, grass flattening, volumetric fog and night character shadows on.",
+      "description": "With enforcement on, keeps sky-shadow low LOD, the 32-bit sky shadow map, crowd shadows, god rays, lens streak and motion blur v2 off. Target also keeps rain, heat haze, ground cover, grass flattening, volumetric fog and night shadows on.",
       "default": true,
       "binds": "native"
     },
