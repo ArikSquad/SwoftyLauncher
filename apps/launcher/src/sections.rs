@@ -347,7 +347,10 @@ impl Shell {
         let profile = self.library.profile.clone();
         let install = self.install.clone();
         let (addon, section) = (addon.to_owned(), section.to_owned());
+        let feed = crate::tasks::Feed::default();
+        let sink = crate::tasks::Sink(feed.clone());
         self.busy.insert(control.clone());
+        self.follow_tasks(control.clone(), feed.clone(), cx);
         cx.notify();
         cx.spawn_in(window, async move |this, cx| {
             let id = addon.clone();
@@ -358,13 +361,14 @@ impl Shell {
                     let host = host(&store, &addon, &profile, game.as_ref())?;
                     entry
                         .addon
-                        .event(&host.cx(), &section, event)
+                        .event(&host.cx().with_tasks(&sink), &section, event)
                         .map_err(|e| e.to_string())
                 })
                 .await;
             this.update_in(cx, |s, window, cx| {
                 s.busy.remove(&control);
                 s.settled(&control, &effect);
+                let effect = s.finish_tasks(&control, &feed, effect, cx);
                 s.effect(&id, effect, window, cx);
             })
             .ok();
