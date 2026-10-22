@@ -55,6 +55,14 @@ impl Page {
         }
     }
 
+    // The sidebar's shorter name, under its Simplified for Swofty heading.
+    fn nav_label(self) -> &'static str {
+        match self {
+            Self::Importer => "Importer",
+            page => page.label(),
+        }
+    }
+
     pub fn icon(self) -> IconName {
         match self {
             Self::News => IconName::Newspaper,
@@ -1040,7 +1048,7 @@ impl Shell {
                 }
             })
             .child(nav_art(self.big_art(page), 28., active, p))
-            .child(div().flex_1().truncate().child(page.label()))
+            .child(div().flex_1().truncate().child(page.nav_label()))
             .children(count.map(|n| {
                 div()
                     .text_size(px(12.))
@@ -1146,7 +1154,6 @@ impl Shell {
         let big = [
             (Page::News, None),
             (Page::Addons, Some(self.library.listed().count())),
-            (Page::Importer, None),
             (Page::Tools, None),
             (Page::Profiles, Some(self.library.profiles.len())),
         ];
@@ -1172,6 +1179,14 @@ impl Shell {
                     .flex_shrink_0()
                     .gap(px(2.))
                     .children(big.map(|(page, count)| self.big_nav(page, count, p, cx))),
+            )
+            .child(
+                v_flex()
+                    .flex_shrink_0()
+                    .pt(px(if short { 4. } else { 12. }))
+                    .gap(px(6.))
+                    .child(label("SIMPLIFIED FOR SWOFTY", p).px(px(8.)))
+                    .child(self.big_nav(Page::Importer, None, p, cx)),
             )
             .child(
                 v_flex()
