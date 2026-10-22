@@ -13,6 +13,9 @@ use swofty_core::store::Store;
 use crate::run::{StageFile, ending, say};
 
 const APP_START_TIMEOUT: Duration = Duration::from_secs(90);
+// A link handed over while the EA app is still starting can be dropped:
+// under Proton one sent a second after EADesktop.exe appeared never arrived.
+const APP_SETTLE: Duration = Duration::from_secs(10);
 const HANDOFF_TIMEOUT: Duration = Duration::from_secs(180);
 const PRESS_PLAY_TIMEOUT: Duration = Duration::from_secs(600);
 const HANDOFF_LOG: &str = "ea_handoff.log";
@@ -76,10 +79,13 @@ pub fn ensure(store: &Store, opted_out: bool) -> Result<()> {
                 })?;
                 let since = Instant::now();
                 match wait_for_app(&mut child, || since.elapsed() >= APP_START_TIMEOUT) {
-                    AppStart::Running => say(
-                        "ea app",
-                        &format!("running after {:.1} s", since.elapsed().as_secs_f64()),
-                    ),
+                    AppStart::Running => {
+                        say(
+                            "ea app",
+                            &format!("running after {:.1} s", since.elapsed().as_secs_f64()),
+                        );
+                        std::thread::sleep(APP_SETTLE);
+                    }
                     AppStart::CommandFailed(exit) => say(
                         "ea app",
                         &format!("the command did not open the EA app ({exit}); the launch link starts it"),
