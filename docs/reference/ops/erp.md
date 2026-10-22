@@ -104,7 +104,7 @@ A whole replacement that changes the layout of a stock entry in `erp` rewrites t
 
 ## Removing resources
 
-`remove-resource` takes `resource` out of `erp` and fails when `erp` has no such resource. The in-game loader cannot take a resource out of a stock archive, so a build with any `remove-resource` delivers every ERP operation by rewriting the archives, and prints:
+`remove-resource` takes `resource` out of `erp`. Removing a resource `erp` does not have is a no-op, logged. The in-game loader cannot take a resource out of a stock archive, so a build with any `remove-resource` delivers every ERP operation by rewriting the archives, and prints:
 
 ```text
 erp: built into the game files; 1 resource removal(s) cannot apply at runtime

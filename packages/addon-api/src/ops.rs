@@ -84,6 +84,7 @@ pub enum DbOp {
         tag: u8,
         value: String,
     },
+    /// Removing a key already absent is a no-op.
     RemoveRecord {
         key: String,
     },
@@ -123,6 +124,7 @@ pub enum ErpOp {
         #[serde(default, rename = "as", skip_serializing_if = "Option::is_none")]
         rename: Option<String>,
     },
+    /// Removing a resource the archive does not have is a no-op.
     RemoveResource {
         erp: String,
         resource: String,
@@ -737,7 +739,8 @@ fn apply(db: &mut Db, op: &DbOp, names: &dyn FieldNames, cx: &mut Cx) -> Result<
         DbOp::RemoveRecord { key } => {
             let k = resolve_key(db, key)?;
             if !db.remove(k) {
-                return Err(Error::Resolve(format!("{key}: no such key")));
+                cx.report.lines.push(format!("{key}: already removed"));
+                return Ok(None);
             }
             Ok(Some(k))
         }
@@ -1159,13 +1162,35 @@ mod tests {
         assert!(db.get("entrants.teams.team_1.stat_id").is_none());
         assert_eq!(db.records.len(), count);
         for bad in [
-            r#"{"op":"remove-record","key":"entrants.teams.team_1.nope"}"#,
             r#"{"op":"put-record","key":"0x12","type":0,"value":"00"}"#,
             r#"{"op":"put-record","key":"a.b","type":0,"value":"0"}"#,
         ] {
             let op: DbOp = serde_json::from_str(bad).unwrap();
             assert!(apply_db_op(&mut db, &op, &names()).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn remove_record_twice_is_idempotent() {
+        let key = "entrants.teams.team_1.stat_id";
+        let json = format!(
+            r#"{{"schema_version":1,"ops":[
+            {{"op":"remove-record","key":"{key}"}},
+            {{"op":"remove-record","key":"{key}"}}]}}"#
+        );
+        let mut lenient = db();
+        let mut report = DbReport::default();
+        let replaced = apply_db_ops_report(&mut lenient, &ops(&json), &names(), &mut report).unwrap();
+        assert_eq!(replaced, [fnv1a64(key)]);
+        assert!(lenient.get(key).is_none());
+        assert_eq!(report.lines, [format!("{key}: already removed")]);
+
+        let strict = format!(
+            r#"{{"schema_version":1,"strict":true,"ops":[
+            {{"op":"remove-record","key":"{key}"}},
+            {{"op":"remove-record","key":"{key}"}}]}}"#
+        );
+        apply_db_ops(&mut db(), &ops(&strict), &names()).unwrap();
     }
 
     const SETS: &str = "track_data.game_setup";

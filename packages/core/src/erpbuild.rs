@@ -87,6 +87,7 @@ pub struct ErpBuild<'a> {
     mipmaps: BTreeMap<String, PathBuf>,
     stock: HashMap<String, Option<Resource>>,
     merges: Vec<SliceMerge>,
+    notes: Vec<String>,
 }
 
 // What one merge-slices op did: the stock slice count (0 without a stock array), the
@@ -231,6 +232,7 @@ impl<'a> ErpBuild<'a> {
             mipmaps: BTreeMap::new(),
             stock: HashMap::new(),
             merges: Vec::new(),
+            notes: Vec::new(),
         }
     }
 
@@ -394,9 +396,16 @@ impl<'a> ErpBuild<'a> {
                 self.add(erp, resource, kind, &data)
             }
             ErpOp::RemoveResource { erp, resource } => {
-                let e = self.erp(erp)?;
-                let i = e.find(resource).map_err(|err| fail(format!("{erp}: {err}")))?;
-                e.slots.remove(i);
+                match self
+                    .erp(erp)?
+                    .position(resource)
+                    .map_err(|err| fail(format!("{erp}: {err}")))?
+                {
+                    Some(i) => {
+                        self.erp(erp)?.slots.remove(i);
+                    }
+                    None => self.notes.push(format!("{erp}: {resource} already removed")),
+                }
                 Ok(())
             }
             ErpOp::MergeSlices {
@@ -609,6 +618,10 @@ impl<'a> ErpBuild<'a> {
 
     pub fn take_merges(&mut self) -> Vec<SliceMerge> {
         std::mem::take(&mut self.merges)
+    }
+
+    pub fn take_notes(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.notes)
     }
 
     fn patch(
@@ -1390,16 +1403,35 @@ mod tests {
             ))
             .contains("is not a resource type")
         );
-        assert_eq!(
-            fails(r#"{"op":"remove-resource","erp":"ui/a.erp","resource":"eaid://ui_package/w"}"#),
-            "ui/a.erp: eaid://ui_package/w: not found"
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn removing_a_resource_twice_is_idempotent() {
+        let root = std::env::temp_dir().join(format!("swofty-erpremove-{}", std::process::id()));
+        std::fs::remove_dir_all(&root).ok();
+        let (game, addon) = (root.join("game"), root.join("addon"));
+        std::fs::create_dir_all(game.join("ui")).unwrap();
+        std::fs::create_dir_all(&addon).unwrap();
+        std::fs::write(
+            game.join("ui/a.erp"),
+            erp(&[("eaid://one", layer(&["a"])), ("eaid://two", layer(&["b"]))]),
+        )
+        .unwrap();
+        let ops = erp_ops(
+            r#"{"schema_version":1,"ops":[
+            {"op":"remove-resource","erp":"ui/a.erp","resource":"eaid://two"},
+            {"op":"remove-resource","erp":"ui/a.erp","resource":"eaid://two"}]}"#,
         );
-        assert!(
-            fails(&format!(
-                r#"{{"op":"remove-resource","erp":"ui/a.erp","resource":"{y}"}},{{"op":"remove-resource","erp":"ui/a.erp","resource":"{y}"}}"#
-            ))
-            .contains("not found")
-        );
+        let original = |rel: &str| game.join(rel);
+        let mut b = ErpBuild::new(&original);
+        apply(&mut b, &ops, &addon).unwrap();
+        assert_eq!(b.take_notes(), ["ui/a.erp: eaid://two already removed"]);
+        let out = root.join("out");
+        assert_eq!(b.write(&out).unwrap(), ["ui/a.erp"]);
+        let written = Erp::parse(&std::fs::read(out.join("ui/a.erp")).unwrap()).unwrap();
+        let names: Vec<&str> = written.resources.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, ["eaid://one"]);
         std::fs::remove_dir_all(&root).ok();
     }
 

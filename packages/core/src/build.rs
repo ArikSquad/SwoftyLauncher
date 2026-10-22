@@ -870,6 +870,9 @@ pub(crate) fn build_as(store: &Store, profile: &str, game: &Game, checking: bool
                 _ => {}
             }
         }
+        for n in erps.take_notes() {
+            built.lines.push(format!("erp: {n}"));
+        }
         mipmaps = erps.take_mipmaps();
         if let Some(note) = planner.route_note(Kind::Erp) {
             built.lines.push(format!("erp: {note}"));
