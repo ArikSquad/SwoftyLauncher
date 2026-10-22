@@ -5,6 +5,7 @@ use gpui_kit::{Image, ImageFormat};
 use swofty_core::asset::{AssetOp, OpFile};
 use swofty_core::launcher::Summary;
 use swofty_core::manifest::{AddonManifest, Category};
+use swofty_core::ops::ErpOp;
 use swofty_core::profile::{Profile, VANILLA};
 use swofty_core::registry::{Host, Registry};
 use swofty_core::store::Store;
@@ -44,15 +45,6 @@ impl Source {
     pub fn label(self) -> &'static str {
         match self {
             Self::Builtin => "Built in",
-            Self::DbEditor => "Built from DB Editor",
-            Self::Importer => "Imported by Mod Importer",
-            Self::Installed => "Installed",
-        }
-    }
-
-    pub fn tag(self) -> &'static str {
-        match self {
-            Self::Builtin => "Built in",
             Self::DbEditor => "DB Editor",
             Self::Importer => "Mod Importer",
             Self::Installed => "Installed",
@@ -61,7 +53,7 @@ impl Source {
 
     fn of(store: &Store, m: &AddonManifest, package: bool) -> Self {
         let tool = m.origin.as_ref().map(|o| o.tool.as_str());
-        if store.is_builtin(&m.id) {
+        if store.is_builtin(&m.id) || m.id == swofty_core::managed::ID {
             Self::Builtin
         } else if package || tool == Some(swofty_core::dbedit::package::ORIGIN_TOOL) {
             Self::DbEditor
@@ -109,6 +101,13 @@ impl Changes {
         for op in &ops {
             match op {
                 AssetOp::Db(_) => c.database += 1,
+                AssetOp::Erp(ErpOp::Overlay { erps, source }) => {
+                    let names = source
+                        .resolve(&swofty_core::build::source_dir(store, &m.id, source.root))
+                        .ok()
+                        .and_then(|path| swofty_core::erpbuild::overlay_names(&path).ok());
+                    c.resources += names.map_or(1, |n| n.len() * erps.len().max(1));
+                }
                 AssetOp::Erp(_) => c.resources += 1,
                 AssetOp::Lang(_) => c.text += 1,
                 AssetOp::File(_) => c.files += 1,
@@ -126,7 +125,7 @@ impl Changes {
     pub fn parts(&self) -> Vec<String> {
         [
             (self.database, "database value", "database values"),
-            (self.resources, "archive resource", "archive resources"),
+            (self.resources, "game asset", "game assets"),
             (self.text, "text entry", "text entries"),
             (self.files, "file", "files"),
             (self.tracks, "track", "tracks"),
@@ -169,6 +168,7 @@ fn addon_icon(store: &Store, registry: &Registry, m: &AddonManifest) -> Option<A
 }
 
 pub const TRACKS_SECTION: &str = "tracks";
+const IMPORTER_SECTION: &str = "mods";
 
 pub struct SectionItem {
     pub addon: String,
@@ -232,6 +232,7 @@ pub struct Library {
     /// The section with id `tracks` the sidebar shows, which lists track
     /// packages and track addons together.
     pub tracks_page: Option<usize>,
+    pub importer_icon: Option<AddonIcon>,
     pub error: Option<String>,
     pub loaded: Instant,
 }
@@ -304,6 +305,7 @@ impl Library {
         let tracks_page = tracks_page(&sections);
         Self {
             tracks_page,
+            importer_icon: section_icon(store, swofty_core::managed::ID, IMPORTER_SECTION),
             rebuild: profile.rebuild_pending(&manifests),
             profile,
             addons,

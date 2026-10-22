@@ -74,7 +74,7 @@ Your addon needs a `swofty.json` at its root. This is where you give it a name, 
 | `file` | string? | The file name the addon was made from. |
 | `sha256` | string? | That file's SHA-256, in hex. |
 
-The **Addons** page shows the source as Built in, Built from DB Editor, Imported by Mod Importer or Installed. A launcher before 1.3.0 rejects `category` and `origin`; set `"compat": { "launcher": ">=1.3.0" }` when you use them.
+The **Addons** page shows the source as Built in, DB Editor, Mod Importer or Installed. A launcher before 1.3.0 rejects `category` and `origin`; set `"compat": { "launcher": ">=1.3.0" }` when you use them.
 
 ## saves
 

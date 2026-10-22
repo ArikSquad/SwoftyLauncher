@@ -9,6 +9,7 @@ use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::notification::Notification;
+use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{Disableable, Icon, Sizable, WindowExt, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
@@ -27,7 +28,7 @@ const FADE: Duration = Duration::from_secs(4);
 const FILTERS_W: f32 = 226.;
 const DETAIL_W: f32 = 380.;
 const SPLIT_AT: f32 = 1000.;
-const ITEMS_SHOWN: usize = 40;
+const ITEMS_SHOWN: usize = 10;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum Type {
@@ -166,6 +167,9 @@ pub(crate) struct AddonsPage {
     read_at: Option<Instant>,
     pub(crate) checking: bool,
     open_pairs: HashSet<(String, String)>,
+    details: HashSet<(String, String)>,
+    all_items: HashSet<(String, String)>,
+    advanced: bool,
     changes: HashMap<String, Changes>,
     _search: Subscription,
 }
@@ -190,6 +194,9 @@ impl AddonsPage {
             read_at: None,
             checking: false,
             open_pairs: HashSet::new(),
+            details: HashSet::new(),
+            all_items: HashSet::new(),
+            advanced: false,
             changes: HashMap::new(),
             _search: changed,
         }
@@ -227,7 +234,7 @@ fn pair_counts(pair: &Pair) -> String {
     let strings = pair.strings;
     let parts: Vec<String> = [
         (pair.database, "database value", "database values"),
-        (pair.resources, "archive resource", "archive resources"),
+        (pair.resources, "game asset", "game assets"),
         (pair.files, "file", "files"),
         (strings, "text string", "text strings"),
     ]
@@ -240,6 +247,79 @@ fn pair_counts(pair: &Pair) -> String {
         [one] => one.clone(),
         [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
     }
+}
+
+fn title_case(word: &str) -> String {
+    word.split(['_', '-'])
+        .filter(|w| !w.is_empty())
+        .map(|w| {
+            let mut c = w.chars();
+            c.next()
+                .map(|f| f.to_uppercase().chain(c).collect::<String>())
+                .unwrap_or_default()
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn unbracket(path: &str) -> String {
+    let mut out = String::new();
+    let mut depth = 0;
+    for c in path.chars() {
+        match c {
+            '[' => depth += 1,
+            ']' => depth -= 1,
+            _ if depth == 0 => out.push(c),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// A conflict item's group (an archive, a database table, text or a folder)
+/// and its name within the group.
+fn item_group(item: &str) -> (String, String) {
+    if let Some(key) = item.strip_prefix("text ") {
+        return ("Text".to_owned(), key.to_owned());
+    }
+    if let Some(group) = item.strip_prefix("asset group ") {
+        return ("Asset groups".to_owned(), group.to_owned());
+    }
+    if let Some((erp, uri)) = item.split_once(".erp:") {
+        let archive = erp.rsplit('/').next().unwrap_or(erp);
+        let uri = uri.trim_start_matches("eaid://");
+        return (format!("{archive}.erp archive"), uri.to_owned());
+    }
+    if let Some((select, field)) = item.rsplit_once("].") {
+        let row = select.rsplit_once('=').map_or(select, |(_, l)| l);
+        let rows = unbracket(select);
+        let module = swofty_core::dbedit::modules().iter().find(|m| {
+            let shaped = unbracket(&m.rows);
+            shaped == rows || shaped.starts_with(&format!("{rows}."))
+        });
+        if let Some(m) = module {
+            let label = m
+                .fields
+                .iter()
+                .find(|f| f.path == field)
+                .map_or_else(|| field.to_owned(), |f| f.label.clone());
+            return (m.title.clone(), format!("{} · {label}", title_case(row)));
+        }
+        let table = rows.split('.').next().unwrap_or(&rows);
+        return (
+            format!("{} table", title_case(table)),
+            format!("{} · {field}", title_case(row)),
+        );
+    }
+    if item.starts_with("0x") {
+        return ("Database".to_owned(), item.to_owned());
+    }
+    if !item.contains('/') {
+        let table = item.split('.').next().unwrap_or(item);
+        return (format!("{} table", title_case(table)), item.to_owned());
+    }
+    let (dir, file) = item.rsplit_once('/').unwrap_or(("", item));
+    (format!("Files in {dir}"), file.to_owned())
 }
 
 fn ago(seconds: f64) -> String {
@@ -313,6 +393,20 @@ impl Shell {
             .filter(move |p| p.winner == id || p.loser == id)
     }
 
+    /// The conflicts the list shows a badge for: an addon that is on, from a
+    /// report of the current load order.
+    fn live_pairs<'a>(&'a self, m: &'a AddonItem) -> Vec<&'a Pair> {
+        let current = self
+            .addons
+            .report
+            .as_ref()
+            .is_some_and(|r| r.is_current(&self.library.profile));
+        if !current || !self.addon_on(m) {
+            return Vec::new();
+        }
+        self.pairs_of(&m.manifest.id).collect()
+    }
+
     fn changed_since(&self, id: &str, built_at: f64) -> bool {
         std::fs::metadata(self.store.addons_dir().join(id).join(MANIFEST_FILE))
             .and_then(|m| m.modified())
@@ -336,7 +430,7 @@ impl Shell {
             Facet::Source(s) => m.source == s,
             Facet::State(State::On) => self.addon_on(m),
             Facet::State(State::Off) => !self.addon_on(m),
-            Facet::State(State::Conflicts) => self.pairs_of(&m.manifest.id).next().is_some(),
+            Facet::State(State::Conflicts) => !self.live_pairs(m).is_empty(),
             Facet::State(State::Update) => self.update_ready(m),
         }
     }
@@ -533,7 +627,7 @@ impl Shell {
     }
 
     fn movable(&self, m: &AddonItem) -> bool {
-        !self.vanilla() && m.enabled && !m.manifest.is_builtin()
+        !self.vanilla() && m.enabled && !m.locked && !m.manifest.is_builtin()
     }
 
     /// Turns off every addon except those that are always on and those whose
@@ -548,9 +642,44 @@ impl Shell {
                 None => off.push(m.manifest.id.clone()),
             }
         }
+        if off.is_empty() {
+            return;
+        }
+        let before = profile.addons.clone();
         self.update_profile(window, cx, |p| {
             off.iter().try_for_each(|id| registry.set_enabled(p, id, false))
         });
+        let shell = cx.entity().downgrade();
+        let text = format!("Turned off {}", plural(off.len(), "addon", "addons"));
+        let note = Notification::success(text)
+            .action(move |_, _, cx| {
+                let (shell, before) = (shell.clone(), before.clone());
+                let note = cx.entity().downgrade();
+                Button::new("undo-turn-off-all")
+                    .outline()
+                    .small()
+                    .label("Undo")
+                    .on_click(move |_, window, cx| {
+                        let before = before.clone();
+                        shell
+                            .update(cx, |s, cx| {
+                                s.update_profile(window, cx, |p| {
+                                    let rest: Vec<_> = p
+                                        .addons
+                                        .iter()
+                                        .filter(|a| !before.iter().any(|b| b.id == a.id))
+                                        .cloned()
+                                        .collect();
+                                    p.addons = before.into_iter().chain(rest).collect();
+                                    Ok(())
+                                })
+                            })
+                            .ok();
+                        note.update(cx, |n, cx| n.dismiss(window, cx)).ok();
+                    })
+            })
+            .autohide(true);
+        window.push_notification(note, cx);
         if !kept.is_empty() {
             window.push_notification(
                 Notification::info(format!(
@@ -624,11 +753,16 @@ impl Shell {
             format!("{installed} · {on} on in {}", self.library.profile.name)
         };
         let actions = (!self.vanilla()).then(|| {
-            Button::new("turn-off-all")
-                .outline()
-                .icon(IconName::PowerOff)
-                .label("Turn off all")
-                .on_click(cx.listener(|this, _, window, cx| this.turn_off_all(window, cx)))
+            h_flex()
+                .gap(px(8.))
+                .child(self.check_button("check-conflicts-page", false, cx))
+                .child(
+                    Button::new("turn-off-all")
+                        .outline()
+                        .icon(IconName::PowerOff)
+                        .label("Turn off all")
+                        .on_click(cx.listener(|this, _, window, cx| this.turn_off_all(window, cx))),
+                )
         });
         let pending = (!self.vanilla() && !self.library.rebuild.is_empty()).then(|| {
             h_flex()
@@ -678,10 +812,14 @@ impl Shell {
                 )
         });
         let split = self.content_width >= SPLIT_AT;
-        let selected = self
-            .open_addon
-            .clone()
-            .filter(|id| self.library.listed().any(|a| &a.manifest.id == id));
+        let selected = self.open_addon.clone().filter(|id| {
+            self.library
+                .listed()
+                .any(|a| &a.manifest.id == id && self.passes(a, &query, None))
+        });
+        if selected.is_none() {
+            self.open_addon = None;
+        }
         let list = self.addon_list(&query, highlight.as_ref(), split, p, cx);
         let detail = selected
             .filter(|_| split)
@@ -708,35 +846,43 @@ impl Shell {
     }
 
     fn install_cards(&self, p: Palette, cx: &mut Context<Self>) -> impl IntoElement {
-        let roomy = self.content_width >= 900.;
+        let roomy = self.content_width >= 900. && !self.short;
+        let short = self.short;
+        let wide = self.content_width >= 900.;
         let card =
             |id: &'static str, icon: IconName, color: Hsla, title: &'static str, body: &'static str| {
-                let text = v_flex()
-                    .flex_1()
+                let title = div()
+                    .flex_shrink_0()
+                    .text_size(px(if short { 13. } else { 14. }))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(p.text)
+                    .child(title);
+                let body = div()
                     .min_w_0()
-                    .gap(px(2.))
-                    .child(
-                        div()
-                            .text_size(px(14.))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(p.text)
-                            .child(title),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(13.))
-                            .line_height(px(18.))
-                            .text_color(p.text_muted)
-                            .child(body),
-                    );
+                    .text_size(px(13.))
+                    .line_height(px(18.))
+                    .text_color(p.text_muted)
+                    .when(short, |d| d.truncate())
+                    .child(body);
+                let text = if short {
+                    h_flex()
+                        .flex_1()
+                        .min_w_0()
+                        .gap(px(8.))
+                        .child(Icon::new(icon).size(px(15.)).text_color(color))
+                        .child(title)
+                        .when(wide, |d| d.child(body))
+                } else {
+                    v_flex().flex_1().min_w_0().gap(px(2.)).child(title).child(body)
+                };
                 h_flex()
                     .id(id)
                     .flex_1()
                     .min_w_0()
-                    .min_h(px(78.))
-                    .px(px(16.))
-                    .py(px(12.))
-                    .gap(px(14.))
+                    .min_h(px(if short { 40. } else { 78. }))
+                    .px(px(if short { 12. } else { 16. }))
+                    .py(px(if short { 6. } else { 12. }))
+                    .gap(px(if short { 10. } else { 14. }))
                     .rounded(px(8.))
                     .border_1()
                     .bg(p.surface)
@@ -772,7 +918,11 @@ impl Shell {
             IconName::Upload,
             p.accent,
             "Installing a Swofty Addon?",
-            "Drag and drop it here or click to choose a file",
+            if short {
+                "Drop it here or click to choose"
+            } else {
+                "Drag and drop it here or click to choose a file"
+            },
         )
         .border_dashed()
         .border_color(p.border)
@@ -785,7 +935,11 @@ impl Shell {
             IconName::FolderInput,
             p.success,
             "Installing a mod?",
-            "Mods convert into Swofty addons in the Mod Importer.",
+            if short {
+                "Mods convert into addons"
+            } else {
+                "Mods convert into Swofty addons in the Mod Importer."
+            },
         )
         .border_color(p.border_variant)
         .child(
@@ -801,8 +955,8 @@ impl Shell {
         );
         h_flex()
             .px(px(GUTTER))
-            .pb(px(18.))
-            .gap(px(14.))
+            .pb(px(if short { 12. } else { 18. }))
+            .gap(px(if short { 10. } else { 14. }))
             .flex_shrink_0()
             .child(addon)
             .child(importer)
@@ -868,7 +1022,10 @@ impl Shell {
             )
             .child(
                 h_flex()
-                    .h(px(16.))
+                    .pb(px(8.))
+                    .mb(px(-6.))
+                    .border_b_1()
+                    .border_color(p.border_variant)
                     .justify_between()
                     .child(
                         h_flex()
@@ -1087,8 +1244,9 @@ impl Shell {
         let id = man.id.clone();
         let selected = self.open_addon.as_ref() == Some(&id);
         let movable = self.movable(m);
-        let pairs: Vec<&Pair> = self.pairs_of(&id).collect();
-        let loses = pairs.iter().any(|pr| pr.loser == id);
+        let pairs = self.live_pairs(m);
+        let lost = pairs.iter().filter(|pr| pr.loser == id).count();
+        let won = pairs.len() - lost;
         let trailing = if m.locked {
             h_flex()
                 .gap(px(5.))
@@ -1123,7 +1281,11 @@ impl Shell {
                     .text_color(p.text_placeholder),
             )
         });
-        let category = m.category().map_or("Uncategorised", Category::label);
+        let category = match m.category() {
+            Some(c) => Some(c.label()),
+            None if m.source == Source::Builtin => None,
+            None => Some("Uncategorised"),
+        };
         let row = h_flex()
             .id(SharedString::from(format!("addon-{id}")))
             .relative()
@@ -1201,7 +1363,7 @@ impl Shell {
                         h_flex()
                             .gap(px(6.))
                             .text_size(px(12.))
-                            .child(
+                            .children(category.map(|c| {
                                 div()
                                     .flex_shrink_0()
                                     .text_color(if m.category().is_some() {
@@ -1209,40 +1371,59 @@ impl Shell {
                                     } else {
                                         p.text_placeholder
                                     })
-                                    .child(category),
-                            )
-                            .when(m.source != Source::Installed, |d| {
-                                d.child(
-                                    div()
-                                        .h(px(16.))
-                                        .px(px(5.))
-                                        .flex()
-                                        .items_center()
-                                        .flex_shrink_0()
-                                        .rounded(px(3.))
-                                        .border_1()
-                                        .border_color(p.border)
-                                        .text_size(px(10.5))
-                                        .text_color(p.text_muted)
-                                        .child(m.source.tag()),
-                                )
-                            }),
+                                    .child(c)
+                            }))
+                            .child(
+                                div()
+                                    .h(px(16.))
+                                    .px(px(5.))
+                                    .flex()
+                                    .items_center()
+                                    .flex_shrink_0()
+                                    .rounded(px(3.))
+                                    .border_1()
+                                    .border_color(p.border)
+                                    .text_size(px(10.5))
+                                    .text_color(p.text_muted)
+                                    .child(m.source.label()),
+                            ),
                     ),
             )
             .child(
                 h_flex()
-                    .w(px(40.))
                     .flex_shrink_0()
+                    .gap(px(4.))
                     .justify_end()
                     .when(self.update_ready(m), |d| {
                         d.child(pill(IconName::CircleArrowUp, "", p.accent))
                     })
-                    .when(!pairs.is_empty(), |d| {
-                        d.child(pill(
-                            IconName::TriangleAlert,
-                            pairs.len().to_string(),
-                            if loses { p.warning } else { p.text_muted },
-                        ))
+                    .when(lost > 0, |d| {
+                        d.child(
+                            pill(IconName::TriangleAlert, format!("Loses to {lost}"), p.warning)
+                                .id(SharedString::from(format!("loses-{id}")))
+                                .tooltip(move |window, cx| {
+                                    Tooltip::new(format!(
+                                        "{} lower in the load order {} some of what this addon changes",
+                                        plural(lost, "addon", "addons"),
+                                        if lost == 1 { "replaces" } else { "replace" }
+                                    ))
+                                    .build(window, cx)
+                                }),
+                        )
+                    })
+                    .when(lost == 0 && won > 0, |d| {
+                        d.child(
+                            pill(IconName::Layers, format!("Wins over {won}"), p.text_muted)
+                                .id(SharedString::from(format!("wins-{id}")))
+                                .tooltip(move |window, cx| {
+                                    Tooltip::new(format!(
+                                        "Replaces some of what {} higher in the load order {}",
+                                        plural(won, "addon", "addons"),
+                                        if won == 1 { "changes" } else { "change" }
+                                    ))
+                                    .build(window, cx)
+                                }),
+                        )
                     }),
             )
             .child(
@@ -1293,20 +1474,22 @@ impl Shell {
             return div().into_any_element();
         };
         let man = &m.manifest;
-        let builds = if man.compat.game_builds.is_empty() {
-            "Any game build".to_owned()
-        } else {
-            man.compat
-                .game_builds
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(", ")
-        };
+        let made_for = man
+            .compat
+            .game_builds
+            .iter()
+            .map(|b| {
+                b.to_string()
+                    .trim_start_matches(['>', '<', '=', '^', '~'])
+                    .to_owned()
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
         let (compat, compat_color) = match self.install.as_ref().and_then(|i| i.build_id) {
-            Some(b) if man.compat.accepts_build(b) => (format!("{builds} · matches {b}"), p.success),
-            Some(b) => (format!("{builds} · not tested on {b}"), p.warning),
-            None => (builds, p.text),
+            _ if man.compat.game_builds.is_empty() => ("Works with any game version".to_owned(), p.text),
+            Some(b) if man.compat.accepts_build(b) => ("Works with this game version".to_owned(), p.success),
+            Some(b) => (format!("Made for game build {made_for} (yours: {b})"), p.warning),
+            None => (format!("Made for game build {made_for}"), p.text),
         };
         let on = self.addon_on(m);
         let (status, status_color) = if self.vanilla() {
@@ -1356,12 +1539,12 @@ impl Shell {
                             .font_weight(FontWeight::SEMIBOLD)
                             .child(man.name.clone()),
                     )
-                    .child(
-                        div()
-                            .text_size(px(13.))
-                            .text_color(p.text_muted)
-                            .child(format!("{} · by {}", man.version, man.author)),
-                    ),
+                    .child(div().text_size(px(13.)).text_color(p.text_muted).child(
+                        match man.author.trim() {
+                            "" | "Unknown" => man.version.to_string(),
+                            author => format!("{} · by {author}", man.version),
+                        },
+                    )),
             )
             .children(close);
         let order_line = position.map(|i| {
@@ -1397,14 +1580,16 @@ impl Shell {
         let facts = v_flex()
             .child(fact("Status", div().text_color(status_color).child(status), p))
             .when_some(order_line, |d, line| d.child(fact("Load order", line, p)))
-            .child(fact(
-                "Category",
-                m.category().map_or("Uncategorised", Category::label),
-                p,
-            ))
+            .when(m.category().is_some() || m.source != Source::Builtin, |d| {
+                d.child(fact(
+                    "Category",
+                    m.category().map_or("Uncategorised", Category::label),
+                    p,
+                ))
+            })
             .child(fact("Source", source, p))
             .child(fact(
-                "Game builds",
+                "Game version",
                 div().text_color(compat_color).child(compat),
                 p,
             ))
@@ -1413,19 +1598,51 @@ impl Shell {
                     "Requires",
                     man.requires
                         .iter()
-                        .map(|r| format!("{} {}", r.id, r.version))
+                        .map(|r| format!("{} {}", self.addon_name(&r.id), r.version))
                         .collect::<Vec<_>>()
                         .join(", "),
                     p,
                 ))
             })
             .when_some(man.license.clone(), |d, l| d.child(fact("License", l, p)))
-            .when_some(man.homepage.clone(), |d, h| d.child(fact("Homepage", h, p)))
-            .child(fact(
-                "ID",
-                div().text_color(p.text_muted).child(man.id.clone()),
-                p,
-            ));
+            .when_some(man.homepage.clone(), |d, h| d.child(fact("Homepage", h, p)));
+        let advanced_open = self.addons.advanced;
+        let advanced = v_flex()
+            .child(
+                h_flex()
+                    .id("detail-advanced")
+                    .gap(px(6.))
+                    .cursor_pointer()
+                    .text_size(px(12.))
+                    .text_color(p.text_placeholder)
+                    .hover(move |s| s.text_color(p.text_muted))
+                    .child(chevron(advanced_open, p))
+                    .child("Advanced")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.addons.advanced = !this.addons.advanced;
+                        cx.notify();
+                    })),
+            )
+            .when(advanced_open, |d| {
+                d.child(
+                    v_flex()
+                        .pt(px(6.))
+                        .gap(px(2.))
+                        .text_size(px(12.))
+                        .child(div().text_color(p.text_muted).child("Addon ID"))
+                        .child(
+                            div()
+                                .id("detail-id")
+                                .text_color(p.text_placeholder)
+                                .truncate()
+                                .child(man.id.clone())
+                                .tooltip({
+                                    let id = man.id.clone();
+                                    move |window, cx| Tooltip::new(id.clone()).build(window, cx)
+                                }),
+                        ),
+                )
+            });
         let parts = changes.parts();
         let what = v_flex()
             .gap(px(8.))
@@ -1542,23 +1759,29 @@ impl Shell {
             .child(what)
             .child(conflicts)
             .children(settings)
+            .child(advanced)
             .into_any_element()
     }
 
-    fn conflicts_block(&self, id: &str, p: Palette, cx: &mut Context<Self>) -> impl IntoElement {
-        let report = self.addons.report.as_ref();
-        let check = Button::new("check-conflicts")
+    fn check_button(&self, id: &'static str, small: bool, cx: &mut Context<Self>) -> Button {
+        Button::new(id)
             .outline()
-            .xsmall()
+            .when(small, |b| b.xsmall())
             .icon(IconName::RefreshCw)
             .label(if self.addons.checking {
                 "Checking…"
             } else {
                 "Check conflicts"
             })
+            .tooltip("Plans this profile's build without installing it")
             .loading(self.addons.checking)
             .disabled(self.vanilla() || self.addons.checking || self.launching())
-            .on_click(cx.listener(|this, _, window, cx| this.check_conflicts(window, cx)));
+            .on_click(cx.listener(|this, _, window, cx| this.check_conflicts(window, cx)))
+    }
+
+    fn conflicts_block(&self, id: &str, p: Palette, cx: &mut Context<Self>) -> impl IntoElement {
+        let report = self.addons.report.as_ref();
+        let check = self.check_button("check-conflicts", true, cx);
         let note = match report {
             _ if self.vanilla() => format!("{VANILLA} has no addons to conflict"),
             None => "Not checked yet. Checking plans this profile's build without installing it.".to_owned(),
@@ -1636,27 +1859,109 @@ impl Shell {
             )
         };
         let items = open.then(|| {
-            let more = pair.items.len().saturating_sub(ITEMS_SHOWN);
+            let mut groups: Vec<(String, Vec<String>)> = Vec::new();
+            for item in &pair.items {
+                let (group, name) = item_group(item);
+                match groups.iter_mut().find(|(g, _)| *g == group) {
+                    Some((_, names)) => names.push(name),
+                    None => groups.push((group, vec![name])),
+                }
+            }
+            let details = self.addons.details.contains(&key);
+            let all = self.addons.all_items.contains(&key);
+            let total = pair.items.len();
+            let unlisted = pair.database + pair.resources + pair.files + pair.strings;
+            let link =
+                |id: String, text: String, cx: &mut Context<Self>, f: fn(&mut Self, (String, String))| {
+                    let key = key.clone();
+                    div()
+                        .id(SharedString::from(id))
+                        .text_size(px(12.))
+                        .text_color(p.accent)
+                        .cursor_pointer()
+                        .hover(move |s| s.text_color(p.accent_hover))
+                        .child(text)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            f(this, key.clone());
+                            cx.notify();
+                        }))
+                };
+            let tag_id = format!("{}-{}", pair.winner, pair.loser);
+            let raw = details.then(|| {
+                let mut left = if all { usize::MAX } else { ITEMS_SHOWN };
+                let mut out = Vec::new();
+                for (g, names) in &groups {
+                    if left == 0 {
+                        break;
+                    }
+                    out.push(
+                        div()
+                            .pt(px(6.))
+                            .text_size(px(11.))
+                            .text_color(p.text_placeholder)
+                            .child(g.clone()),
+                    );
+                    out.extend(names.iter().take(left).map(|n| {
+                        div()
+                            .text_size(px(12.))
+                            .line_height(px(17.))
+                            .text_color(p.text_muted)
+                            .child(n.clone())
+                    }));
+                    left = left.saturating_sub(names.len());
+                }
+                v_flex().gap(px(1.)).children(out).when(total > ITEMS_SHOWN, |d| {
+                    d.child(div().pt(px(4.)).child(link(
+                        format!("pair-all-{tag_id}"),
+                        if all {
+                            "Show fewer".to_owned()
+                        } else {
+                            format!("Show all {total}")
+                        },
+                        cx,
+                        |this, key| {
+                            if !this.addons.all_items.remove(&key) {
+                                this.addons.all_items.insert(key);
+                            }
+                        },
+                    )))
+                })
+            });
             v_flex()
                 .px(px(12.))
                 .pb(px(10.))
                 .pl(px(34.))
-                .gap(px(2.))
-                .children(pair.items.iter().take(ITEMS_SHOWN).map(|item| {
-                    div()
+                .gap(px(4.))
+                .children(groups.iter().map(|(g, names)| {
+                    h_flex()
+                        .gap(px(6.))
                         .text_size(px(12.))
-                        .line_height(px(17.))
-                        .text_color(p.text_muted)
-                        .child(item.clone())
+                        .child(div().text_color(p.text).child(g.clone()))
+                        .child(
+                            div()
+                                .text_color(p.text_placeholder)
+                                .child(names.len().to_string()),
+                        )
                 }))
-                .when(more > 0, |d| {
+                .when(unlisted > total, |d| {
                     d.child(
                         div()
                             .text_size(px(12.))
                             .text_color(p.text_placeholder)
-                            .child(format!("and {more} more")),
+                            .child(format!("{} more not listed", unlisted - total)),
                     )
                 })
+                .child(link(
+                    format!("pair-details-{tag_id}"),
+                    if details { "Hide details" } else { "Details" }.to_owned(),
+                    cx,
+                    |this, key| {
+                        if !this.addons.details.remove(&key) {
+                            this.addons.details.insert(key);
+                        }
+                    },
+                ))
+                .children(raw)
         });
         v_flex()
             .when(!first, |d| d.border_t_1().border_color(p.border_variant))
