@@ -12,12 +12,12 @@ The launcher keeps itself and Simplified for Swofty, the addon behind the **Mods
 The launcher checks for a new launcher release and a new Simplified for Swofty release when it opens, then every minute while it's open. When either is available, **Play** becomes **Update**. The button names what will update, and the line next to it shows the versions and a link to the release notes.
 
 1. Close F1 25. While the game runs, you'll keep the **Stop** button; **Update** appears once the game exits.
-2. Select **Update**. It installs Simplified for Swofty first, then the launcher, and shows the progress on the button. Each download is checked against its release's `SHA256SUMS`. The launcher update replaces `bin/`, `loader/`, `addons/` and, on Linux, `share/`. A newer version of an [addon that ships with the launcher](/using/bundled-addons) replaces the installed one the next time the launcher starts. The same goes for the Career Mode Editor and Driver Manager when you have an older version installed; the launcher doesn't install either one for you.
-3. The launcher restarts on its own when the update finishes, including when only Simplified for Swofty updated.
+2. Select **Update**. It installs the launcher first, then Simplified for Swofty, and shows the progress on the button. Each download is checked against its release's `SHA256SUMS`. The launcher update replaces `bin/`, `loader/`, `addons/` and, on Linux, `share/`. A newer version of an [addon that ships with the launcher](/using/bundled-addons) replaces the installed one the next time the launcher starts. The same goes for the Career Mode Editor and Driver Manager when you have an older version installed; the launcher doesn't install either one for you.
+3. The launcher restarts on its own when the update finishes, including when only Simplified for Swofty updated. It restarts once, into the new launcher, when both updated.
 
 If a check fails because you're offline, GitHub is down or GitHub's rate limit is reached, you can still play. The launcher checks again a minute later, or when GitHub's rate limit resets.
 
-If an update fails, you'll see the error next to **Retry update** and the old files stay in place. Select **Retry update**, or **Play without updating** to play the version you have. An update interrupted partway is rolled back the next time you start the launcher.
+If one part of an update fails, the other part still installs. If the launcher update fails, you'll see the error next to **Retry update** and the old launcher files stay in place. Select **Retry update**, or **Play without updating** to play the version you have. If only Simplified for Swofty fails, **Play** comes back with the error and **Try again** next to it. An update interrupted partway is rolled back the next time you start the launcher.
 
 Running the [installer](/guide/installation#install-with-the-installer) again on the same folder also installs the latest release.
 
@@ -35,6 +35,24 @@ Restart the launcher after `swofty update`. In a copy built from source or insta
 ## Simplified for Swofty
 
 The launcher keeps [Simplified for Swofty](/using/addons#built-in-addons) up to date through the same **Update** button. If the addon isn't installed, the launcher installs it in the background. Your mod library and each profile's mod order stay as they are.
+
+The launcher installs the newest Simplified for Swofty release that supports the launcher you'll have after the update. When a launcher update is in the same run, Simplified for Swofty is checked against the new launcher, and one **Update** installs both. A Simplified for Swofty release that needs a launcher you can't update to yet isn't offered; a bar above **Play** names it, and **Play** stays available. When an earlier launcher updated itself and Simplified for Swofty still has an update, the restarted launcher installs it on its own.
+
+### Publishing a Simplified for Swofty release
+
+These rules are for Team Simplified, who publish the addon at [TeamSimplified/simplified-swofty-addon](https://github.com/TeamSimplified/simplified-swofty-addon/releases).
+
+- Launchers from 1.3.1 read the 20 newest releases and pick the newest one whose `compat.launcher` accepts them.
+- Drafts and pre-releases are never offered.
+- Launchers from 1.0.4 to 1.3.0 only read the release GitHub marks as latest.
+- When a launcher from 1.0.9 to 1.3.0 can't load the latest release, its **Update** button can't update the launcher either.
+- Mark a release as latest only when its `compat.launcher` accepts every launcher from 1.0.4 to 1.3.0, such as `>=1.0.4`.
+- Publish a release that needs a newer launcher without marking it as latest: untick **Set as the latest release**, or run `gh release create --latest=false`.
+- Launchers from 1.3.1 still find a release that isn't marked as latest.
+- A release can need a launcher that isn't out yet; launchers it doesn't accept skip it until one that does is out.
+- Attach the package's `swofty.json` to the release as an asset named `swofty.json`, and the launcher reads the requirement from it instead of downloading the package.
+- Without that asset, the launcher downloads the package once to read its requirement and keeps it for the install.
+- The `swofty.json` inside the package decides at install time.
 
 ## Addons and mods
 
