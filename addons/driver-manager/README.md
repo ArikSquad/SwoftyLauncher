@@ -27,6 +27,8 @@ For each valid driver the build adds, by label:
 | `entrants.entrant_lists.entrants` | The entrant that ties the driver to the look |
 | `f1_2026_driver_pool`, `f1_2025_driver_pool` | A free-agent row in each, for active drivers only |
 
+Driver Manager builds after every other addon in the profile (`load_after: ["*"]`). Its labels then resolve against the tables a mod leaves, such as a mod made for an earlier game version that moves entrant lists or lowers row counts.
+
 `lang.set` adds `lng_dm_<id>_first`, `_last` and `_full`. A retired driver keeps every row except the pool rows. A driver with an error is left out of the build.
 
 ## Tests
