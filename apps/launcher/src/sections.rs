@@ -391,9 +391,12 @@ impl Shell {
                 cx.open_with_system(&path);
                 cx.notify();
             }
-            Ok(Effect::ShowAddon(id)) => {
+            Ok(Effect::ShowAddon(shown)) => {
+                if let Some(text) = shown.notice() {
+                    window.push_notification(Notification::info(text.to_owned()), cx);
+                }
                 self.reload(cx);
-                self.show_addon(&id, cx);
+                self.show_addon(shown.id(), cx);
             }
             Err(e) => {
                 window.push_notification(Notification::error(e), cx);
