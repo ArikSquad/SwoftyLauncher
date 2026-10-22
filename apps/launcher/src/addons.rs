@@ -127,6 +127,23 @@ impl Facet {
     }
 }
 
+/// Addons that load first, in this order: SwoftyMod, then Simplified for Swofty.
+/// Nothing is placed above them.
+const PINNED: [&str; 2] = [swofty_core::builtin::CORE_ID, swofty_core::managed::ID];
+
+/// How far `id`, at `from` among `addons`, moves to land on `to`, kept below
+/// the pinned addons.
+fn pinned_delta(addons: &[swofty_core::profile::ProfileAddon], id: &str, from: usize, to: usize) -> isize {
+    let floor = addons
+        .iter()
+        .filter(|a| a.id != id)
+        .enumerate()
+        .filter(|(_, a)| PINNED.contains(&a.id.as_str()))
+        .last()
+        .map_or(0, |(i, _)| i + 1);
+    to.max(floor) as isize - from as isize
+}
+
 #[derive(Clone)]
 struct DraggedAddon {
     id: String,
@@ -620,8 +637,9 @@ impl Shell {
         let (Some(a), Some(b)) = (at(id), at(target)) else {
             return;
         };
-        if a != b {
-            let (id, delta) = (id.to_owned(), b as isize - a as isize);
+        let delta = pinned_delta(addons, id, a, b);
+        if delta != 0 {
+            let id = id.to_owned();
             self.update_profile(window, cx, |p| p.move_addon(&id, delta));
         }
     }
@@ -652,7 +670,10 @@ impl Shell {
                     registry.set_enabled(p, &id, true)?;
                     let at = |x: &str| p.addons.iter().position(|a| a.id == x);
                     match (at(&id), at(&target)) {
-                        (Some(a), Some(b)) if a != b => p.move_addon(&id, b as isize - a as isize),
+                        (Some(a), Some(b)) => match pinned_delta(&p.addons, &id, a, b) {
+                            0 => Ok(()),
+                            delta => p.move_addon(&id, delta),
+                        },
                         _ => Ok(()),
                     }
                 });
@@ -687,7 +708,11 @@ impl Shell {
     }
 
     fn movable(&self, m: &AddonItem) -> bool {
-        !self.vanilla() && m.enabled && !m.locked && !m.manifest.is_builtin()
+        !self.vanilla()
+            && m.enabled
+            && !m.locked
+            && !m.manifest.is_builtin()
+            && !PINNED.contains(&m.manifest.id.as_str())
     }
 
     /// Turns off every addon except those that are always on and those whose
@@ -2146,5 +2171,39 @@ impl Shell {
             )
             .children(items)
             .into_any_element()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use swofty_core::profile::ProfileAddon;
+
+    use super::pinned_delta;
+
+    fn addons(ids: &[&str]) -> Vec<ProfileAddon> {
+        ids.iter()
+            .map(|id| ProfileAddon {
+                id: (*id).into(),
+                enabled: true,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn nothing_moves_above_swoftymod_or_simplified_for_swofty() {
+        let list = addons(&["swofty.core", "teamsimplified.mods", "a", "b"]);
+        assert_eq!(
+            pinned_delta(&list, "b", 3, 0),
+            -1,
+            "b stops below the pinned addons"
+        );
+        assert_eq!(pinned_delta(&list, "b", 3, 2), -1);
+        assert_eq!(pinned_delta(&list, "a", 2, 3), 1);
+        let list = addons(&["swofty.core", "a", "teamsimplified.mods", "b"]);
+        assert_eq!(
+            pinned_delta(&list, "a", 1, 1),
+            1,
+            "an addon above them moves below"
+        );
     }
 }

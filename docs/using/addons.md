@@ -45,7 +45,7 @@ In the `vanilla` profile the list is read-only. Switch to a modded profile to tu
 
 ## Load order
 
-Addons that are on are listed first, in load order. When two addons change the same thing, the one lower in the list wins. Drag a row, or use the arrows in its panel, to move it. Rows that are always on have no drag handle. Built-in addons can be dragged between **On** and **Off** but keep their place in the load order.
+Addons that are on are listed first, in load order. When two addons change the same thing, the one lower in the list wins. Drag a row, or use the arrows in its panel, to move it. Rows that are always on have no drag handle. Built-in addons can be dragged between **On** and **Off** but keep their place in the load order. SwoftyMod and Simplified for Swofty always load first: nothing can be dragged above them.
 
 After a conflict check, a row that is on shows **Loses to** with the number of addons lower in the list that replace some of its changes, or **Wins over** with the number it replaces. The badges go away when an addon is turned on, turned off or moved, until the next check.
 
