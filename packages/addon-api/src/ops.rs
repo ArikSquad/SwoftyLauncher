@@ -966,9 +966,14 @@ fn add_row(db: &mut Db, names: &dyn FieldNames, cx: &mut Cx, op: AddRow) -> Resu
         base: Base::Path(dst_path.clone()),
     };
     let mut rows = Vec::with_capacity(fields.len());
+    let mut reused = 0;
     for field in &fields {
-        if db.get(dst.field(field)).is_some() {
-            return Err(Error::Resolve(format!("{dst_path}.{field} already exists")));
+        if let Some(r) = db.get(dst.field(field)) {
+            // A stock row a mod left above the count it lowered is never read.
+            if !names.stock(r.key) {
+                return Err(Error::Resolve(format!("{dst_path}.{field} already exists")));
+            }
+            reused += 1;
         }
         let s = db
             .get(src.field(field))
@@ -1021,8 +1026,16 @@ fn add_row(db: &mut Db, names: &dyn FieldNames, cx: &mut Cx, op: AddRow) -> Resu
     cx.report
         .lines
         .push(format!("{what}: copied {} key(s)", rows.len()));
+    if reused > 0 {
+        cx.report.lines.push(format!(
+            "{what}: reuses {reused} stock key(s) of a row above the table's count"
+        ));
+    }
     for r in rows {
-        db.push(r);
+        match db.get_mut(r.key) {
+            Some(old) => *old = r,
+            None => db.push(r),
+        }
     }
     db.added_rows.insert(dst_path);
     let count = db
@@ -1144,6 +1157,40 @@ mod tests {
         );
         let err = apply_db_ops(&mut db, &taken, &names()).unwrap_err();
         assert!(err.to_string().contains("already exists"), "{err}");
+    }
+
+    #[test]
+    fn add_row_reuses_a_stock_row_above_a_lowered_count() {
+        let mut db = db();
+        for (f, v) in [
+            ("_metadata_", "stale"),
+            ("stat_id", "7"),
+            ("display_name_code", "OLD"),
+        ] {
+            db.records
+                .push(Record::new(&format!("entrants.teams.team_2.{f}"), 2, v));
+        }
+        let stock: HashSet<u64> = db.records.iter().map(|r| r.key).collect();
+        let add = ops(
+            r#"{"schema_version":1,"fields":{"entrants.teams.team":["_metadata_","stat_id","display_name_code"]},
+            "ops":[{"op":"add-row","table":"entrants.teams","from":"entrants.teams.team_0",
+            "set":{"_metadata_":"new_26"}}]}"#,
+        );
+        let mut report = DbReport::default();
+        apply_db_ops_report(&mut db, &add, &stock, &mut report).unwrap();
+        let key = fnv1a64("entrants.teams.team_2._metadata_");
+        let found: Vec<&Record> = db.records.iter().filter(|r| r.key == key).collect();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].text(), "new_26");
+        assert_eq!(found[0].tag, 4);
+        let code = fnv1a64("entrants.teams.team_2.display_name_code");
+        assert_eq!(db.records.iter().find(|r| r.key == code).unwrap().text(), "XXX");
+        assert_eq!(db.instance_count("entrants.teams", "team"), Some(3));
+        assert!(
+            report.lines.iter().any(|l| l.contains("reuses 3 stock key(s)")),
+            "{:?}",
+            report.lines
+        );
     }
 
     #[test]
