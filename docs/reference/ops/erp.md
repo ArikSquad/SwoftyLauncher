@@ -92,7 +92,7 @@ The build prints one line per op:
 erp: example.logos: 2 of 12 slice(s) of eaid://ui_package/art/texture_arrays/overrides.uidb/overrides.team_logos.f1_2026.texarray.image merged into 2025_asset_groups/vfx_package/common.erp
 ```
 
-Conflicts count per slice. Two addons that change different slices of one array do not conflict. Two that change the same slice print `<later addon> overrides <earlier addon> on 1 archive resource`, and the later one in the load order wins. Each overridden slice counts as one archive resource, and [`swofty conflicts`](/reference/cli#swofty-conflicts) names it `<erp>:<resource> slice <n>`. A `merge-slices` that replaces the whole resource overrides every slice an earlier `merge-slices` wrote.
+Conflicts count per slice. Two addons that change different slices of one array do not conflict. Two that change the same slice print `<later addon> overrides <earlier addon> on 1 archive resource`, and the later one in the load order wins. Each overridden slice counts as one archive resource, and [`swofty conflicts`](/reference/cli#swofty-conflicts) names it `<erp>:<resource> slice <n>`. A `merge-slices` that replaces the whole resource overrides every slice an earlier `merge-slices` wrote. A later `put-resource`, `replace-resource`, `remove-resource` or `overlay` of the resource overrides the addons that merged slices into it, and a later `merge-slices` into a resource an earlier addon wrote whole overrides that addon on each slice it changes.
 
 On the runtime route the merged array goes into the overlay archive of the last addon that changed it. An `overlay` op whose archive holds a resource that a later `merge-slices` changes in one of its `erps` goes in resource by resource, and the build prints:
 
