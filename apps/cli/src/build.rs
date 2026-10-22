@@ -4,7 +4,7 @@ use std::process::ExitCode;
 use anyhow::{Context, Result, bail};
 use swofty_core::baseline::DepotHashes;
 use swofty_core::build::GVDB;
-use swofty_core::install::{EA_APP_UNSUPPORTED, Game, Installer, Source};
+use swofty_core::install::{EA_APP_EXPERIMENTAL, Game, Installer, Source};
 use swofty_core::recovery::{Blocked, Scope, SessionLock};
 use swofty_core::settings::SETTINGS_FILE;
 use swofty_core::stock::{self, Depots};
@@ -24,7 +24,7 @@ pub fn game(store: &Store, explicit: Option<PathBuf>) -> Result<Game> {
 
 pub fn supported(g: &Game) -> Result<()> {
     if Source::detect(&g.dir) == Source::EaApp {
-        bail!("{}: {EA_APP_UNSUPPORTED}", g.dir.display());
+        eprintln!("swofty: {}: {EA_APP_EXPERIMENTAL}", g.dir.display());
     }
     Ok(())
 }

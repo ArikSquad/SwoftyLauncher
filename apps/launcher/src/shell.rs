@@ -592,8 +592,8 @@ impl Shell {
         let Some(install) = self.install.clone() else {
             return;
         };
-        if install.source == Source::EaApp {
-            self.ea_app_unsupported(window, cx);
+        if install.source == Source::EaApp && self.ea_app_warn_pending() {
+            self.ea_app_warn(window, cx);
             return;
         }
         if self.addons.checking {

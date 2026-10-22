@@ -1,19 +1,21 @@
 use gpui_kit::assets::IconName;
-use gpui_kit::component::button::Button;
+use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::dialog::DialogFooter;
 use gpui_kit::component::{Icon, WindowExt, h_flex, v_flex};
 use gpui_kit::*;
+
+use swofty_core::install::EA_APP_SEEN;
 
 use crate::discord::{BLURPLE, BLURPLE_HOVER, INVITE, LOGO};
 use crate::pages::{game_art, logo};
 use crate::shell::Shell;
 use crate::theme::{Palette, palette};
 
-const HEIGHT: f32 = 460.;
-const TITLE: &str = "Sorry, we don't support the EA app version of F1 25 yet";
-const WHY: &str = "We're working hard on it. The EA app's copy of F1_25.exe is much harder to work \
-     with than Steam's: it's built and protected differently, and the EA app relaunches the game \
-     itself, so Swofty can't load addons into it yet.";
+const HEIGHT: f32 = 470.;
+const TITLE: &str = "EA app support is experimental";
+const WHY: &str = "Swofty works best with the Steam version of F1 25. The EA app's copy of the game \
+     is harder to work with, so modded play on it is new and may have bugs. You can play now; if \
+     something breaks, let us know on our Discord. This only shows once.";
 
 fn link(p: Palette) -> Div {
     h_flex()
@@ -142,15 +144,15 @@ fn body(p: Palette) -> impl IntoElement {
                 .child(status(
                     IconName::CircleCheck,
                     p.success,
-                    "Steam version: works today",
+                    "Steam version: fully supported",
                     "Addons, mods and tracks all work with F1 25 from Steam.",
                     p,
                 ))
                 .child(status(
-                    IconName::Hourglass,
+                    IconName::MessageCircle,
                     p.warning,
-                    "EA app version: in progress",
-                    "We post news about it on our Discord first.",
+                    "EA app version: experimental",
+                    "Give it a try and report anything that breaks on our Discord.",
                     p,
                 )),
         )
@@ -172,16 +174,31 @@ fn discord_button() -> Stateful<Div> {
         .font_weight(FontWeight::SEMIBOLD)
         .text_color(white)
         .child(svg().data(LOGO).size(px(16.)).text_color(white))
-        .child("Get updates on Discord")
+        .child("Report a bug on Discord")
         .on_click(|_, _, cx| cx.open_url(INVITE))
 }
 
 impl Shell {
-    /// Play on an EA app copy: the game can't be modded yet, so say so
-    /// instead of launching.
-    pub(crate) fn ea_app_unsupported(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    /// Whether the EA app warning still needs showing before play.
+    pub(crate) fn ea_app_warn_pending(&self) -> bool {
+        !self.store.config().news_seen.contains(EA_APP_SEEN)
+    }
+
+    fn mark_ea_app_seen(&mut self) {
+        let mut config = self.store.config();
+        if config.news_seen.insert(EA_APP_SEEN.into()) {
+            self.store.save_config(&config).ok();
+        }
+    }
+
+    /// Play on an EA app copy: support is experimental, so warn once and let
+    /// the player continue. Shown only until they accept it.
+    pub(crate) fn ea_app_warn(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.mark_ea_app_seen();
+        let shell = cx.entity().downgrade();
         let p = palette(cx);
         window.open_alert_dialog(cx, move |alert, window, _| {
+            let shell = shell.clone();
             let top = (f32::from(window.viewport_size().height) - HEIGHT) / 2.;
             alert
                 .width(px(560.))
@@ -191,15 +208,18 @@ impl Shell {
                     DialogFooter::new()
                         .justify_center()
                         .pt(px(4.))
+                        .child(discord_button())
                         .child(
-                            Button::new("ea-app-close")
-                                .outline()
+                            Button::new("ea-app-play")
+                                .primary()
                                 .h(px(36.))
                                 .px(px(16.))
-                                .label("Close")
-                                .on_click(|_, window, cx| window.close_dialog(cx)),
-                        )
-                        .child(discord_button()),
+                                .label("Play F1 25")
+                                .on_click(move |_, window, cx| {
+                                    window.close_dialog(cx);
+                                    shell.update(cx, |s, cx| s.play(window, cx)).ok();
+                                }),
+                        ),
                 )
         });
     }

@@ -60,8 +60,11 @@ impl Source {
     }
 }
 
-pub const EA_APP_UNSUPPORTED: &str = "this is the EA app version of F1 25, which Swofty does not support yet; \
-     only the Steam version works for now";
+pub const EA_APP_EXPERIMENTAL: &str = "this is the EA app version of F1 25; Swofty's support for it is \
+     experimental, so modded play may have bugs. Report them on the Swofty Developments Discord";
+
+/// The `config.news_seen` key for the one-time EA app warning.
+pub const EA_APP_SEEN: &str = "ea-app-experimental";
 
 #[derive(Debug, Clone, Default)]
 pub struct Plan {
