@@ -35,7 +35,7 @@ On a window less than 760 pixels tall, the install cards shrink to one row.
 
 ## Turn addons on or off
 
-The list has two groups for the active [profile](/using/profiles): **On** and **Off**. Drag a row into the other group to turn it on or off. Dropped on a row that is on, an addon turns on in that place in the load order. You can also right-click a row and select **Turn on** or **Turn off**. The next time you press **Play**, the launcher builds the profile with the change.
+The list has two groups for the active [profile](/using/profiles): **On** and **Off**. Use the switch on a row, or drag the row into the other group, to turn it on or off. Dropped on a row that is on, an addon turns on in that place in the load order. The next time you press **Play**, the launcher builds the profile with the change.
 
 Some addons, such as Driver Manager, change what your careers store. Turning one of those off asks first: careers you played with it may not load without it. Select **Turn off anyway** to go ahead, or **Cancel** to leave it on.
 
@@ -67,7 +67,7 @@ Change a value under **Settings** in the addon's panel. **Reset to defaults** pu
 
 ## Remove an addon
 
-Right-click its row and select **Remove…**, or select **Remove** in the addon's panel, then confirm. Removing an addon deletes its files and takes it out of every profile. Built-in addons can't be removed.
+Select **Remove** in the addon's panel and confirm. Removing an addon deletes its files and takes it out of every profile. Built-in addons can't be removed.
 
 Removing a DB Editor addon deletes its changes. To keep them, select **Export** › **Share addon (.zip)** in the [DB Editor](/using/db-editor) first.
 

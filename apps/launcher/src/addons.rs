@@ -8,7 +8,6 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
-use gpui_kit::component::menu::{ContextMenuExt, PopupMenuItem};
 use gpui_kit::component::notification::Notification;
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{Disableable, Icon, Sizable, WindowExt, h_flex, v_flex};
@@ -1380,7 +1379,7 @@ impl Shell {
         let lost = pairs.iter().filter(|pr| pr.loser == id).count();
         let won = pairs.len() - lost;
         let kept = self.stock_removals(m);
-        let trailing = m.locked.then(|| {
+        let trailing = if m.locked {
             h_flex()
                 .gap(px(5.))
                 .text_size(px(12.))
@@ -1392,7 +1391,16 @@ impl Shell {
                 } else {
                     "Always on".to_owned()
                 })
-        });
+                .into_any_element()
+        } else {
+            let id = id.clone();
+            self.toggle(
+                format!("toggle-{id}"),
+                m.enabled && !self.vanilla(),
+                cx,
+                move |this, on, window, cx| this.set_addon_enabled(&id, on, window, cx),
+            )
+        };
         let icon = match &m.icon {
             _ if man.is_builtin() => logo(28.),
             Some(icon) => addon_icon(icon, 28., p),
@@ -1563,7 +1571,14 @@ impl Shell {
                         )
                     }),
             )
-            .children(trailing)
+            .child(
+                div()
+                    .w(px(84.))
+                    .flex()
+                    .justify_end()
+                    .flex_shrink_0()
+                    .child(trailing),
+            )
             .on_click(cx.listener({
                 let id = id.clone();
                 move |this, _, _, cx| {
@@ -1591,36 +1606,7 @@ impl Shell {
             }
             false => row,
         };
-        let on = self.listed_on(&id);
-        let removable = m.source != Source::Builtin && !m.locked;
-        if !draggable && !removable {
-            return row.into_any_element();
-        }
-        let shell = cx.entity().downgrade();
-        let name = man.name.clone();
-        row.context_menu(move |menu, _, _| {
-            let (s1, s2) = (shell.clone(), shell.clone());
-            let (id1, id2, name) = (id.clone(), id.clone(), name.clone());
-            menu.when(draggable, |menu| {
-                menu.item(
-                    PopupMenuItem::new(if on { "Turn off" } else { "Turn on" })
-                        .icon(IconName::Power)
-                        .on_click(move |_, window, cx| {
-                            s1.update(cx, |s, cx| s.set_addon_enabled(&id1, !on, window, cx))
-                                .ok();
-                        }),
-                )
-            })
-            .when(removable, |menu| {
-                menu.item(PopupMenuItem::new("Remove…").icon(IconName::Trash).on_click(
-                    move |_, window, cx| {
-                        s2.update(cx, |s, cx| s.remove_addon(&id2, &name, window, cx))
-                            .ok();
-                    },
-                ))
-            })
-        })
-        .into_any_element()
+        row.into_any_element()
     }
 
     fn changes_of(&mut self, id: &str) -> Changes {
