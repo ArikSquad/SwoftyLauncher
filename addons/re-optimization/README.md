@@ -96,6 +96,7 @@ The graphics profile, the upscaler and the enforcement mode apply on the next la
 - A binding that does not resolve leaves its feature off and logs `SAFE`.
 - An enforcement site that does not resolve, or whose `call` does not reach the resolved parser, is skipped and logged.
 - Seven call sites sit in `.data1` bodies: the four integer ones are only compared against return addresses, and the three boolean ones (crowd in shadows, night character shadows, rain sheets) are redirected under the knowledge base's `.data1` exception.
+- swofty_core resolves `call` bindings inside `.data1` bodies from launcher 1.3.0 on; an older core skips those seven sites.
 - The graphics profile installs only when the save site resolves too.
 - Log lines start with `[re-opt]` in `swofty/loader.log` in the game folder.
 
