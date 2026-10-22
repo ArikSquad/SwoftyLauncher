@@ -14,6 +14,7 @@ use gpui_kit::component::{Icon, TitleBar, WindowExt, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use swofty_core::crash::StartFailure;
+use swofty_core::install::Source;
 use swofty_core::launch;
 use swofty_core::process::{GameProcess, stop_game};
 use swofty_core::quarantine;
@@ -25,13 +26,17 @@ use swofty_core::store::Store;
 use swofty_core::view::View;
 
 use crate::game::{self, Install, Launch, Probe};
-use crate::library::{AddonIcon, Library, TRACKS_SECTION};
+use crate::game_edited::Edited;
+use crate::library::{AddonIcon, Library};
 use crate::pages::{addon_icon, label};
 use crate::theme::{Palette, palette};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Page {
+    News,
     Addons,
+    Importer,
+    Tools,
     Profiles,
     Database,
     Section(usize),
@@ -40,18 +45,24 @@ pub enum Page {
 impl Page {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Addons => "Tools",
+            Self::News => "News",
+            Self::Addons => "Addons",
+            Self::Importer => "Mod Importer",
+            Self::Tools => "Tools",
             Self::Profiles => "Profiles",
-            Self::Database => "Database",
+            Self::Database => "DB Editor",
             Self::Section(_) => "",
         }
     }
 
     pub fn icon(self) -> IconName {
         match self {
+            Self::News => IconName::Newspaper,
             Self::Addons => IconName::Puzzle,
+            Self::Importer => IconName::FolderInput,
+            Self::Tools => IconName::Wrench,
             Self::Profiles => IconName::Layers,
-            Self::Database => IconName::Package,
+            Self::Database => IconName::Database,
             Self::Section(_) => IconName::Package,
         }
     }
@@ -64,6 +75,7 @@ pub enum PlayState {
     Launching,
     Restoring,
     Running,
+    Checking,
     Crashed(SessionRecord),
 }
 
@@ -82,9 +94,11 @@ pub struct Shell {
     pub(crate) launch: Option<Launch>,
     pub(crate) notice: Option<String>,
     pub(crate) blocked: Option<Blocked>,
+    pub(crate) game_edited: Option<Edited>,
     pub(crate) recovered_seen: f64,
     pub(crate) mods_blocked_seen: f64,
     pub(crate) not_stock_seen: f64,
+    pub(crate) blocked_seen: f64,
     pub(crate) launch_failed_seen: f64,
     pub(crate) restoring: bool,
     pub(crate) sliders: HashMap<String, SliderSlot>,
@@ -97,8 +111,8 @@ pub struct Shell {
     pub(crate) busy: HashSet<String>,
     pub(crate) open_row: Option<String>,
     pub(crate) progress: Option<(f32, String)>,
+    pub(crate) tasks: Option<crate::tasks::TaskDialog>,
     pub(crate) dropping: bool,
-    pub(crate) sidebar_list: bool,
     pub(crate) vr_profiles: BTreeSet<String>,
     pub(crate) start_steam: bool,
     pub(crate) updates: crate::update::Updates,
@@ -108,9 +122,16 @@ pub struct Shell {
     pub(crate) cell: Option<crate::blocks::CellEdit>,
     pub(crate) pending_cells: HashMap<String, String>,
     pub(crate) content_width: f32,
+    pub(crate) short: bool,
     pub(crate) ticking: bool,
     painted: Instant,
     pub(crate) live_n: u64,
+    /// The addon the Addons page highlights, and since when.
+    pub(crate) highlight: Option<(String, Instant)>,
+    pub(crate) addons: crate::addons::AddonsPage,
+    pub(crate) db: crate::db::Db,
+    pub(crate) news: crate::news::News,
+    pub(crate) tools: crate::tools::Carousel,
     _console_closed: Subscription,
     _poll: Task<()>,
     _live: Task<()>,
@@ -199,20 +220,6 @@ fn show_launch_failed(f: &launch::Failure, window: &mut Window, cx: &mut App) {
     });
 }
 
-/// Game files that aren't Steam's copy stopped the launch before anything
-/// was built; the launcher can't continue until the player verifies the game
-/// files in Steam.
-fn show_not_stock(r: &stock::Report, window: &mut Window, cx: &mut App) {
-    let (title, text) = (r.title(), r.text());
-    window.open_alert_dialog(cx, move |alert, _, _| {
-        alert
-            .width(px(560.))
-            .title(title)
-            .description(text.clone())
-            .ok_text("OK")
-    });
-}
-
 fn offline_terms(p: Palette) -> impl IntoElement {
     v_flex()
         .gap(px(14.))
@@ -253,6 +260,7 @@ impl Shell {
         let recovered_seen = Notice::read(&store.root).map_or(0.0, |n| n.at);
         let mods_blocked_seen = quarantine::Report::read(&store.root).map_or(0.0, |r| r.at);
         let not_stock_seen = stock::Report::read(&store.root).map_or(0.0, |r| r.at);
+        let blocked_seen = game::blocked_at(&store.root).unwrap_or(0.0);
         let launch_failed_seen = launch::Failure::read(&store.root).map_or(0.0, |f| f.at);
         let stale = store.clone();
         cx.background_executor()
@@ -312,12 +320,13 @@ impl Shell {
             Err(e) => library.error = Some(e.to_string()),
         }
         let config = store.config();
-        let (sidebar_list, vr_profiles) = (config.sidebar_list, config.vr_profiles);
+        let vr_profiles = config.vr_profiles;
         let start_steam = config.launch.start_steam;
+        let news = crate::news::News::load(&store.root);
         let mut shell = Self {
             library,
             store,
-            page: Page::Addons,
+            page: Page::News,
             open_addon: None,
             install: None,
             detected: false,
@@ -329,9 +338,11 @@ impl Shell {
             launch: None,
             notice: None,
             blocked: None,
+            game_edited: None,
             recovered_seen,
             mods_blocked_seen,
             not_stock_seen,
+            blocked_seen,
             launch_failed_seen,
             restoring: false,
             sliders: HashMap::new(),
@@ -344,8 +355,8 @@ impl Shell {
             busy: HashSet::new(),
             open_row: None,
             progress: None,
+            tasks: None,
             dropping: false,
-            sidebar_list,
             vr_profiles,
             start_steam,
             updates: crate::update::Updates::new(),
@@ -355,15 +366,23 @@ impl Shell {
             cell: None,
             pending_cells: HashMap::new(),
             content_width: 900.,
+            short: false,
             ticking: false,
             painted: Instant::now(),
             live_n: 0,
+            highlight: None,
+            addons: crate::addons::AddonsPage::new(window, cx),
+            db: crate::db::Db::new(cx),
+            news,
+            tools: Default::default(),
             _console_closed: console_closed,
             _poll: poll,
             _live: live,
             _updates: updates,
         };
         shell.refresh_views(cx);
+        shell.fetch_news(cx);
+        shell.db_profile_changed(cx);
         shell
     }
 
@@ -428,7 +447,18 @@ impl Shell {
         }
         if let Some(r) = probe.not_stock.as_ref().filter(|r| r.at > self.not_stock_seen) {
             self.not_stock_seen = r.at;
-            show_not_stock(r, window, cx);
+            self.game_edited = Some(Edited::NotStock(r.clone()));
+            self.show_game_edited(window, cx);
+        }
+        if let Some(b) = probe
+            .blocked
+            .as_ref()
+            .filter(|_| probe.blocked_at.is_some_and(|at| at > self.blocked_seen))
+        {
+            self.blocked_seen = probe.blocked_at.expect("blocked file timestamp");
+            self.blocked = Some(b.clone());
+            self.game_edited = Some(Edited::Leftovers(b.clone()));
+            self.show_game_edited(window, cx);
         }
         if let Some(f) = probe
             .launch_failed
@@ -505,6 +535,7 @@ impl Shell {
             .detach();
         }
         self.session = probe.session;
+        self.db_poll(cx);
         let live = was_live || self.launch.is_some() || !self.processes.is_empty();
         if live
             || before != (self.requests, self.processes.clone(), self.session.clone())
@@ -523,6 +554,7 @@ impl Shell {
             self.page = Page::Addons;
         }
         self.refresh_views(cx);
+        self.db_profile_changed(cx);
         cx.notify();
     }
 
@@ -546,6 +578,9 @@ impl Shell {
         if self.install.is_none() {
             return PlayState::NotInstalled;
         }
+        if self.addons.checking {
+            return PlayState::Checking;
+        }
         match &self.session {
             Some(s)
                 if s.crashed()
@@ -562,13 +597,23 @@ impl Shell {
         let Some(install) = self.install.clone() else {
             return;
         };
+        if install.source == Source::EaApp && self.ea_app_warn_pending() {
+            self.ea_app_warn(window, cx);
+            return;
+        }
+        if self.addons.checking {
+            window.push_notification(Notification::info("Play when the conflict check finishes."), cx);
+            return;
+        }
         if !swofty_core::offline::is_accepted(&self.store.root) {
             self.confirm_offline_play(window, cx);
             return;
         }
         self.notice = None;
         self.blocked = None;
+        self.game_edited = None;
         Blocked::clear(&self.store.root).ok();
+        self.blocked_seen = game::blocked_at(&self.store.root).unwrap_or(0.0);
         self.dismissed = self.session.as_ref().map(|s| s.dir.clone());
         match Launch::start(
             &self.store,
@@ -635,56 +680,6 @@ impl Shell {
         });
     }
 
-    pub(crate) fn confirm_restore(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(blocked) = self.blocked.clone() else {
-            return;
-        };
-        let shell = cx.entity().downgrade();
-        let explain = blocked.explain(&self.store.root);
-        let files: Vec<String> = blocked.files.iter().map(|f| f.path.clone()).collect();
-        let p = palette(cx);
-        window.open_alert_dialog(cx, move |alert, _, _| {
-            let shell = shell.clone();
-            let shown = files.len().min(6);
-            let list = v_flex()
-                .gap(px(2.))
-                .p(px(10.))
-                .rounded(px(6.))
-                .bg(p.elevated)
-                .border_1()
-                .border_color(p.border)
-                .text_size(px(12.))
-                .children(files[..shown].iter().map(|f| div().child(f.clone())))
-                .when(files.len() > shown, |d| {
-                    d.child(
-                        div()
-                            .text_color(p.text_muted)
-                            .child(format!("and {} more", files.len() - shown)),
-                    )
-                });
-            alert
-                .width(px(600.))
-                .title("Restore the game folder?")
-                .child(
-                    v_flex()
-                        .gap(px(12.))
-                        .child(div().text_size(px(13.)).child(
-                            "F1 25 did not start because these files are where the profile puts its \
-                             own, and Swofty did not put them there. They may be mods copied in by \
-                             hand, so they were left untouched.",
-                        ))
-                        .child(list)
-                        .child(div().text_size(px(13.)).child(format!("{explain}."))),
-                )
-                .ok_text("Restore game folder")
-                .show_cancel(true)
-                .on_ok(move |_, window, cx| {
-                    shell.update(cx, |s, cx| s.restore_game_folder(window, cx)).ok();
-                    true
-                })
-        });
-    }
-
     pub(crate) fn restore_game_folder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(install) = self.install.clone() else {
             return;
@@ -692,6 +687,7 @@ impl Shell {
         let store = self.store.clone();
         self.notice = None;
         self.blocked = None;
+        self.game_edited = None;
         self.restoring = true;
         cx.spawn_in(window, async move |this, cx| {
             let result = cx
@@ -766,6 +762,14 @@ impl Shell {
     pub(crate) fn remove_addon(&mut self, id: &str, name: &str, window: &mut Window, cx: &mut Context<Self>) {
         const REMOVES: &str = "Its files are deleted and it is taken out of every profile. \
                                You can install it again later.";
+        const REMOVES_DB: &str = "Your DB Editor changes are deleted and it is taken out of every profile. \
+                                  To keep them, use Share addon (.zip) in the DB Editor's Export menu first.";
+        let db_editor = self
+            .library
+            .addons
+            .iter()
+            .any(|a| a.manifest.id == id && a.source == crate::library::Source::DbEditor);
+        let removes = if db_editor { REMOVES_DB } else { REMOVES };
         let shell = cx.entity().downgrade();
         let store = self.store.clone();
         let id = id.to_owned();
@@ -780,29 +784,32 @@ impl Shell {
         window.open_alert_dialog(cx, move |alert, _, _| {
             let (shell, store, id, name) = (shell.clone(), store.clone(), id.clone(), name.clone());
             let alert = match &warning {
-                Some(w) => saves_alert(alert, w, Some(REMOVES), p).ok_text("Remove anyway"),
+                Some(w) => saves_alert(alert, w, Some(removes), p).ok_text("Remove anyway"),
                 None => alert
                     .title(format!("Remove {name}?"))
-                    .description(REMOVES)
+                    .description(removes)
                     .ok_text("Remove addon"),
             };
-            alert.show_cancel(true).on_ok(move |_, window, cx| {
-                match store.remove_addon(&id) {
-                    Ok(()) => {
-                        window.push_notification(Notification::success(format!("Removed {name}")), cx);
-                        shell
-                            .update(cx, |s, cx| {
-                                s.open_addon = None;
-                                s.reload(cx);
-                            })
-                            .ok();
+            alert
+                .ok_variant(ButtonVariant::Danger)
+                .show_cancel(true)
+                .on_ok(move |_, window, cx| {
+                    match store.remove_addon(&id) {
+                        Ok(()) => {
+                            window.push_notification(Notification::success(format!("Removed {name}")), cx);
+                            shell
+                                .update(cx, |s, cx| {
+                                    s.open_addon = None;
+                                    s.reload(cx);
+                                })
+                                .ok();
+                        }
+                        Err(e) => {
+                            window.push_notification(Notification::error(e.to_string()), cx);
+                        }
                     }
-                    Err(e) => {
-                        window.push_notification(Notification::error(e.to_string()), cx);
-                    }
-                }
-                true
-            })
+                    true
+                })
         });
     }
 
@@ -940,191 +947,200 @@ impl Shell {
         )
     }
 
-    fn nav_item(
-        &self,
-        page: Page,
-        title: SharedString,
-        art: TileArt,
-        count: Option<usize>,
-        p: Palette,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let active = self.page == page;
-        if self.sidebar_list {
-            return h_flex()
-                .id(SharedString::from(format!("nav-{title}")))
-                .h(px(46.))
-                .px(px(8.))
-                .gap(px(10.))
-                .rounded(px(8.))
-                .border_1()
-                .cursor_pointer()
-                .text_size(px(13.))
-                .font_weight(FontWeight::MEDIUM)
-                .map(|d| {
-                    if active {
-                        d.bg(p.selected).border_color(p.accent).text_color(p.text)
-                    } else {
-                        d.bg(p.surface)
-                            .border_color(p.border_variant)
-                            .text_color(p.text_muted)
-                            .hover(move |s| s.bg(p.hover).border_color(p.border).text_color(p.text))
-                    }
-                })
-                .child(tile_art(art, 30., active, p))
-                .child(div().flex_1().truncate().child(title))
-                .children(count.map(|n| {
-                    div()
-                        .text_size(px(12.))
-                        .text_color(p.text_placeholder)
-                        .child(n.to_string())
-                }))
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.page = page;
-                    cx.notify();
-                }))
-                .into_any_element();
+    pub(crate) fn open_page(&mut self, page: Page, cx: &mut Context<Self>) {
+        self.db_leaving(page, cx);
+        self.page = page;
+        if let Some(i) = self.open_section().filter(|i| !self.section_loaded(*i)) {
+            self.fetch_views(Some(i), cx);
         }
-        v_flex()
-            .id(SharedString::from(format!("nav-{title}")))
-            .relative()
-            .w(px(95.))
-            .h(px(92.))
-            .items_center()
-            .justify_center()
-            .gap(px(8.))
-            .rounded(px(10.))
+        cx.notify();
+    }
+
+    fn section_loaded(&self, i: usize) -> bool {
+        self.library
+            .sections
+            .get(i)
+            .is_some_and(|s| self.views.contains_key(&format!("{}/{}", s.addon, s.spec.id)))
+    }
+
+    fn big_nav(&self, page: Page, count: Option<usize>, p: Palette, cx: &mut Context<Self>) -> AnyElement {
+        let active = self.page == page;
+        h_flex()
+            .id(SharedString::from(format!("nav-{}", page.label())))
+            .h(px(40.))
+            .flex_shrink_0()
+            .pl(px(6.))
+            .pr(px(10.))
+            .gap(px(10.))
+            .rounded(px(8.))
             .border_1()
             .cursor_pointer()
-            .text_size(px(13.))
+            .text_size(px(14.))
             .font_weight(FontWeight::MEDIUM)
             .map(|d| {
                 if active {
                     d.bg(p.selected).border_color(p.accent).text_color(p.text)
                 } else {
-                    d.bg(p.surface)
-                        .border_color(p.border_variant)
+                    d.border_color(transparent_black())
                         .text_color(p.text_muted)
-                        .hover(move |s| s.bg(p.hover).border_color(p.border).text_color(p.text))
+                        .hover(move |s| s.bg(p.hover).text_color(p.text))
                 }
             })
-            .child(tile_art(art, 40., active, p))
-            .child(div().max_w_full().px(px(6.)).truncate().child(title))
+            .child(nav_art(self.big_art(page), 28., active, p))
+            .child(div().flex_1().truncate().child(page.label()))
             .children(count.map(|n| {
                 div()
-                    .absolute()
-                    .top(px(6.))
-                    .right(px(8.))
+                    .text_size(px(12.))
+                    .text_color(if active { p.text_muted } else { p.text_placeholder })
+                    .child(n.to_string())
+            }))
+            .on_click(cx.listener(move |this, _, _, cx| this.open_page(page, cx)))
+            .into_any_element()
+    }
+
+    fn big_art(&self, page: Page) -> NavArt {
+        let glyph = (page == Page::Importer)
+            .then(|| {
+                self.importer_section()
+                    .and_then(|i| self.library.sections.get(i)?.icon.clone())
+                    .or_else(|| self.library.importer_icon.clone())
+            })
+            .flatten();
+        match glyph {
+            Some(AddonIcon::Glyph(data)) => NavArt::Glyph(data),
+            Some(AddonIcon::Image(image)) => NavArt::Image(image),
+            None => NavArt::Icon(page.icon()),
+        }
+    }
+
+    fn panel_nav(
+        &self,
+        page: Page,
+        title: SharedString,
+        art: NavArt,
+        count: Option<usize>,
+        p: Palette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let active = self.page == page;
+        h_flex()
+            .id(SharedString::from(format!("panel-{title}")))
+            .h(px(32.))
+            .flex_shrink_0()
+            .px(px(8.))
+            .gap(px(10.))
+            .rounded(px(6.))
+            .border_1()
+            .cursor_pointer()
+            .text_size(px(13.))
+            .map(|d| {
+                if active {
+                    d.bg(p.selected).border_color(p.accent).text_color(p.text)
+                } else {
+                    d.border_color(transparent_black())
+                        .text_color(p.text_muted)
+                        .hover(move |s| s.bg(p.hover).text_color(p.text))
+                }
+            })
+            .child(panel_art(art, active, p))
+            .child(div().flex_1().truncate().child(title))
+            .children(count.map(|n| {
+                div()
                     .text_size(px(11.))
                     .text_color(p.text_placeholder)
                     .child(n.to_string())
             }))
-            .on_click(cx.listener(move |this, _, _, cx| {
-                this.page = page;
-                cx.notify();
-            }))
+            .on_click(cx.listener(move |this, _, _, cx| this.open_page(page, cx)))
             .into_any_element()
     }
 
-    fn core_nav(&self, page: Page, count: usize, p: Palette, cx: &mut Context<Self>) -> AnyElement {
-        self.nav_item(
-            page,
-            page.label().into(),
-            TileArt::Icon(page.icon()),
-            Some(count),
+    /// The addon panels the sidebar lists: the DB Editor, then every addon
+    /// page except the Mod Importer's own pages.
+    fn panels(&self, p: Palette, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let importer = self.importer_section();
+        let db = Page::Database;
+        let mut rows = vec![self.panel_nav(
+            db,
+            db.label().into(),
+            NavArt::Icon(db.icon()),
+            Some(self.db_count()).filter(|n| *n > 0),
             p,
             cx,
-        )
-    }
-
-    fn sidebar(&self, p: Palette, cx: &mut Context<Self>) -> impl IntoElement {
-        let list = self.sidebar_list;
-        let wrap = move |items: Vec<AnyElement>| -> AnyElement {
-            if list {
-                v_flex().gap(px(6.)).children(items).into_any_element()
-            } else {
-                h_flex()
-                    .flex_wrap()
-                    .gap(px(8.))
-                    .children(items)
-                    .into_any_element()
-            }
-        };
-        // ADDONS: Tools (the addons), the Tracks page and Database, above the addons'
-        // own groups. The Tracks page moves here from its addon's group.
-        let mut add_ons = vec![self.core_nav(Page::Addons, self.library.listed().count(), p, cx)];
-        let mut groups: Vec<(String, Vec<AnyElement>)> = Vec::new();
-        let mut last_group: Option<&str> = None;
+        )];
         for (i, s) in self.library.sections.iter().enumerate() {
-            let addon = self.library.addons.iter().find(|a| a.manifest.id == s.addon);
-            let tracks = s.spec.id == TRACKS_SECTION;
-            if !tracks && last_group != Some(s.addon.as_str()) {
-                let name = addon.map_or_else(|| s.addon.clone(), |a| a.manifest.name.clone());
-                groups.push((name, Vec::new()));
-                last_group = Some(s.addon.as_str());
+            if Some(i) == importer || s.is_importer_tracks() {
+                continue;
             }
-            let tile = self.nav_item(
+            let addon = self.library.addons.iter().find(|a| a.manifest.id == s.addon);
+            let art = match s.icon.clone().or_else(|| addon.and_then(|a| a.icon.clone())) {
+                Some(AddonIcon::Glyph(data)) => NavArt::Glyph(data),
+                Some(AddonIcon::Image(image)) => NavArt::Image(image),
+                None => NavArt::Icon(crate::sections::icon(s.spec.icon)),
+            };
+            rows.push(self.panel_nav(
                 Page::Section(i),
                 s.spec.title.clone().into(),
-                match s.icon.clone().or_else(|| addon.and_then(|a| a.icon.clone())) {
-                    Some(AddonIcon::Glyph(data)) => TileArt::Glyph(data),
-                    Some(AddonIcon::Image(image)) => TileArt::Image(image),
-                    None => TileArt::Icon(crate::sections::icon(s.spec.icon)),
-                },
+                art,
                 self.section_count(i),
                 p,
                 cx,
-            );
-            if tracks {
-                add_ons.push(tile);
-            } else if let Some((_, items)) = groups.last_mut() {
-                items.push(tile);
-            }
+            ));
         }
-        let database = Page::Database;
-        add_ons.push(self.nav_item(
-            database,
-            database.label().into(),
-            TileArt::Icon(database.icon()),
-            None,
-            p,
-            cx,
-        ));
-        groups.insert(0, ("Addons".into(), add_ons));
+        rows
+    }
+
+    fn sidebar(&self, p: Palette, short: bool, cx: &mut Context<Self>) -> impl IntoElement {
+        let big = [
+            (Page::News, None),
+            (Page::Addons, Some(self.library.listed().count())),
+            (Page::Importer, None),
+            (Page::Tools, None),
+            (Page::Profiles, Some(self.library.profiles.len())),
+        ];
         v_flex()
             .w(px(220.))
             .h_full()
             .flex_shrink_0()
             .px(px(10.))
+            .pt(px(4.))
             .pb(px(10.))
             .gap(px(8.))
             .bg(p.chrome)
-            .pt(px(4.))
             .child(
                 h_flex()
+                    .flex_shrink_0()
                     .justify_center()
                     .pt(px(2.))
-                    .pb(px(16.))
-                    .child(crate::pages::wordmark(148.)),
+                    .pb(px(if short { 6. } else { 14. }))
+                    .child(crate::pages::wordmark(if short { 112. } else { 148. })),
             )
-            .child(wrap(vec![self.core_nav(
-                Page::Profiles,
-                self.library.profiles.len(),
-                p,
-                cx,
-            )]))
-            .children(groups.into_iter().map(|(name, items)| {
+            .child(
                 v_flex()
+                    .flex_shrink_0()
+                    .gap(px(2.))
+                    .children(big.map(|(page, count)| self.big_nav(page, count, p, cx))),
+            )
+            .child(
+                v_flex()
+                    .flex_1()
+                    .min_h_0()
+                    .pt(px(if short { 4. } else { 12. }))
                     .gap(px(6.))
-                    .pt(px(6.))
-                    .child(label(name.to_uppercase(), p).px(px(4.)))
-                    .child(wrap(items))
-            }))
-            .child(div().flex_1())
-            .child(self.discord_button(p))
+                    .child(label("ADDON PANELS", p).px(px(8.)))
+                    .child(
+                        v_flex()
+                            .id("panels")
+                            .flex_1()
+                            .min_h_0()
+                            .overflow_y_scroll()
+                            .gap(px(1.))
+                            .children(self.panels(p, cx)),
+                    ),
+            )
             .child(self.send_logs_button(p, cx))
             .child(
                 v_flex()
+                    .flex_shrink_0()
                     .gap(px(6.))
                     .pt(px(4.))
                     .pb(px(2.))
@@ -1134,13 +1150,13 @@ impl Shell {
     }
 }
 
-enum TileArt {
+enum NavArt {
     Icon(IconName),
     Glyph(Arc<[u8]>),
     Image(Arc<Image>),
 }
 
-fn tile_art(art: TileArt, size: f32, active: bool, p: Palette) -> Div {
+fn nav_art(art: NavArt, size: f32, active: bool, p: Palette) -> Div {
     let color = if active { p.on_accent } else { p.text_muted };
     let frame = || {
         div()
@@ -1150,12 +1166,31 @@ fn tile_art(art: TileArt, size: f32, active: bool, p: Palette) -> Div {
             .items_center()
             .justify_center()
             .rounded(px(size * 0.25))
-            .bg(if active { p.accent } else { p.hover })
+            .bg(if active { p.accent } else { p.surface })
     };
     match art {
-        TileArt::Image(image) => addon_icon(&AddonIcon::Image(image), size, p),
-        TileArt::Glyph(data) => frame().child(svg().data(&data).size(px(size * 0.5)).text_color(color)),
-        TileArt::Icon(icon) => frame().child(Icon::new(icon).size(px(size * 0.5)).text_color(color)),
+        NavArt::Image(image) => addon_icon(&AddonIcon::Image(image), size, p),
+        NavArt::Glyph(data) => frame().child(svg().data(&data).size(px(size * 0.55)).text_color(color)),
+        NavArt::Icon(icon) => frame().child(Icon::new(icon).size(px(size * 0.55)).text_color(color)),
+    }
+}
+
+fn panel_art(art: NavArt, active: bool, p: Palette) -> Div {
+    let color = if active {
+        p.accent_hover
+    } else {
+        p.text_placeholder
+    };
+    let frame = div()
+        .size(px(18.))
+        .flex_shrink_0()
+        .flex()
+        .items_center()
+        .justify_center();
+    match art {
+        NavArt::Image(image) => frame.child(addon_icon(&AddonIcon::Image(image), 18., p)),
+        NavArt::Glyph(data) => frame.child(svg().data(&data).size(px(16.)).text_color(color)),
+        NavArt::Icon(icon) => frame.child(Icon::new(icon).size(px(16.)).text_color(color)),
     }
 }
 
@@ -1164,14 +1199,26 @@ impl Render for Shell {
         self.painted = Instant::now();
         let p = palette(cx);
         let wide = window.viewport_size().width > px(1500.);
+        let short = window.viewport_size().height < px(760.);
+        self.short = short;
         self.content_width =
             (f32::from(window.viewport_size().width) - 220. - 2. * crate::pages::GUTTER).max(320.);
         self.sync_sliders(window, cx);
         self.sync_blocks(window, cx);
+        self.db_pending_tab(window, cx);
+        if self.page == Page::Database {
+            self.sync_db(window, cx);
+        }
+        for note in std::mem::take(&mut self.db.toasts) {
+            window.push_notification(note, cx);
+        }
         let content = match self.page {
+            Page::News => self.news_page(p, short, cx),
+            Page::Importer => self.importer_page(p, cx),
+            Page::Tools => self.tools_page(p, window, cx),
             Page::Addons => self.addons_page(p, cx),
+            Page::Database => self.db_page(p, cx),
             Page::Profiles => self.profiles_page(p, wide, cx),
-            Page::Database => self.database_page(p, cx),
             Page::Section(i) => self.section_page(i, p, cx),
         };
         if self.dropping && !cx.has_active_drag() {
@@ -1200,7 +1247,7 @@ impl Render for Shell {
                     .min_h_0()
                     .items_start()
                     .bg(p.chrome)
-                    .child(self.sidebar(p, cx))
+                    .child(self.sidebar(p, short, cx))
                     .child(
                         v_flex()
                             .flex_1()
@@ -1215,6 +1262,7 @@ impl Render for Shell {
             .children(self.update_bar(p))
             .child(self.play_bar(p, wide, cx))
             .children(self.progress_card(p))
+            .children(self.task_dialog(p, window, cx))
             .when(self.dropping, |d| d.child(self.drop_overlay(p)))
     }
 }

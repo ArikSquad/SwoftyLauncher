@@ -62,9 +62,32 @@ The build also prepares addon ERP files and prints their warnings. Files with a 
 
 Some assets go into `swofty/assets.json` instead. This applies to each asset kind that `swofty_core` lists as `stable` in `swofty/addons/core/features.json`, or as `experimental` and named in `config.json` `"runtime_assets"`. These assets are asset groups, changed ERP resources, database records that differ from the game file, one language table per language and overlay files. For `group` and `lang` operations, this is the only delivery route: without the feature, they wait, and the build lists them. To keep `erp`, `db` or `file` kinds on the build route, list them in `config.json` `"build_assets"`.
 
-You'll also see each conflict in the build output: a target that a later addon replaced after an earlier one wrote it.
+The output has a line per addon with what it writes, such as `Example Livery: 412 database values, 3 archive resources, 2 files`. Each pair of addons in conflict, where a later addon replaced what an earlier one wrote, prints a warning such as `Example Livery overrides Grid 24 on 12 database values and 1 file`.
 
 When the game exits, `swofty run` merges any settings you changed in game into your profile. Choose **APPLY & RESTART** and it rebuilds the profile, then starts the game again.
+
+## `swofty conflicts`
+
+```sh
+swofty conflicts [--profile <name>] [--check] [--game <dir>]
+```
+
+Prints the conflicts of the profile's last build, from `$DATA/cache/overlay/<profile>/conflicts.json`: a line per pair of addons, the winner first, then the overridden items. With `--check`, it builds the profile without installing it and prints that build's conflicts.
+
+```text
+Example Livery overrides Grid 24 on 1 database value and 1 file
+  entrants.teams.team[_metadata_=mclaren_26].stat_id
+  livery_package_shared/sponsor.dds
+```
+
+| Field in `conflicts.json` | Value |
+|---|---|
+| `profile` | The profile. |
+| `built_at` | When the build ran, in Unix seconds. |
+| `pairs` | `{ winner, loser, database, resources, files, strings, items }` per pair: the addon ids, how many database values, archive resources, game files and text strings the winner overrides, and up to 1000 item names. |
+| `order` | The profile's turned-on addon ids in load order at the build. |
+
+A database value shows as its path in the DB Editor's catalogue, or as a `0x…` key when the catalogue doesn't name it. An archive resource shows as `<archive>:<resource>`, a file as its game path, a text string as `text <key>`.
 
 ## `swofty apply`
 
@@ -129,6 +152,51 @@ These commands come from the built-in Team Simplified addon. Use them to manage 
 | `swofty profile delete <name> [--yes]` | Delete a profile with its settings, build cache (`$DATA/cache/overlay/<name>/`), in-game changes and saves. It asks first; `--yes` skips the question |
 
 `swofty profile delete` follows the same rules as the launcher's [Delete a profile](/using/profiles#delete-a-profile). It refuses `vanilla`, your only profile, any profile while F1 25 runs, and a profile with an open journal in the game folder; run `swofty restore` to close the journal. When you delete the active profile, `default` (or the first remaining profile) becomes active first.
+
+## `swofty db`
+
+These commands work on DB Editor addons. A DB Editor addon is a data addon of game database changes in `$DATA/addons/<id>/`, with its changes in `dbedit.json`. Its id starts with `dbedit.`.
+
+| Command | Purpose |
+|---|---|
+| `swofty db addons` | List the DB Editor addons and whether each is on in the profile |
+| `swofty db new <name>` | Create an empty DB Editor addon |
+| `swofty db delete <id>` | Delete a DB Editor addon and take it out of every profile |
+| `swofty db export <id> <file.zip>` | Write a DB Editor addon to a zip |
+| `swofty db import <file>` | Add a DB Editor addon from a DB Editor `.zip`, a DB Editor `.json` export, an EGO GameDatabases Editor export, a modded `gamedatabases.2025.bin` or a mod `.zip` that holds one |
+| `swofty db export-game <file.zip> [--addon <id>]…` | Write the game database with DB Editor addons applied to a zip that players without the launcher extract into the game folder |
+| `swofty db off-all` | Turn off every DB Editor addon that is on in the profile |
+| `swofty db details <id> [--name <name>] [--version <version>] [--author <author>] [--description <text>] [--category <category>]` | Show a DB Editor addon's details, or change the ones you pass |
+| `swofty db search <query> [--limit <n>]` | Search names, tables, keys, values and English text |
+| `swofty db get <path> [--addon <id>]` | Show a key's value, or what a table, row or container holds |
+| `swofty db set <path> <value> --addon <id>` | Change a key's value in the addon |
+| `swofty db add <path> <type> <value> --addon <id>` | Add a key the game database lacks; `<type>` is the record type number |
+| `swofty db revert <path> --addon <id>` | Put a key back to its stock value in the addon |
+| `swofty db revert --all --addon <id>` | Remove every change from the addon |
+| `swofty db list --addon <id>` | List the addon's changes |
+
+A `<path>` is a dotted path, a selector path such as `entrants.drivers.driver[_metadata_=max_verstappen].car_number`, or `0x` and 16 hex digits.
+`swofty db get` without `--addon` shows stock values.
+A `<category>` is one of `tracks`, `liveries`, `cars`, `drivers-teams`, `seasons`, `database`, `gameplay`, `ui`, `audio`, `tools` and `other`.
+A new DB Editor addon has the category `database` and the origin tool `db-editor` in its `swofty.json`.
+`swofty db import` of a DB Editor addon zip creates a new addon with the zip's name, version, author, description, category and changes, and copies no other file.
+The new addon's id comes from its name.
+When that id is taken, the new addon gets a new id and a number after its name.
+`swofty addons install` of a DB Editor addon folder or zip does the same, and never replaces an installed addon.
+`swofty db import` of a `.json` file creates a new addon named after the file.
+`swofty db import` of a `.bin`, or of a zip that holds a `gamedatabases.2025.bin` and no `swofty.json`, creates an addon of its differences from the stock database, named after the file.
+It refuses a file that is the same as the stock database or is not a game database.
+It prints how many keys the file changes, adds and removes, and the tables it adds rows to.
+A zip with `swofty.json` and without `dbedit.json` is not a DB Editor addon; install it with `swofty addons install`.
+`swofty db export-game` applies the addons you name with `--addon`, in that order, or else the DB Editor addons that are on in the profile, in load order.
+It starts from the game's stock database and writes `game_package/gamedatabases/gamedatabases.2025.bin` and a `README.txt` to the zip.
+It prints each change that no longer matches the game database, and leaves it out.
+`swofty db off-all` refuses `vanilla`.
+Turn a DB Editor addon on or off with `swofty addons enable <id>` and `swofty addons disable <id>`.
+DB Editor addons load in the profile's addon order, and a later addon wins.
+The build skips a DB Editor addon's change that no longer matches the game database and prints a warning naming the addon.
+Commands that read the game database take `--game <dir>` after `db`.
+`--package <id>` and `swofty db packages` still work, as older names of `--addon <id>` and `swofty db addons`.
 
 ## `swofty offline`
 

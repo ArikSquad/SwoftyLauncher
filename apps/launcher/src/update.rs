@@ -218,7 +218,11 @@ impl Shell {
     pub(crate) fn update_gate(&self, state: &PlayState) -> Gate {
         let busy = matches!(
             state,
-            PlayState::Running | PlayState::Launching | PlayState::Restoring | PlayState::Detecting
+            PlayState::Running
+                | PlayState::Launching
+                | PlayState::Restoring
+                | PlayState::Detecting
+                | PlayState::Checking
         );
         updater::gate(&self.updates.phase, !self.updates.pending().is_empty(), busy)
     }

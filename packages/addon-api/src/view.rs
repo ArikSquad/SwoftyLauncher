@@ -76,6 +76,20 @@ pub enum Block {
     Form(Form),
     Tabs(Tabs),
     Image(Image),
+    DropZone(DropZone),
+}
+
+/// A large drop target with one main call to action, such as the Mod Importer's
+/// Import a mod: an icon, a title, a line of text and a big button, centred in a
+/// tall area. Files dropped on the window still go to the addon that claims them.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DropZone {
+    pub title: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub text: String,
+    pub button: Button,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<Icon>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -218,6 +232,10 @@ pub struct Card {
     pub buttons: Vec<Button>,
     #[serde(default)]
     pub blocks: Vec<Block>,
+    /// Draw the card with a dashed outline, for a placeholder or drop target
+    /// such as the Mod Importer's list of imported mods.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub dashed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -781,6 +799,8 @@ pub struct Button {
     pub style: Style,
     #[serde(default)]
     pub kind: ButtonKind,
+    #[serde(default)]
+    pub size: ButtonSize,
 }
 
 impl Button {
@@ -791,8 +811,19 @@ impl Button {
             icon: None,
             style: Style::default(),
             kind: ButtonKind::default(),
+            size: ButtonSize::default(),
         }
     }
+}
+
+/// How prominently a button is drawn. `Large` is for a page's main call to
+/// action, such as the Mod Importer's Choose a mod button.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ButtonSize {
+    #[default]
+    Normal,
+    Large,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -850,6 +881,9 @@ pub enum Event {
         id: String,
         tab: String,
     },
+    /// Sent once per launcher start to a section whose addon declares
+    /// `launcher.startup`, for long work such as converting mods.
+    Startup {},
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -860,6 +894,55 @@ pub enum Effect {
     Notice(String),
     SetAddonEnabled(bool),
     Open(PathBuf),
+    /// Switches to the Addons page and highlights this addon.
+    ShowAddon(Shown),
+}
+
+/// A `show_addon` target: the addon's id, or `{ "id", "notice" }` to also
+/// show the notice as a notification.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Shown {
+    Id(String),
+    With {
+        id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        notice: Option<String>,
+    },
+}
+
+impl Shown {
+    pub fn new(id: impl Into<String>, notice: impl Into<String>) -> Self {
+        Self::With {
+            id: id.into(),
+            notice: Some(notice.into()),
+        }
+    }
+
+    pub fn id(&self) -> &str {
+        match self {
+            Self::Id(id) | Self::With { id, .. } => id,
+        }
+    }
+
+    pub fn notice(&self) -> Option<&str> {
+        match self {
+            Self::Id(_) => None,
+            Self::With { notice, .. } => notice.as_deref(),
+        }
+    }
+}
+
+impl From<String> for Shown {
+    fn from(id: String) -> Self {
+        Self::Id(id)
+    }
+}
+
+impl From<&str> for Shown {
+    fn from(id: &str) -> Self {
+        Self::Id(id.into())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1055,6 +1138,46 @@ mod tests {
             }
         );
         assert_eq!(serde_json::to_value(Effect::Reload).unwrap(), "reload");
+        assert_eq!(
+            serde_json::from_str::<Effect>(r#"{"show_addon":"you.okayama"}"#).unwrap(),
+            Effect::ShowAddon("you.okayama".into())
+        );
+    }
+
+    #[test]
+    fn show_addon_takes_an_id_or_an_id_with_a_notice() {
+        let old: Effect = serde_json::from_str(r#"{"show_addon":"you.okayama"}"#).unwrap();
+        let Effect::ShowAddon(shown) = &old else {
+            panic!("show_addon")
+        };
+        assert_eq!((shown.id(), shown.notice()), ("you.okayama", None));
+        assert_eq!(
+            serde_json::to_value(&old).unwrap(),
+            serde_json::json!({ "show_addon": "you.okayama" })
+        );
+        let new: Effect =
+            serde_json::from_str(r#"{"show_addon":{"id":"you.okayama","notice":"Imported Okayama"}}"#)
+                .unwrap();
+        assert_eq!(
+            new,
+            Effect::ShowAddon(Shown::new("you.okayama", "Imported Okayama"))
+        );
+        let Effect::ShowAddon(shown) = &new else {
+            panic!("show_addon")
+        };
+        assert_eq!(
+            (shown.id(), shown.notice()),
+            ("you.okayama", Some("Imported Okayama"))
+        );
+        assert_eq!(
+            serde_json::from_value::<Effect>(serde_json::to_value(&new).unwrap()).unwrap(),
+            new
+        );
+        let bare: Effect = serde_json::from_str(r#"{"show_addon":{"id":"you.okayama"}}"#).unwrap();
+        let Effect::ShowAddon(shown) = &bare else {
+            panic!("show_addon")
+        };
+        assert_eq!((shown.id(), shown.notice()), ("you.okayama", None));
     }
 
     #[test]

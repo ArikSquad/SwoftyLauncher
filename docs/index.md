@@ -57,6 +57,10 @@ features:
     title: Tracks
     details: Import community track zips, such as <em>Sepang</em> and <em>Okayama</em>, on the <em>Mods</em> page and race on them as extra tracks.
     link: /using/mods#tracks
+  - icon: data
+    title: DB Editor
+    details: Change drivers, teams, line-ups, tracks, the calendar, weather, points and any other database value. Save changes as <em>packages</em>, stack them per profile and share them as zips.
+    link: /using/db-editor
   - icon: layers
     title: Profiles
     details: Keep separate setups like <em>Vanilla</em>, <em>26 car grid</em> or <em>Classic tracks</em>, each with its own addons, mods and settings. The game folder goes <em>back to vanilla</em> when you quit.

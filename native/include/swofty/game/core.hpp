@@ -54,6 +54,8 @@ static_assert(offsetof(NeSharedCtrl, vtable) == 0x0);
 static_assert(offsetof(NeSharedCtrl, strong) == 0x8);
 static_assert(offsetof(NeSharedCtrl, weak) == 0xc);
 
+using Ne_Compare_StringNoCase_t = int32_t(const char *a, const char *b);
+inline constexpr fn<"Ne_Compare_StringNoCase", Ne_Compare_StringNoCase_t> Ne_Compare_StringNoCase{}; // L2 experimental, _stricmp
 using Ne_Detach_ChildNode_t = int(void *parent, void *child);
 inline constexpr fn<"Ne_Detach_ChildNode", Ne_Detach_ChildNode_t> Ne_Detach_ChildNode{}; // L2 experimental
 using Ne_Format_String_t = int64_t(NeStr **out, const char *fmt, ...);
@@ -66,12 +68,42 @@ using Ne_Log_Thunk_t = void(const char *channel, const char *fmt, ...);
 inline constexpr fn<"Ne_Log_Thunk", Ne_Log_Thunk_t> Ne_Log_Thunk{}; // L2 experimental
 using Ne_Make_StrFromCStr_t = uint32_t(NeStr **out, const char *s, uint32_t flags, uintptr_t len);
 inline constexpr fn<"Ne_Make_StrFromCStr", Ne_Make_StrFromCStr_t> Ne_Make_StrFromCStr{}; // L3 stable
+using Ne_Parse_Long_t = int32_t(const char *text, char **end, int32_t base);
+inline constexpr fn<"Ne_Parse_Long", Ne_Parse_Long_t> Ne_Parse_Long{}; // L2 experimental, strtol
 using Ne_Post_BusMessage_t = uint64_t(void *bus, void *msg);
 inline constexpr fn<"Ne_Post_BusMessage", Ne_Post_BusMessage_t> Ne_Post_BusMessage{}; // L2 experimental
 inline constexpr data<"g_Ne_DefaultAllocator", void *> g_Ne_DefaultAllocator{}; // L2 experimental
 inline constexpr data<"g_Ne_LogGate", NeLogGate> g_Ne_LogGate{}; // L2 experimental
 inline constexpr site<"site_Ne_Format_String_Entry"> site_Ne_Format_String_Entry{}; // L2 experimental
+inline constexpr call<"site_Ne_HwBool_CrowdInShadows"> site_Ne_HwBool_CrowdInShadows{}; // L2 experimental
+inline constexpr call<"site_Ne_HwBool_GodRaysPost"> site_Ne_HwBool_GodRaysPost{}; // L2 experimental
+inline constexpr call<"site_Ne_HwBool_GrassFlattening"> site_Ne_HwBool_GrassFlattening{}; // L2 experimental
+inline constexpr call<"site_Ne_HwBool_GroundCoverEnabled"> site_Ne_HwBool_GroundCoverEnabled{}; // L2 experimental
+inline constexpr call<"site_Ne_HwBool_GroundCoverMeshes"> site_Ne_HwBool_GroundCoverMeshes{}; // L2 experimental
+inline constexpr call<"site_Ne_HwBool_LensStreak"> site_Ne_HwBool_LensStreak{}; // L2 experimental
+inline constexpr call<"site_Ne_HwBool_MotionBlurV2"> site_Ne_HwBool_MotionBlurV2{}; // L2 experimental
+inline constexpr call<"site_Ne_HwBool_NightShadowCharCast"> site_Ne_HwBool_NightShadowCharCast{}; // L2 experimental
+inline constexpr call<"site_Ne_HwBool_RainBeads"> site_Ne_HwBool_RainBeads{}; // L2 experimental
+inline constexpr call<"site_Ne_HwBool_RainHigh"> site_Ne_HwBool_RainHigh{}; // L2 experimental
+inline constexpr call<"site_Ne_HwBool_RainSheets"> site_Ne_HwBool_RainSheets{}; // L2 experimental
+inline constexpr call<"site_Ne_HwBool_RainSplashes"> site_Ne_HwBool_RainSplashes{}; // L2 experimental
+inline constexpr call<"site_Ne_HwBool_SkyShadowLowLod"> site_Ne_HwBool_SkyShadowLowLod{}; // L2 experimental
+inline constexpr call<"site_Ne_HwBool_SkyShadowMap32Bits"> site_Ne_HwBool_SkyShadowMap32Bits{}; // L2 experimental
+inline constexpr call<"site_Ne_HwBool_TrackHeatHaze"> site_Ne_HwBool_TrackHeatHaze{}; // L2 experimental
+inline constexpr call<"site_Ne_HwBool_VolumetricFog"> site_Ne_HwBool_VolumetricFog{}; // L2 experimental
 inline constexpr call<"site_Ne_HwConfigParseCall"> site_Ne_HwConfigParseCall{}; // L2 experimental
+inline constexpr call<"site_Ne_HwInt_CrowdBillboardDistance"> site_Ne_HwInt_CrowdBillboardDistance{}; // L2 experimental
+inline constexpr call<"site_Ne_HwInt_NightShadowMapSize"> site_Ne_HwInt_NightShadowMapSize{}; // L2 experimental
+inline constexpr call<"site_Ne_HwInt_NightShadowSourceCount"> site_Ne_HwInt_NightShadowSourceCount{}; // L2 experimental
+inline constexpr call<"site_Ne_HwInt_ShadowSampling"> site_Ne_HwInt_ShadowSampling{}; // L2 experimental
+inline constexpr call<"site_Ne_HwInt_SkyShadowCascadeCount"> site_Ne_HwInt_SkyShadowCascadeCount{}; // L2 experimental
+inline constexpr call<"site_Ne_HwInt_SkyShadowMapSize"> site_Ne_HwInt_SkyShadowMapSize{}; // L2 experimental
+inline constexpr call<"site_Ne_HwInt_SpotShadowMapSize"> site_Ne_HwInt_SpotShadowMapSize{}; // L2 experimental
+inline constexpr call<"site_Ne_HwInt_SpotShadowSampling"> site_Ne_HwInt_SpotShadowSampling{}; // L2 experimental
+inline constexpr call<"site_Ne_HwInt_TexStreamSizeInMiB"> site_Ne_HwInt_TexStreamSizeInMiB{}; // L2 experimental
+inline constexpr call<"site_Ne_HwInt_VolFogMapHeight"> site_Ne_HwInt_VolFogMapHeight{}; // L2 experimental
+inline constexpr call<"site_Ne_HwInt_VolFogMapWidth"> site_Ne_HwInt_VolFogMapWidth{}; // L2 experimental
+inline constexpr call<"site_Ne_HwInt_WorldShadowMapSize"> site_Ne_HwInt_WorldShadowMapSize{}; // L2 experimental
 inline constexpr call<"site_Ne_HwXmlParseCall"> site_Ne_HwXmlParseCall{}; // L2 experimental
 inline constexpr call<"site_Ne_HwXmlWriteCall"> site_Ne_HwXmlWriteCall{}; // L2 experimental
 

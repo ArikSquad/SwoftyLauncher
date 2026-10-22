@@ -1,8 +1,11 @@
 use std::sync::Arc;
+use std::time::Instant;
 
 use gpui_kit::{Image, ImageFormat};
+use swofty_core::asset::{AssetOp, OpFile};
 use swofty_core::launcher::Summary;
-use swofty_core::manifest::{AddonManifest, Kind};
+use swofty_core::manifest::{AddonManifest, Category};
+use swofty_core::ops::ErpOp;
 use swofty_core::profile::{Profile, VANILLA};
 use swofty_core::registry::{Host, Registry};
 use swofty_core::store::Store;
@@ -13,9 +16,127 @@ pub struct AddonItem {
     pub enabled: bool,
     pub locked: bool,
     pub icon: Option<AddonIcon>,
-    /// Only tracks (see [`swofty_core::tracks::is_track_addon`]): listed on the
-    /// Tracks page while one is open in the profile.
+    /// Only tracks (see [`swofty_core::tracks::is_track_addon`]): listed on an
+    /// addon's Tracks page while the sidebar shows one.
     pub track: bool,
+    /// Built from the DB Editor (see [`swofty_core::dbedit::package::is_package`]).
+    pub package: bool,
+    pub source: Source,
+}
+
+impl AddonItem {
+    /// The manifest's category; a track addon without one is under Tracks.
+    pub fn category(&self) -> Option<Category> {
+        self.manifest.category.or(self.track.then_some(Category::Tracks))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Source {
+    Builtin,
+    DbEditor,
+    Importer,
+    Installed,
+}
+
+impl Source {
+    pub const ALL: [Source; 4] = [Self::Builtin, Self::DbEditor, Self::Importer, Self::Installed];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Builtin => "Built in",
+            Self::DbEditor => "DB Editor",
+            Self::Importer => "Mod Importer",
+            Self::Installed => "Installed",
+        }
+    }
+
+    fn of(store: &Store, m: &AddonManifest, package: bool) -> Self {
+        let tool = m.origin.as_ref().map(|o| o.tool.as_str());
+        if store.is_builtin(&m.id) || m.id == swofty_core::managed::ID {
+            Self::Builtin
+        } else if package || tool == Some(swofty_core::dbedit::package::ORIGIN_TOOL) {
+            Self::DbEditor
+        } else if tool == Some(swofty_core::managed::ID) {
+            Self::Importer
+        } else {
+            Self::Installed
+        }
+    }
+}
+
+/// What an addon's op files change, counted by kind.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Changes {
+    pub database: usize,
+    pub resources: usize,
+    pub text: usize,
+    pub files: usize,
+    pub tracks: usize,
+    pub screens: usize,
+    pub plugins: usize,
+    pub unreadable: Vec<String>,
+}
+
+impl Changes {
+    pub fn read(store: &Store, item: &AddonItem) -> Self {
+        let m = &item.manifest;
+        let dir = store.addons_dir().join(&m.id);
+        let mut c = Self {
+            screens: m.operations.ui.len() + m.operations.screens.len(),
+            plugins: m.operations.native.len(),
+            ..Self::default()
+        };
+        let ops = m.operations.op_files().flat_map(|(kind, rel)| {
+            let file = std::fs::read(dir.join(rel))
+                .ok()
+                .and_then(|b| serde_json::from_slice(&b).ok())
+                .and_then(|v| OpFile::from_value(v, kind).ok());
+            if file.is_none() {
+                c.unreadable.push(rel.to_owned());
+            }
+            file.map(|f| f.ops).unwrap_or_default()
+        });
+        let ops: Vec<AssetOp> = ops.chain(m.operations.file_ops()).collect();
+        for op in &ops {
+            match op {
+                AssetOp::Db(_) => c.database += 1,
+                AssetOp::Erp(ErpOp::Overlay { erps, source }) => {
+                    let names = source
+                        .resolve(&swofty_core::build::source_dir(store, &m.id, source.root))
+                        .ok()
+                        .and_then(|path| swofty_core::erpbuild::overlay_names(&path).ok());
+                    c.resources += names.map_or(1, |n| n.len() * erps.len().max(1));
+                }
+                AssetOp::Erp(_) => c.resources += 1,
+                AssetOp::Lang(_) => c.text += 1,
+                AssetOp::File(_) => c.files += 1,
+                AssetOp::Track(_) => c.tracks += 1,
+                AssetOp::Group(_) | AssetOp::Item(_) | AssetOp::Warn { .. } => {}
+            }
+        }
+        if item.track && c.tracks == 0 {
+            c.tracks = 1;
+        }
+        c
+    }
+
+    /// Each non-zero count as "3 database values", in a fixed order.
+    pub fn parts(&self) -> Vec<String> {
+        [
+            (self.database, "database value", "database values"),
+            (self.resources, "game asset", "game assets"),
+            (self.text, "text entry", "text entries"),
+            (self.files, "file", "files"),
+            (self.tracks, "track", "tracks"),
+            (self.screens, "UI screen", "UI screens"),
+            (self.plugins, "code plugin", "code plugins"),
+        ]
+        .into_iter()
+        .filter(|(n, ..)| *n > 0)
+        .map(|(n, one, many)| plural(n, one, many))
+        .collect()
+    }
 }
 
 #[derive(Clone)]
@@ -47,12 +168,30 @@ fn addon_icon(store: &Store, registry: &Registry, m: &AddonManifest) -> Option<A
 }
 
 pub const TRACKS_SECTION: &str = "tracks";
+const IMPORTER_SECTION: &str = "mods";
 
 pub struct SectionItem {
     pub addon: String,
     pub spec: SectionSpec,
     /// `sections/<id>.svg` in the addon's folder, shown in the sidebar in place of the addon's icon.
     pub icon: Option<AddonIcon>,
+}
+
+impl SectionItem {
+    /// The Mod Importer's old Tracks page, which the sidebar leaves out.
+    pub fn is_importer_tracks(&self) -> bool {
+        self.addon == swofty_core::managed::ID && self.spec.id == TRACKS_SECTION
+    }
+}
+
+fn tracks_page(sections: &[SectionItem]) -> Option<usize> {
+    sections
+        .iter()
+        .position(|s| s.spec.id == TRACKS_SECTION && !s.is_importer_tracks())
+}
+
+fn listed(addons: &[AddonItem], tracks_page: Option<usize>) -> impl Iterator<Item = &AddonItem> {
+    addons.iter().filter(move |m| !(m.track && tracks_page.is_some()))
 }
 
 fn section_icon(store: &Store, addon: &str, section: &str) -> Option<AddonIcon> {
@@ -79,7 +218,7 @@ impl ProfileItem {
         if self.vanilla() {
             return "No addons".into();
         }
-        plural(self.addons.len(), "addon", "addons")
+        format!("{} on", self.addons.len())
     }
 }
 
@@ -90,10 +229,12 @@ pub struct Library {
     pub profiles: Vec<ProfileItem>,
     pub sections: Vec<SectionItem>,
     pub registry: Registry,
-    /// The section an enabled addon offers with id `tracks`, which lists
-    /// track packages and track addons together.
+    /// The section with id `tracks` the sidebar shows, which lists track
+    /// packages and track addons together.
     pub tracks_page: Option<usize>,
+    pub importer_icon: Option<AddonIcon>,
     pub error: Option<String>,
+    pub loaded: Instant,
 }
 
 impl Library {
@@ -115,13 +256,18 @@ impl Library {
         let enabled: Vec<&str> = profile.enabled().collect();
         let mut addons: Vec<AddonItem> = manifests
             .values()
-            .map(|m| AddonItem {
-                enabled: enabled.contains(&m.id.as_str()),
-                locked: registry.get(&m.id).is_some_and(|e| e.locked),
-                icon: addon_icon(store, &registry, m),
-                track: !m.is_builtin()
-                    && swofty_core::tracks::is_track_addon(&store.addons_dir().join(&m.id), m),
-                manifest: m.clone(),
+            .map(|m| {
+                let package = !m.is_builtin() && swofty_core::dbedit::package::is_package(store, &m.id);
+                AddonItem {
+                    enabled: enabled.contains(&m.id.as_str()),
+                    locked: registry.get(&m.id).is_some_and(|e| e.locked),
+                    icon: addon_icon(store, &registry, m),
+                    track: !m.is_builtin()
+                        && swofty_core::tracks::is_track_addon(&store.addons_dir().join(&m.id), m),
+                    package,
+                    source: Source::of(store, m, package),
+                    manifest: m.clone(),
+                }
             })
             .collect();
         addons.sort_by_key(|m| {
@@ -156,9 +302,10 @@ impl Library {
                 })
             })
             .collect();
-        let tracks_page = sections.iter().position(|s| s.spec.id == TRACKS_SECTION);
+        let tracks_page = tracks_page(&sections);
         Self {
             tracks_page,
+            importer_icon: section_icon(store, swofty_core::managed::ID, IMPORTER_SECTION),
             rebuild: profile.rebuild_pending(&manifests),
             profile,
             addons,
@@ -166,18 +313,14 @@ impl Library {
             sections,
             registry,
             error,
+            loaded: Instant::now(),
         }
     }
 
     /// The addons the Addons page lists: track addons are on the Tracks page
-    /// while one is open in the profile.
+    /// while the sidebar shows one.
     pub fn listed(&self) -> impl Iterator<Item = &AddonItem> {
-        let tracks = self.tracks_page.is_some();
-        self.addons.iter().filter(move |m| !(m.track && tracks))
-    }
-
-    pub fn enabled_addons(&self) -> usize {
-        self.listed().filter(|m| m.enabled).count()
+        listed(&self.addons, self.tracks_page)
     }
 
     pub fn active(&self) -> Option<&ProfileItem> {
@@ -203,12 +346,75 @@ pub fn plural(n: usize, one: &str, many: &str) -> String {
     format!("{n} {}", if n == 1 { one } else { many })
 }
 
-pub fn kind_label(kind: Kind) -> &'static str {
-    match kind {
-        Kind::Database => "Database",
-        Kind::Erp => "ERP",
-        Kind::Ui => "UI",
-        Kind::Files => "Files",
-        Kind::Native => "Native",
+#[cfg(test)]
+mod tests {
+    use swofty_core::manifest::{AddonManifest, Category};
+    use swofty_core::store::Store;
+    use swofty_core::view::{Icon, SectionSpec};
+
+    use super::{AddonIcon, AddonItem, SectionItem, Source, listed, section_icon, tracks_page};
+
+    fn addon(id: &str, track: bool) -> AddonItem {
+        let manifest = AddonManifest::parse(&format!(
+            r#"{{"schema_version":1,"id":"{id}","name":"{id}","version":"1.0.0","author":"t","compat":{{"game":"f1_25"}}}}"#
+        ))
+        .unwrap();
+        AddonItem {
+            manifest,
+            enabled: true,
+            locked: false,
+            icon: None,
+            track,
+            package: false,
+            source: Source::Installed,
+        }
+    }
+
+    fn section(addon: &str, id: &str) -> SectionItem {
+        SectionItem {
+            addon: addon.into(),
+            spec: SectionSpec {
+                id: id.into(),
+                title: id.into(),
+                icon: Icon::Map,
+            },
+            icon: None,
+        }
+    }
+
+    #[test]
+    fn lists_track_addons_unless_the_sidebar_shows_a_tracks_page() {
+        let addons = [addon("t.mod", false), addon("t.okayama", true)];
+        let ids = |page| -> Vec<&str> { listed(&addons, page).map(|m| m.manifest.id.as_str()).collect() };
+        let importer = [
+            section(swofty_core::managed::ID, "mods"),
+            section(swofty_core::managed::ID, "tracks"),
+        ];
+        assert_eq!(tracks_page(&importer), None);
+        assert_eq!(ids(tracks_page(&importer)), ["t.mod", "t.okayama"]);
+        let other = [
+            section(swofty_core::managed::ID, "mods"),
+            section("t.tracks", "tracks"),
+        ];
+        assert_eq!(tracks_page(&other), Some(1));
+        assert_eq!(ids(tracks_page(&other)), ["t.mod"]);
+        assert_eq!(addons[1].category(), Some(Category::Tracks));
+        assert_eq!(addons[0].category(), None);
+    }
+
+    #[test]
+    fn a_section_icon_comes_from_the_addon_sections_folder() {
+        let root = std::env::temp_dir().join(format!("swofty-launcher-section-icon-{}", std::process::id()));
+        std::fs::remove_dir_all(&root).ok();
+        let store = Store::new(&root);
+        let dir = store.addons_dir().join("t.mods").join("sections");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("mods.svg"), "<svg/>").unwrap();
+        assert!(matches!(
+            section_icon(&store, "t.mods", "mods"),
+            Some(AddonIcon::Glyph(d)) if &*d == b"<svg/>"
+        ));
+        assert!(section_icon(&store, "t.mods", "tracks").is_none());
+        std::fs::remove_dir_all(&root).ok();
     }
 }

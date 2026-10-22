@@ -82,6 +82,40 @@ pub trait Progress: Send + Sync {
     fn report(&self, done: f32, text: &str);
 }
 
+// A live checklist the launcher shows in a dialog while an event runs; each
+// snapshot replaces the last.
+pub trait Tasks: Send + Sync {
+    fn show(&self, list: &TaskList);
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct TaskList {
+    pub title: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub subtitle: String,
+    #[serde(default)]
+    pub items: Vec<TaskItem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TaskItem {
+    pub id: String,
+    pub label: String,
+    pub state: TaskState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskState {
+    Waiting,
+    Running,
+    Done,
+    Failed,
+    Skipped,
+}
+
 pub trait StateStore: Send + Sync {
     fn get(&self, addon: &str) -> Result<Option<serde_json::Value>>;
     fn set(&self, addon: &str, value: serde_json::Value) -> Result<()>;
@@ -148,7 +182,7 @@ pub struct GameStatus {
     pub session: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AddonInfo {
     pub id: String,
     pub name: String,
@@ -156,6 +190,9 @@ pub struct AddonInfo {
     pub author: String,
     pub dir: PathBuf,
     pub enabled: bool,
+    /// The addon's index in the active profile's addon list; `None` from launchers before 1.3.0.
+    #[serde(default)]
+    pub position: Option<usize>,
 }
 
 // Installed addons and their switch in the active profile, for a plugin that
@@ -165,6 +202,12 @@ pub trait AddonStore: Send + Sync {
     fn install(&self, path: &Path) -> Result<AddonInfo>;
     fn set_enabled(&self, id: &str, on: bool) -> Result<()>;
     fn remove(&self, id: &str) -> Result<()>;
+    /// Moves an addon `delta` places in the active profile's load order; later loads win.
+    fn move_addon(&self, _id: &str, _delta: isize) -> Result<()> {
+        Err(Error::Other(
+            "this launcher can't reorder addons; it needs 1.3.0".into(),
+        ))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -182,6 +225,7 @@ pub struct Cx<'a> {
     pub game: Option<&'a dyn GameFiles>,
     state: &'a dyn StateStore,
     addons: Option<&'a dyn AddonStore>,
+    tasks: Option<&'a dyn Tasks>,
 }
 
 impl<'a> Cx<'a> {
@@ -201,6 +245,7 @@ impl<'a> Cx<'a> {
             game,
             state,
             addons: None,
+            tasks: None,
         }
     }
 
@@ -212,6 +257,16 @@ impl<'a> Cx<'a> {
     // None when the launcher doesn't answer the addon host calls (ADDON_CALLS).
     pub fn addons(&self) -> Option<&'a dyn AddonStore> {
         self.addons
+    }
+
+    pub fn with_tasks(mut self, tasks: &'a dyn Tasks) -> Self {
+        self.tasks = Some(tasks);
+        self
+    }
+
+    // False when nothing shows task lists here, such as a launcher before 1.3.0.
+    pub fn tasks(&self, list: &TaskList) -> bool {
+        self.tasks.inspect(|t| t.show(list)).is_some()
     }
 
     pub fn state<T: DeserializeOwned + Default>(&self) -> Result<T> {
@@ -319,5 +374,57 @@ mod tests {
         assert_eq!(cx.state::<Order>().unwrap(), order);
         store.set("a.b", serde_json::json!({ "mods": 3 })).unwrap();
         assert!(cx.state::<Order>().is_err());
+    }
+
+    #[derive(Default)]
+    struct Shown(Mutex<Vec<TaskList>>);
+
+    impl Tasks for Shown {
+        fn show(&self, list: &TaskList) {
+            self.0.lock().unwrap().push(list.clone());
+        }
+    }
+
+    #[test]
+    fn tasks_reach_the_launcher_only_when_it_shows_them() {
+        let (store, shown) = (Memory::default(), Shown::default());
+        let profile = ProfileInfo {
+            name: "default".into(),
+            vanilla: false,
+            enabled: true,
+        };
+        let list = TaskList {
+            title: "Migrating".into(),
+            subtitle: String::new(),
+            items: vec![TaskItem {
+                id: "a".into(),
+                label: "A".into(),
+                state: TaskState::Running,
+                note: None,
+            }],
+        };
+        let cx = Cx::new("a.b", &profile, Path::new("/d"), Path::new("/c"), None, &store);
+        assert!(!cx.tasks(&list));
+        assert!(cx.with_tasks(&shown).tasks(&list));
+        assert_eq!(*shown.0.lock().unwrap(), [list]);
+    }
+
+    #[test]
+    fn addon_info_reads_launchers_without_a_position() {
+        let old = serde_json::json!({"id": "a.b", "name": "B", "version": "1.0.0", "author": "t", "dir": "/a/b", "enabled": true});
+        let info: AddonInfo = serde_json::from_value(old).unwrap();
+        assert_eq!(
+            (info.id.as_str(), info.enabled, info.position),
+            ("a.b", true, None)
+        );
+        let placed = AddonInfo {
+            position: Some(2),
+            ..info
+        };
+        let json = serde_json::to_value(&placed).unwrap();
+        assert_eq!(json["position"], 2);
+        assert_eq!(serde_json::from_value::<AddonInfo>(json).unwrap(), placed);
+        let off = serde_json::to_value(AddonInfo::default()).unwrap();
+        assert!(off["position"].is_null());
     }
 }

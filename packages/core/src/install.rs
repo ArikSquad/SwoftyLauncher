@@ -40,6 +40,32 @@ impl Game {
     }
 }
 
+/// The store a game folder came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Source {
+    Steam,
+    EaApp,
+    Unknown,
+}
+
+impl Source {
+    pub fn detect(dir: &Path) -> Self {
+        if dir.join("EAJavelinInstaller_installscript.vdf").is_file() || crate::steam::in_steam_library(dir) {
+            Self::Steam
+        } else if dir.join("__Installer/installerdata.xml").is_file() {
+            Self::EaApp
+        } else {
+            Self::Unknown
+        }
+    }
+}
+
+pub const EA_APP_EXPERIMENTAL: &str = "this is the EA app version of F1 25; Swofty's support for it is \
+     experimental, so modded play may have bugs. Report them on the Swofty Developments Discord";
+
+/// The `config.news_seen` key for the one-time EA app warning.
+pub const EA_APP_SEEN: &str = "ea-app-experimental";
+
 #[derive(Debug, Clone, Default)]
 pub struct Plan {
     pub profile: String,
@@ -752,6 +778,32 @@ fn remove_empty(dir: &Path) -> Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tells_steam_and_ea_app_folders_apart() {
+        let root = std::env::temp_dir().join(format!("swofty-source-{}", std::process::id()));
+        let touch = |rel: &str| {
+            let p = root.join(rel);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, "x").unwrap();
+        };
+        touch("ea/F1 25/F1_25.exe");
+        touch("ea/F1 25/__Installer/installerdata.xml");
+        touch("steam/F1 25/F1_25.exe");
+        touch("steam/F1 25/EAJavelinInstaller_installscript.vdf");
+        touch("lib/steamapps/appmanifest_3059520.acf");
+        touch("lib/steamapps/common/F1 25/F1_25.exe");
+        touch("lib/steamapps/common/F1 25/__Installer/installerdata.xml");
+        touch("bare/F1 25/F1_25.exe");
+        assert_eq!(Source::detect(&root.join("ea/F1 25")), Source::EaApp);
+        assert_eq!(Source::detect(&root.join("steam/F1 25")), Source::Steam);
+        assert_eq!(
+            Source::detect(&root.join("lib/steamapps/common/F1 25")),
+            Source::Steam
+        );
+        assert_eq!(Source::detect(&root.join("bare/F1 25")), Source::Unknown);
+        std::fs::remove_dir_all(&root).ok();
+    }
 
     #[test]
     fn removes_appended_section_exactly() {

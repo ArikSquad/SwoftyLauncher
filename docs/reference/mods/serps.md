@@ -59,7 +59,7 @@ swofty build
 
 The mod's id is `<author>.<name>`: both lowercased, each run of other characters turned into `-`. `RM Designs` and `Scuderia AlphaTauri ORLEN` give `rm-designs.scuderia-alphatauri-orlen`. Without either, the id comes from the file name. Importing an id that's already in the library replaces that mod, and every profile keeps its place and switch.
 
-`swofty build` prints the mod's ops among the rest. Read it for conflicts with other mods and addons, and for ops waiting on the in-game loader. The **Mods** page shows the same counts on the mod's row ([Mods and tracks](/using/mods#read-a-mod-s-row)).
+`swofty build` prints the mod's ops among the rest. Read it for conflicts with other mods and addons, and for ops waiting on the in-game loader. The **Mods** page shows the same counts on the mod's row ([Mods and tracks](/using/addons#check-an-addon)).
 
 ## What the importer accepts
 
@@ -99,7 +99,7 @@ The importer compares each file with the clean files of the installed game build
 - Text counts like any other change: every changed string and every key the stock files don't have becomes a `lang.set`, and new keys are added to the game's text. A language the package lacks takes the changes of its `language_eng.lng`, or of its first language file by name.
 - Removals apply only when `game_version` matches the installed game. Otherwise they're dropped, and the mod's row says how many and which version the package was made for.
 - A database change touches only the records the package changed, and archives merge one resource at a time.
-- Every resource a mod adds or changes goes into an overlay of `2025_asset_groups/vfx_package/common.erp`, which loads at boot before any car or UI group. A changed resource may change size there.
+- Every resource a mod adds or changes goes into an overlay of the `2025_asset_groups/` archive it belongs to. A changed resource may change size there.
 - Team logo texture arrays in `ui_texture*` archives merge slice by slice across every enabled mod.
 - When a team rename package fills in the game's own text for the teams it doesn't rename, those defaults don't undo another mod's rename.
 - A special livery row the package adds is reported as owned, so the livery shows in the picker.

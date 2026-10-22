@@ -44,6 +44,74 @@ pub struct AddonManifest {
     pub launcher: Option<Launcher>,
     #[serde(default, skip_serializing_if = "Saves::is_unset")]
     pub saves: Saves,
+    /// What the addon is for, for grouping and filtering; `kind` says what it touches.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<Category>,
+    /// The tool that generated the addon and the file it came from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<Origin>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[serde(rename_all = "kebab-case")]
+pub enum Category {
+    Tracks,
+    Liveries,
+    Cars,
+    DriversTeams,
+    Seasons,
+    Database,
+    Gameplay,
+    Ui,
+    Audio,
+    Tools,
+    Other,
+}
+
+impl Category {
+    pub const ALL: [Category; 11] = [
+        Self::Tracks,
+        Self::Liveries,
+        Self::Cars,
+        Self::DriversTeams,
+        Self::Seasons,
+        Self::Database,
+        Self::Gameplay,
+        Self::Ui,
+        Self::Audio,
+        Self::Tools,
+        Self::Other,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Tracks => "Tracks",
+            Self::Liveries => "Liveries",
+            Self::Cars => "Cars",
+            Self::DriversTeams => "Drivers & teams",
+            Self::Seasons => "Seasons",
+            Self::Database => "Database",
+            Self::Gameplay => "Gameplay",
+            Self::Ui => "UI",
+            Self::Audio => "Audio",
+            Self::Tools => "Tools",
+            Self::Other => "Other",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Origin {
+    /// `db-editor`, or the id of the addon that generated it (`teamsimplified.mods`).
+    pub tool: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_version: Option<String>,
+    /// The file name the addon was made from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -81,6 +149,9 @@ pub struct Launcher {
     // `<program> claims <path>`, instead of matching `imports` against extensions.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub claims: bool,
+    // Send the addon's first section a `startup` event once per launcher start.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub startup: bool,
 }
 
 impl Launcher {
@@ -94,6 +165,7 @@ impl Launcher {
 pub enum Kind {
     Database,
     Erp,
+    Text,
     Ui,
     Files,
     Native,
@@ -429,6 +501,21 @@ mod tests {
     }
 
     #[test]
+    fn kind_takes_text_beside_the_older_values() {
+        assert_eq!(AddonManifest::parse(GRID24).unwrap().kind, [Kind::Database]);
+        let m = AddonManifest::parse(&GRID24.replace(
+            r#""kind": ["database"]"#,
+            r#""kind": ["database", "erp", "text", "ui", "files", "native"]"#,
+        ))
+        .unwrap();
+        assert_eq!(m.kind[2], Kind::Text);
+        assert_eq!(serde_json::to_value(&m).unwrap()["kind"][2], "text");
+        assert!(
+            AddonManifest::parse(&GRID24.replace(r#""kind": ["database"]"#, r#""kind": ["lang"]"#)).is_err()
+        );
+    }
+
+    #[test]
     fn parses_early_native_plugins() {
         let with = |native: &str| {
             GRID24.replace(
@@ -541,6 +628,50 @@ mod tests {
             r#""saves": true,"#,
         ] {
             assert!(AddonManifest::parse(&with(bad)).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn category_and_origin_are_optional_and_round_trip() {
+        let m = AddonManifest::parse(GRID24).unwrap();
+        assert_eq!((m.category, &m.origin), (None, &None));
+        let json = serde_json::to_value(&m).unwrap();
+        assert!(json.get("category").is_none() && json.get("origin").is_none());
+        let with = GRID24.replace(
+            r#""author": "swofty","#,
+            r#""author": "swofty", "category": "drivers-teams",
+               "origin": { "tool": "teamsimplified.mods", "tool_version": "2.0.0", "file": "grid.zip", "sha256": "ab" },"#,
+        );
+        let m = AddonManifest::parse(&with).unwrap();
+        assert_eq!(m.category, Some(Category::DriversTeams));
+        assert_eq!(m.category.unwrap().label(), "Drivers & teams");
+        let origin = m.origin.as_ref().unwrap();
+        assert_eq!(
+            (origin.tool.as_str(), origin.file.as_deref()),
+            ("teamsimplified.mods", Some("grid.zip"))
+        );
+        let json = serde_json::to_value(&m).unwrap();
+        assert_eq!(json["category"], "drivers-teams");
+        assert_eq!(AddonManifest::parse(&json.to_string()).unwrap(), m);
+        let bare = with.replace(
+            r#", "tool_version": "2.0.0", "file": "grid.zip", "sha256": "ab""#,
+            "",
+        );
+        let json = serde_json::to_value(AddonManifest::parse(&bare).unwrap()).unwrap();
+        assert_eq!(
+            json["origin"],
+            serde_json::json!({ "tool": "teamsimplified.mods" })
+        );
+        for c in Category::ALL {
+            let v = serde_json::to_value(c).unwrap();
+            assert_eq!(serde_json::from_value::<Category>(v).unwrap(), c);
+        }
+        for bad in [
+            r#""category": "maps","#,
+            r#""origin": { "tool": "x", "extra": 1 },"#,
+        ] {
+            let bad = GRID24.replace(r#""author": "swofty","#, &format!(r#""author": "swofty", {bad}"#));
+            assert!(AddonManifest::parse(&bad).is_err(), "{bad}");
         }
     }
 

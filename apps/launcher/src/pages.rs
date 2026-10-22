@@ -14,7 +14,7 @@ use swofty_core::manifest::{AddonManifest, AddonOption, Binds, OptionType};
 use swofty_core::profile::VANILLA;
 use swofty_core::store::ProfileDeletion;
 
-use crate::library::{AddonIcon, AddonItem, ProfileItem, kind_label, plural};
+use crate::library::{AddonIcon, ProfileItem, plural};
 use crate::shell::{Page, Prompt, Shell, SliderSlot};
 use crate::theme::{Palette, palette};
 
@@ -53,7 +53,7 @@ pub(crate) fn badge(icon: IconName, size: f32, p: Palette) -> Div {
     tile(size, p).child(Icon::new(icon).size(px(size * 0.5)).text_color(p.text_muted))
 }
 
-fn logo(size: f32) -> Div {
+pub(crate) fn logo(size: f32) -> Div {
     static LOGO: LazyLock<Arc<Image>> = LazyLock::new(|| {
         Arc::new(Image::from_bytes(
             ImageFormat::Png,
@@ -166,10 +166,6 @@ pub(crate) fn stat(
         .child(div().text_size(px(13.)).text_color(color).child(value.into()))
 }
 
-fn summary(text: &str) -> &str {
-    text.find(". ").map_or(text, |i| &text[..=i])
-}
-
 pub(crate) fn chevron(open: bool, p: Palette) -> Icon {
     Icon::new(if open {
         IconName::ChevronUp
@@ -183,14 +179,14 @@ pub(crate) fn chevron(open: bool, p: Palette) -> Icon {
 fn deletion_summary(plan: &ProfileDeletion, p: Palette) -> impl IntoElement {
     let name = &plan.name;
     let removed = if plan.saves {
-        "Its choice of addons and mods, their settings, its build cache and its saves are deleted."
+        "Its choice of addons, their settings, its build cache and its saves are deleted."
     } else {
-        "Its choice of addons and mods, their settings and its build cache are deleted."
+        "Its choice of addons, their settings and its build cache are deleted."
     };
     v_flex()
         .gap(px(12.))
         .child(div().text_size(px(13.)).text_color(p.text).child(format!(
-            "{removed} Installed addons and mods stay in the library, and other profiles don't change."
+            "{removed} Installed addons stay on the Addons page, and other profiles don't change."
         )))
         .when_some(plan.switch_to.clone(), |d, to| {
             d.child(
@@ -289,12 +285,7 @@ impl Shell {
             .child(h_flex().gap(px(8.)).pb(px(2.)).child(actions))
     }
 
-    pub(crate) fn list(
-        &self,
-        id: impl Into<ElementId>,
-        rows: Vec<AnyElement>,
-        p: Palette,
-    ) -> impl IntoElement {
+    pub(crate) fn list(&self, id: impl Into<ElementId>, rows: Vec<AnyElement>, p: Palette) -> Stateful<Div> {
         v_flex()
             .id(id)
             .flex_1()
@@ -312,36 +303,6 @@ impl Shell {
                     .overflow_hidden()
                     .children(rows),
             )
-    }
-
-    pub(crate) fn database_page(&self, p: Palette, cx: &mut Context<Self>) -> AnyElement {
-        v_flex()
-            .size_full()
-            .child(
-                self.header(
-                    Page::Database.label(),
-                    String::new(),
-                    h_flex()
-                        .gap(px(8.))
-                        // Nothing is listed here yet, so there is nothing to turn off.
-                        .child(
-                            Button::new("disable-all-database")
-                                .outline()
-                                .label("Disable all")
-                                .disabled(true),
-                        )
-                        .child(self.install_addon_button(cx)),
-                    p,
-                ),
-            )
-            .child(self.empty(
-                Page::Database.icon(),
-                "Nothing here yet",
-                "Addons that change the database will live here.",
-                div(),
-                p,
-            ))
-            .into_any_element()
     }
 
     pub(crate) fn empty(
@@ -396,7 +357,7 @@ impl Shell {
             .when(!open, |d| d.hover(move |s| s.bg(p.hover)))
     }
 
-    fn toggle(
+    pub(crate) fn toggle(
         &self,
         id: String,
         on: bool,
@@ -428,32 +389,6 @@ impl Shell {
             .on_click(cx.listener(|this, _, window, cx| this.install_addon(window, cx)))
     }
 
-    // Turns off every addon the Tools page lists, except those that are always on and
-    // those whose turning off warns about saves, which keep their own switch.
-    fn disable_all_addons(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let registry = self.library.registry.clone();
-        let profile = &self.library.profile;
-        let (mut off, mut kept) = (Vec::new(), Vec::new());
-        for m in self.library.listed().filter(|m| m.enabled && !m.locked) {
-            match registry.turn_off_warning(profile, &m.manifest.id) {
-                Some(_) => kept.push(m.manifest.name.clone()),
-                None => off.push(m.manifest.id.clone()),
-            }
-        }
-        self.update_profile(window, cx, |p| {
-            off.iter().try_for_each(|id| registry.set_enabled(p, id, false))
-        });
-        if !kept.is_empty() {
-            window.push_notification(
-                Notification::info(format!(
-                    "Left on: {}. Turning it off warns about your saves, so use its own switch.",
-                    kept.join(", ")
-                )),
-                cx,
-            );
-        }
-    }
-
     fn install_addon(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.prompt(
             Prompt {
@@ -480,295 +415,12 @@ impl Shell {
         );
     }
 
-    fn state_line(&self, on: bool, what: &str, p: Palette) -> (String, Hsla) {
-        if self.vanilla() {
-            (format!("Switch away from {VANILLA} to use {what}"), p.warning)
-        } else if on {
-            ("On".to_owned(), p.success)
-        } else {
-            ("Off".to_owned(), p.text_muted)
-        }
-    }
-
-    pub(crate) fn addons_page(&mut self, p: Palette, cx: &mut Context<Self>) -> AnyElement {
-        let tracks_page = self.library.tracks_page;
-        let listed = self.library.listed().count();
-        let hidden = self.library.addons.len() - listed;
-        let installed = plural(listed, "addon installed", "addons installed");
-        let subtitle = if self.vanilla() {
-            format!("{installed} · {VANILLA} plays the game without them")
-        } else {
-            format!(
-                "{installed} · {} on in {}",
-                self.library.enabled_addons(),
-                self.library.profile.name
-            )
-        };
-        let actions = h_flex()
-            .gap(px(8.))
-            .child(
-                Button::new("disable-all-addons")
-                    .outline()
-                    .label("Disable all")
-                    .disabled(self.vanilla())
-                    .on_click(cx.listener(|this, _, window, cx| this.disable_all_addons(window, cx))),
-            )
-            .child(self.install_addon_button(cx));
-        let rows: Vec<AnyElement> = self
-            .library
-            .listed()
-            .enumerate()
-            .map(|(i, m)| {
-                let open = self.open_addon.as_ref() == Some(&m.manifest.id);
-                self.addon_row(m, i == 0, open, p, cx)
-            })
-            .collect();
-        let pending = (!self.vanilla() && !self.library.rebuild.is_empty()).then(|| {
-            h_flex()
-                .px(px(GUTTER))
-                .pb(px(12.))
-                .gap(px(8.))
-                .flex_shrink_0()
-                .text_size(px(13.))
-                .text_color(p.text_muted)
-                .child(
-                    Icon::new(IconName::CircleAlert)
-                        .size(px(14.))
-                        .text_color(p.warning),
-                )
-                .child(format!(
-                    "{} changed since the last build · the next launch rebuilds {}",
-                    plural(
-                        self.library.rebuild.len(),
-                        "database setting",
-                        "database settings"
-                    ),
-                    self.library.profile.name
-                ))
-        });
-        let tracks = tracks_page.filter(|_| hidden > 0).map(|i| {
-            h_flex()
-                .px(px(GUTTER))
-                .pb(px(12.))
-                .gap(px(8.))
-                .flex_shrink_0()
-                .items_center()
-                .text_size(px(13.))
-                .text_color(p.text_muted)
-                .child(Icon::new(IconName::Map).size(px(14.)))
-                .child(format!(
-                    "{} {} on the Tracks page",
-                    plural(hidden, "track addon", "track addons"),
-                    if hidden == 1 { "is" } else { "are" }
-                ))
-                .child(
-                    Button::new("open-tracks")
-                        .ghost()
-                        .small()
-                        .label("Open Tracks")
-                        .on_click(cx.listener(move |this, _, _, cx| this.go(Page::Section(i), cx))),
-                )
-        });
-        v_flex()
-            .size_full()
-            .child(self.header(Page::Addons.label(), subtitle, actions, p))
-            .children(pending)
-            .children(tracks)
-            .child(self.list("addons", rows, p))
-            .into_any_element()
-    }
-
-    fn addon_row(
+    pub(crate) fn settings(
         &self,
-        m: &AddonItem,
-        first: bool,
-        open: bool,
+        man: &AddonManifest,
         p: Palette,
         cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let man = &m.manifest;
-        let id = man.id.clone();
-        let builtin = man.is_builtin();
-        let trailing = if m.locked {
-            let label = if self.vanilla() {
-                format!("Off in {VANILLA}")
-            } else {
-                "Always on".to_owned()
-            };
-            h_flex()
-                .gap(px(5.))
-                .text_size(px(12.))
-                .text_color(p.text_placeholder)
-                .whitespace_nowrap()
-                .child(Icon::new(IconName::Lock).size(px(12.)))
-                .child(label)
-                .into_any_element()
-        } else {
-            let id = id.clone();
-            self.toggle(
-                format!("toggle-{id}"),
-                m.enabled,
-                cx,
-                move |this, on, window, cx| this.set_addon_enabled(&id, on, window, cx),
-            )
-        };
-        let head = self
-            .row_head(format!("addon-{id}"), open, p)
-            .child(match &m.icon {
-                _ if builtin => logo(32.),
-                Some(icon) => addon_icon(icon, 32., p),
-                None => badge(IconName::Package, 32., p),
-            })
-            .child(
-                v_flex()
-                    .flex_1()
-                    .min_w_0()
-                    .gap(px(2.))
-                    .child(
-                        h_flex()
-                            .gap(px(8.))
-                            .items_baseline()
-                            .child(
-                                div()
-                                    .text_size(px(14.))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .truncate()
-                                    .child(man.name.clone()),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(12.))
-                                    .text_color(p.text_placeholder)
-                                    .child(man.version.to_string()),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(13.))
-                            .text_color(p.text_muted)
-                            .truncate()
-                            .child(
-                                man.description
-                                    .as_deref()
-                                    .map_or(man.id.clone(), |d| summary(d).to_owned()),
-                            ),
-                    ),
-            )
-            .child(
-                h_flex()
-                    .w(px(200.))
-                    .gap(px(4.))
-                    .flex_shrink_0()
-                    .children(man.kind.iter().map(|k| tag(kind_label(*k), p))),
-            )
-            .child(div().w(px(96.)).flex().justify_end().child(trailing))
-            .child(chevron(open, p))
-            .on_click(cx.listener(move |this, _, _, cx| {
-                this.open_addon = (this.open_addon.as_ref() != Some(&id)).then(|| id.clone());
-                cx.notify();
-            }));
-        self.row(first, open, p)
-            .child(head)
-            .when(open, |d| d.child(self.addon_body(m, p, cx)))
-            .into_any_element()
-    }
-
-    fn addon_body(&self, m: &AddonItem, p: Palette, cx: &mut Context<Self>) -> impl IntoElement {
-        let man = &m.manifest;
-        let remove = (!man.is_builtin() && !m.locked).then(|| {
-            let (id, name) = (man.id.clone(), man.name.clone());
-            h_flex().justify_end().pt(px(2.)).child(
-                h_flex()
-                    .id(SharedString::from(format!("remove-{}", man.id)))
-                    .gap(px(7.))
-                    .px(px(12.))
-                    .py(px(7.))
-                    .rounded(px(6.))
-                    .border_1()
-                    .border_color(p.error)
-                    .text_color(p.error)
-                    .text_size(px(13.))
-                    .font_weight(FontWeight::MEDIUM)
-                    .cursor_pointer()
-                    .hover(move |s| s.bg(p.hover))
-                    .child(Icon::new(IconName::Trash).size(px(14.)))
-                    .child("Remove addon")
-                    .on_click(
-                        cx.listener(move |this, _, window, cx| this.remove_addon(&id, &name, window, cx)),
-                    ),
-            )
-        });
-        let builds = if man.compat.game_builds.is_empty() {
-            "any".to_owned()
-        } else {
-            man.compat
-                .game_builds
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(", ")
-        };
-        let (compat, compat_color) = match self.install.as_ref().and_then(|i| i.build_id) {
-            Some(b) if man.compat.accepts_build(b) => (format!("{builds} · matches {b}"), p.success),
-            Some(b) => (format!("{builds} · not tested on {b}"), p.warning),
-            None => (builds, p.text),
-        };
-        let (status, status_color) = if m.locked && !self.vanilla() {
-            ("On".to_owned(), p.success)
-        } else {
-            self.state_line(m.enabled, "addons", p)
-        };
-        let more = man.description.clone().filter(|d| summary(d).len() < d.len());
-        v_flex()
-            .gap(px(16.))
-            .pl(px(58.))
-            .pr(px(20.))
-            .pt(px(14.))
-            .pb(px(18.))
-            .border_t_1()
-            .border_color(p.border_variant)
-            .child(
-                h_flex()
-                    .flex_wrap()
-                    .gap_x(px(32.))
-                    .gap_y(px(12.))
-                    .child(stat("STATUS", status, status_color, p))
-                    .child(stat("VERSION", man.version.to_string(), p.text, p))
-                    .child(stat("AUTHOR", man.author.clone(), p.text, p))
-                    .when_some(man.license.clone(), |d, l| d.child(stat("LICENSE", l, p.text, p)))
-                    .child(stat("GAME BUILDS", compat, compat_color, p))
-                    .when(!man.requires.is_empty(), |d| {
-                        d.child(stat(
-                            "REQUIRES",
-                            man.requires
-                                .iter()
-                                .map(|r| format!("{} {}", r.id, r.version))
-                                .collect::<Vec<_>>()
-                                .join(", "),
-                            p.text,
-                            p,
-                        ))
-                    })
-                    .child(stat("ID", man.id.clone(), p.text_muted, p))
-                    .when_some(man.homepage.clone(), |d, h| {
-                        d.child(stat("HOMEPAGE", h, p.text_muted, p))
-                    }),
-            )
-            .when_some(more, |d, text| {
-                d.child(
-                    div()
-                        .max_w(px(720.))
-                        .text_size(px(13.))
-                        .line_height(px(20.))
-                        .text_color(p.text_muted)
-                        .child(text),
-                )
-            })
-            .when(!man.options.is_empty(), |d| d.child(self.settings(man, p, cx)))
-            .children(remove)
-    }
-
-    fn settings(&self, man: &AddonManifest, p: Palette, cx: &mut Context<Self>) -> impl IntoElement {
+    ) -> impl IntoElement {
         let customised = !self.vanilla() && self.library.profile.options.contains_key(&man.id);
         let reset = customised.then(|| {
             let man = man.clone();
@@ -1004,8 +656,7 @@ impl Shell {
     }
 
     pub(crate) fn profiles_page(&mut self, p: Palette, wide: bool, cx: &mut Context<Self>) -> AnyElement {
-        let subtitle =
-            "Each profile is its own set of addons and mods. Play starts F1 25 with the active one.".into();
+        let subtitle = "Each profile is its own set of addons. Play starts F1 25 with the active one.".into();
         let actions = Button::new("new-profile")
             .outline()
             .icon(IconName::Plus)
@@ -1045,7 +696,7 @@ impl Shell {
                     div()
                         .text_size(px(13.))
                         .text_color(p.text_placeholder)
-                        .child("Starts with SwoftyMod and Simplified for Swofty"),
+                        .child("Starts with SwoftyMod and the Mod Importer"),
                 )
                 .on_click(cx.listener(|this, _, window, cx| this.profile_prompt(None, false, window, cx)))
                 .into_any_element(),
@@ -1088,8 +739,7 @@ impl Shell {
         self.prompt(
             Prompt {
                 title,
-                description: "Letters, digits, - and _. Each profile keeps its own addons, mods and saves."
-                    .into(),
+                description: "Letters, digits, - and _. Each profile keeps its own addons and saves.".into(),
                 initial,
                 placeholder: "my-profile",
                 ok,
@@ -1179,12 +829,7 @@ impl Shell {
             v_flex()
                 .gap(px(3.))
                 .child(label("CONTENTS", p))
-                .child(
-                    div()
-                        .text_size(px(13.))
-                        .line_height(px(19.))
-                        .child("No addons, no mods"),
-                )
+                .child(div().text_size(px(13.)).line_height(px(19.)).child("No addons"))
                 .child(
                     div()
                         .text_size(px(13.))
@@ -1225,7 +870,7 @@ impl Shell {
                     .outline()
                     .small()
                     .icon(IconName::ArrowRightLeft)
-                    .label("Switch to this")
+                    .label("Use this profile")
                     .on_click(
                         cx.listener(move |this, _, window, cx| this.switch_profile(&switch, window, cx)),
                     )
@@ -1295,7 +940,11 @@ impl Shell {
                                 div()
                                     .text_size(px(12.))
                                     .text_color(p.text_muted)
-                                    .child(item.summary()),
+                                    .child(if vanilla {
+                                        item.summary()
+                                    } else {
+                                        format!("{} on", plural(item.addons.len(), "addon", "addons"))
+                                    }),
                             ),
                     )
                     .when(active, |d| {
@@ -1317,6 +966,7 @@ impl Shell {
 
     pub(crate) fn go(&mut self, page: Page, cx: &mut Context<Self>) {
         let moved = self.page != page;
+        self.db_leaving(page, cx);
         self.page = page;
         if let Page::Section(i) = page {
             self.fetch_views(Some(i), cx);

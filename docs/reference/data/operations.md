@@ -74,8 +74,8 @@ In an `assets` file, the prefix before the dot names the kind:
 | Kind | Ops | Changes | Reference |
 |---|---|---|---|
 | `db.*` | `db.set`, `db.add-row`, `db.put-record`, `db.remove-record` | Game database records | [Database operations](/reference/ops/database) |
-| `erp.*` | `erp.replace-resource`, `erp.add-resource`, `erp.copy-resource`, `erp.put-resource`, `erp.remove-resource`, `erp.add-mipmaps`, `erp.patch-pkg` | Archive resources, and mip files in the game folder | [ERP operations](/reference/ops/erp) |
-| `lang.*` | `lang.set`, `lang.table` | In-game strings, in one language or all (`*`); new keys are added | [In-game text](./text) |
+| `erp.*` | `erp.replace-resource`, `erp.add-resource`, `erp.copy-resource`, `erp.put-resource`, `erp.remove-resource`, `erp.merge-slices`, `erp.add-mipmaps`, `erp.patch-pkg` | Archive resources, and mip files in the game folder | [ERP operations](/reference/ops/erp) |
+| `lang.*` | `lang.set`, `lang.table`, `lang.default` | In-game strings, in one language or all (`*`); new keys are added | [In-game text](./text) |
 | `group.*` | `group.register` | An asset group in the engine's asset manifest | [Asset API](/reference/addons/asset-api#op-files) |
 | `file.*` | `file.put` | A loose file in the game folder | [File operations](/reference/ops/files) |
 | `track.add` | `source`: a folder holding an unpacked track package | A whole track: database rows, archive, menus, ERS | [A track with its own name](./track-names) |
@@ -127,17 +127,18 @@ A build applies ops in this order:
 2. Addons in the profile's load order.
 3. Within one addon: its `database` files, then `erp` files, then `assets` files, each in the order listed, then `files` entries, then the ops its build hook returns.
 
-A later write to the same target wins. Replacing what another addon wrote counts as a conflict, and the build prints the winner and the addons it overrides:
+A later write to the same target wins. Replacing what another addon wrote counts as a conflict, and the build prints a line per pair of addons, the winner first:
 
 ```text
-warning: conflict: text lng_team_tor_hashtag (eng): teamsimplified.mods (rm-designs.scuderia-alphatauri-orlen) overrides example.livery
+warning: Scuderia AlphaTauri overrides Example Livery on 12 database values and 1 text string
 ```
 
 | Target | Replaced by | Composes with |
 |---|---|---|
 | A database record | `db.set`, `db.put-record`, `db.remove-record` | `db.add-row` |
 | A resource in an archive | `erp.put-resource`, `erp.replace-resource`, `erp.remove-resource` | `erp.add-resource`, `erp.copy-resource`, `erp.patch-pkg` |
-| A string in a language | `lang.set` | |
+| A slice of a texture array | `erp.merge-slices` | |
+| A string in a language | `lang.set` | `lang.default`, which never conflicts |
 | A game path | `file.put`, `erp.add-mipmaps` | |
 | An asset group | | `group.register` |
 
@@ -155,7 +156,9 @@ swofty build
 | `replace <path>`, `add <n> file(s) under <folder>` | Game files the build route replaces or adds |
 | `warning: <addon>: <message>` | A `warn` op |
 | `warning: <addon>: <n> lang op(s) wait for lang support in swofty_core` | Ops with no route: the in-game loader is missing |
-| `warning: conflict: ...` | A later addon replaced a target an earlier one wrote |
+| `<addon>: <n> database values, <n> archive resources, <n> files, <n> text strings, <n> tracks` | What each addon writes |
+| `warning: <addon> overrides <addon> on <n> database values, ...` | A later addon replaced targets an earlier one wrote; [`swofty conflicts`](/reference/cli#swofty-conflicts) lists them |
+| `warning: conflict: <target>: <addon> (<item>) overrides <addon> (<item>)` | Two items of one addon wrote the same target |
 | `overlay <buildhash>: <folder>` | The build's folder, with `plan.json` and `swofty/assets.json` |
 
 A build that can't apply an op fails and names the addon and the cause, such as `<select>: no row matches`.

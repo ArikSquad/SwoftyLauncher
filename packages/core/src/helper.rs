@@ -11,7 +11,8 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use swofty_addon::asset::{AssetBatch, Op, Origin};
 use swofty_addon::helper::{
-    ADDON_CALLS, API_VERSION, Built, Call, Hello, HostCall, Incoming, RESTART, Reply, Request, Welcome,
+    ADDON_CALLS, API_VERSION, Built, Call, Hello, HostCall, Incoming, MOVE_ADDON, RESTART, Reply, Request,
+    TASKS, Welcome,
 };
 use swofty_addon::launcher::{
     Addon, BuildCx, Claim, CommandSpec, Cx, Importer, ProfileInfo, Progress, Summary,
@@ -343,10 +344,7 @@ impl HelperAddon {
             cache_dir: cx.cache_dir.to_path_buf(),
             profile: cx.profile.clone(),
             launcher: Some(env!("CARGO_PKG_VERSION").into()),
-            host_calls: match cx.addons() {
-                Some(_) => ADDON_CALLS.map(String::from).to_vec(),
-                None => Vec::new(),
-            },
+            host_calls: host_calls(cx),
         });
         let welcome = self
             .exchange(&mut live, cx, hello, self.timeouts.quick, None)?
@@ -416,6 +414,12 @@ impl HelperAddon {
                 }
                 Incoming::Call(Request {
                     id: None,
+                    call: HostCall::Tasks(list),
+                }) => {
+                    cx.tasks(&list);
+                }
+                Incoming::Call(Request {
+                    id: None,
                     call: HostCall::Invalidate(i),
                 }) => Stale::add(
                     &mut self.stale.lock().unwrap_or_else(|e| e.into_inner()),
@@ -459,6 +463,17 @@ impl HelperAddon {
 
 fn to_value(v: impl Serialize) -> Result<Value> {
     serde_json::to_value(v).map_err(|e| swofty_addon::Error::Other(e.to_string()))
+}
+
+// Tasks is listed always, since a helper keeps its hello across calls; lists sent
+// where nothing shows them are dropped.
+fn host_calls(cx: &Cx) -> Vec<String> {
+    let mut calls: Vec<&str> = match cx.addons() {
+        Some(_) => ADDON_CALLS.into_iter().chain([MOVE_ADDON]).collect(),
+        None => Vec::new(),
+    };
+    calls.push(TASKS);
+    calls.into_iter().map(String::from).collect()
 }
 
 fn host_call(cx: &Cx, call: HostCall) -> std::result::Result<Value, String> {
@@ -513,7 +528,11 @@ fn host_call(cx: &Cx, call: HostCall) -> std::result::Result<Value, String> {
             Err(swofty_addon::Error::Other(format!("{id} can't remove itself")))
         }
         HostCall::RemoveAddon { id } => addons().and_then(|a| a.remove(&id)).map(|()| Value::Null),
+        HostCall::MoveAddon { id, delta } => addons()
+            .and_then(|a| a.move_addon(&id, delta))
+            .map(|()| Value::Null),
         HostCall::Progress { .. } => Err(swofty_addon::Error::Other("progress takes no id".into())),
+        HostCall::Tasks(_) => Err(swofty_addon::Error::Other("tasks takes no id".into())),
         HostCall::Invalidate(_) => Err(swofty_addon::Error::Other("invalidate takes no id".into())),
     }
     .map_err(|e| e.to_string())
@@ -949,7 +968,7 @@ read -r l
             .map(|l| serde_json::from_str(l).unwrap())
             .collect();
         assert_eq!(received[0]["params"]["launcher"], env!("CARGO_PKG_VERSION"));
-        assert!(received[0]["params"].get("host_calls").is_none());
+        assert_eq!(received[0]["params"]["host_calls"], serde_json::json!(["tasks"]));
         let game_dir = root.join("F1 25");
         assert_eq!(received[2]["result"], game_dir.to_string_lossy().as_ref());
         assert_eq!(
@@ -982,6 +1001,120 @@ read -r l
         )
         .unwrap_err();
         assert!(e.contains("itself"), "{e}");
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[derive(Default)]
+    struct Moves(Mutex<Vec<(String, isize)>>);
+
+    impl swofty_addon::launcher::AddonStore for Moves {
+        fn list(&self) -> Result<Vec<swofty_addon::launcher::AddonInfo>> {
+            Ok(Vec::new())
+        }
+
+        fn install(&self, _: &std::path::Path) -> Result<swofty_addon::launcher::AddonInfo> {
+            Err(swofty_addon::Error::Other("no".into()))
+        }
+
+        fn set_enabled(&self, _: &str, _: bool) -> Result<()> {
+            Ok(())
+        }
+
+        fn remove(&self, _: &str) -> Result<()> {
+            Ok(())
+        }
+
+        fn move_addon(&self, id: &str, delta: isize) -> Result<()> {
+            self.0.lock().unwrap().push((id.into(), delta));
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn lists_and_answers_move_addon_beside_the_addon_calls() {
+        let root = tmp("move");
+        let (data, cache) = (root.join("data"), root.join("cache"));
+        let state = Memory::default();
+        let p = profile("default");
+        let moves = Moves::default();
+        let none = Cx::new("t.helper", &p, &data, &cache, None, &state);
+        assert_eq!(host_calls(&none), ["tasks"]);
+        let e = host_call(
+            &none,
+            HostCall::MoveAddon {
+                id: "t.a".into(),
+                delta: 1,
+            },
+        )
+        .unwrap_err();
+        assert!(e.contains("can't be managed"), "{e}");
+        let cx = Cx::new("t.helper", &p, &data, &cache, None, &state).with_addons(&moves);
+        assert_eq!(
+            host_calls(&cx),
+            [
+                "addons",
+                "install_addon",
+                "set_addon_enabled",
+                "remove_addon",
+                "move_addon",
+                "tasks"
+            ]
+        );
+        let call: HostCall = serde_json::from_value(
+            serde_json::json!({"method": "move_addon", "params": {"id": "t.a", "delta": -3}}),
+        )
+        .unwrap();
+        assert_eq!(host_call(&cx, call).unwrap(), Value::Null);
+        assert_eq!(*moves.0.lock().unwrap(), [("t.a".to_owned(), -3)]);
+    }
+
+    #[derive(Default)]
+    struct Shown(Mutex<Vec<swofty_addon::launcher::TaskList>>);
+
+    impl swofty_addon::launcher::Tasks for Shown {
+        fn show(&self, list: &swofty_addon::launcher::TaskList) {
+            self.0.lock().unwrap().push(list.clone());
+        }
+    }
+
+    const TASK_LISTS: &str = r#"
+answer() { read -r l; echo "$l" >> received; echo "$1"; }
+answer '{"id":0,"result":{"api":1}}'
+read -r l
+echo '{"method":"tasks","params":{"title":"T","items":[{"id":"a","label":"A","state":"running"}]}}'
+echo '{"method":"tasks","params":{"title":"T","items":[{"id":"a","label":"A","state":"failed","note":"bad"}]}}'
+echo '{"id":1,"result":{"notice":"done"}}'
+read -r l
+echo '{"method":"tasks","params":{"title":"T","items":[]}}'
+echo '{"id":2,"result":"none"}'
+read -r l
+"#;
+
+    #[test]
+    fn forwards_task_lists_to_the_event_that_shows_them() {
+        let root = tmp("tasks");
+        let dir = root.join("addon");
+        addon(&dir, TASK_LISTS);
+        let h = helper(&dir);
+        let (data, cache) = (root.join("data"), root.join("cache"));
+        std::fs::create_dir_all(&cache).unwrap();
+        let (state, shown, p) = (Memory::default(), Shown::default(), profile("default"));
+        let cx = Cx::new("t.helper", &p, &data, &cache, None, &state).with_tasks(&shown);
+        let effect = h.event(&cx, "items", Event::Startup {}).unwrap();
+        assert_eq!(effect, Effect::Notice("done".into()));
+        let states: Vec<_> = shown.0.lock().unwrap().iter().map(|l| l.items[0].state).collect();
+        assert_eq!(
+            states,
+            [
+                swofty_addon::launcher::TaskState::Running,
+                swofty_addon::launcher::TaskState::Failed
+            ]
+        );
+        let plain = Cx::new("t.helper", &p, &data, &cache, None, &state);
+        assert_eq!(h.event(&plain, "items", Event::Startup {}).unwrap(), Effect::None);
+        assert_eq!(shown.0.lock().unwrap().len(), 2);
+        assert!(h.running());
+        h.stop();
         std::fs::remove_dir_all(&root).ok();
     }
 

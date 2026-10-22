@@ -9,11 +9,11 @@ Once the launcher has found F1 25, you do everything from one window. This secti
 
 ## The launcher window
 
-- The **sidebar** on the left opens **Profiles**, **Addons** and the pages that addons add, such as **Mods**. You can see which profile is active at the bottom, under **ACTIVE PROFILE**.
+- The **sidebar** on the left opens [News](/using/news), [Addons](/using/addons), **Mod Importer**, [Tools](/using/tools) and [Profiles](/using/profiles). Under **ADDON PANELS** it lists the [DB Editor](/using/db-editor) and the pages that addons add, such as the **Career Editor**. You can see which profile is active at the bottom, under **ACTIVE PROFILE**.
+- **News** opens first. It has the Swofty Developments Discord invite and the latest posts and release notes.
 - **Play** sits in the bottom-right. Its status line reads **Ready** when the launcher has found the game. The arrow next to it has **Play in VR** and **Play with console**.
-- Drop a file or folder anywhere on the window to install it. Anything with a `swofty.json` goes to **Addons**; mods and tracks go to **Mods**.
+- Drop a file or folder anywhere on the window to install it. Anything with a `swofty.json` goes to **Addons**; mods and tracks go to the **Mod Importer**.
 - **Send Logs to Developers**, at the bottom of the sidebar, sends your logs to the developers when something goes wrong.
-- **Join the Discord**, above it, opens the Swofty Developments Discord server for support and updates. The first time the launcher opens, a **News** popup invites you there too. Once you close it, it doesn't show again.
 
 ## Everyday tasks
 
@@ -29,9 +29,11 @@ Once the launcher has found F1 25, you do everything from one window. This secti
 
 | Page | Covers |
 |---|---|
+| [News](/using/news) | The Discord invite, news posts, changelogs, and where the feed comes from |
 | [Addons](/using/addons) | Installing, turning on, checking and removing addons; the built-in addons |
 | [Addons that ship with the launcher](/using/bundled-addons) | The addons every release installs switched off, such as F1 25 RE-Optimization |
 | [Mods and tracks](/using/mods) | Importing mods and tracks, load order, conflicts and `swofty mods` |
+| [Tools](/using/tools) | The tools that make or edit Swofty addons |
 | [Profiles](/using/profiles) | Creating, switching, renaming, duplicating and deleting profiles |
 | [In-game addon settings](/using/swofty-mod) | The **ADDON SETTINGS** screen in the game's home menu |
 | [Playing in VR](/using/vr) | **Play in VR**, SteamVR and `swofty run --vr` |

@@ -1,10 +1,10 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use gpui_kit::assets::IconName;
-use gpui_kit::component::button::{Button, ButtonVariants};
+use gpui_kit::component::button::{Button, ButtonVariant, ButtonVariants};
 use gpui_kit::component::menu::{ContextMenuExt, DropdownMenu, PopupMenuItem};
 use gpui_kit::component::notification::Notification;
 use gpui_kit::component::switch::Switch;
@@ -39,7 +39,7 @@ impl Progress for Reporter {
     }
 }
 
-fn game(store: &Store, install: Option<&Install>) -> Option<Game> {
+pub(crate) fn game(store: &Store, install: Option<&Install>) -> Option<Game> {
     let install = install?;
     let identity = Identity::detect_cached(&store.root, &install.dir, install.build_id).ok()?;
     Some(Game {
@@ -152,10 +152,7 @@ impl Shell {
         let registry = library.registry.clone();
         let profile = library.profile.clone();
         let install = self.install.clone();
-        let open = match self.page {
-            Page::Section(i) => Some(i),
-            _ => None,
-        };
+        let open = self.open_section();
         let keys: HashSet<String> = library.sections.iter().map(section_key).collect();
         if self.views_profile != profile.name {
             self.views_profile = profile.name.clone();
@@ -240,10 +237,7 @@ impl Shell {
     }
 
     fn refresh_stale(&mut self, cx: &mut Context<Self>) {
-        let open = match self.page {
-            Page::Section(i) => Some(i),
-            _ => None,
-        };
+        let open = self.open_section();
         let mut due = Vec::new();
         let mut seen = HashSet::new();
         for s in &self.library.sections {
@@ -272,7 +266,7 @@ impl Shell {
     }
 
     fn tick(&mut self, cx: &mut Context<Self>) {
-        let Page::Section(i) = self.page else {
+        let Some(i) = self.open_section() else {
             return;
         };
         let Some(s) = self.library.sections.get(i) else {
@@ -316,6 +310,27 @@ impl Shell {
         .detach();
     }
 
+    /// Sends `startup` to the first section of each addon that asks for it.
+    pub(crate) fn run_startup(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let mut seen = std::collections::BTreeSet::new();
+        let targets: Vec<(String, String)> = self
+            .library
+            .sections
+            .iter()
+            .filter(|s| seen.insert(s.addon.clone()))
+            .filter(|s| {
+                self.library.addons.iter().any(|a| {
+                    a.manifest.id == s.addon && a.manifest.launcher.as_ref().is_some_and(|l| l.startup)
+                })
+            })
+            .map(|s| (s.addon.clone(), s.spec.id.clone()))
+            .collect();
+        for (addon, section) in targets {
+            let control = format!("{addon}/{section}/startup");
+            self.send(&addon, &section, control, Event::Startup {}, window, cx);
+        }
+    }
+
     pub(crate) fn send(
         &mut self,
         addon: &str,
@@ -332,7 +347,10 @@ impl Shell {
         let profile = self.library.profile.clone();
         let install = self.install.clone();
         let (addon, section) = (addon.to_owned(), section.to_owned());
+        let feed = crate::tasks::Feed::default();
+        let sink = crate::tasks::Sink(feed.clone());
         self.busy.insert(control.clone());
+        self.follow_tasks(control.clone(), feed.clone(), cx);
         cx.notify();
         cx.spawn_in(window, async move |this, cx| {
             let id = addon.clone();
@@ -343,13 +361,14 @@ impl Shell {
                     let host = host(&store, &addon, &profile, game.as_ref())?;
                     entry
                         .addon
-                        .event(&host.cx(), &section, event)
+                        .event(&host.cx().with_tasks(&sink), &section, event)
                         .map_err(|e| e.to_string())
                 })
                 .await;
             this.update_in(cx, |s, window, cx| {
                 s.busy.remove(&control);
                 s.settled(&control, &effect);
+                let effect = s.finish_tasks(&control, &feed, effect, cx);
                 s.effect(&id, effect, window, cx);
             })
             .ok();
@@ -376,6 +395,13 @@ impl Shell {
                 cx.open_with_system(&path);
                 cx.notify();
             }
+            Ok(Effect::ShowAddon(shown)) => {
+                if let Some(text) = shown.notice() {
+                    window.push_notification(Notification::info(text.to_owned()), cx);
+                }
+                self.reload(cx);
+                self.show_addon(shown.id(), cx);
+            }
             Err(e) => {
                 window.push_notification(Notification::error(e), cx);
                 cx.notify();
@@ -399,16 +425,28 @@ impl Shell {
         let reporter = Reporter(shared.clone());
         self.follow_progress(shared, cx);
         cx.spawn_in(window, async move |this, cx| {
-            let (done, failed) = cx
+            let (mut done, failed, unclaimed, fresh) = cx
                 .background_executor()
                 .spawn(async move {
-                    let result = import_all(&store, &registry, &profile, install.as_ref(), &paths, &reporter);
+                    let before = installed(&store);
+                    let (done, failed, unclaimed) =
+                        import_all(&store, &registry, &profile, install.as_ref(), &paths, &reporter);
+                    let fresh = installed_since(&before, &installed(&store));
                     if let Ok(mut p) = reporter.0.lock() {
                         *p = None;
                     }
-                    result
+                    (done, failed, unclaimed, fresh)
                 })
                 .await;
+            if fresh.len() > 1 {
+                done.insert(
+                    0,
+                    format!(
+                        "Installed {}; Addons highlights the newest",
+                        plural(fresh.len(), "addon", "addons")
+                    ),
+                );
+            }
             this.update_in(cx, |s, window, cx| {
                 if !done.is_empty() {
                     window.push_notification(Notification::success(done.join("\n")), cx);
@@ -416,13 +454,107 @@ impl Shell {
                 if !failed.is_empty() {
                     window.push_notification(Notification::error(failed.join("\n")), cx);
                 }
+                if !unclaimed.is_empty() {
+                    s.show_not_addons(&unclaimed, window, cx);
+                }
                 s.rediscover = true;
                 s.reload(cx);
+                if let Some(id) = fresh.first() {
+                    s.show_addon(id, cx);
+                }
             })
             .ok();
         })
         .detach();
         cx.notify();
+    }
+
+    fn show_not_addons(&self, paths: &[PathBuf], window: &mut Window, cx: &mut Context<Self>) {
+        const SHOWN: usize = 5;
+        let one = paths.len() == 1;
+        let names: Vec<String> = paths.iter().take(SHOWN).map(|p| file_name(p)).collect();
+        let more = paths.len().saturating_sub(SHOWN);
+        let shell = cx.entity().downgrade();
+        window.open_alert_dialog(cx, move |alert, _, cx| {
+            let p = crate::theme::palette(cx);
+            let shell = shell.clone();
+            let files = v_flex()
+                .gap(px(8.))
+                .child(if one {
+                    "The launcher can't install this file as an addon:"
+                } else {
+                    "The launcher can't install these files as addons:"
+                })
+                .child(
+                    v_flex()
+                        .px(px(12.))
+                        .py(px(8.))
+                        .gap(px(4.))
+                        .rounded(px(8.))
+                        .bg(p.background)
+                        .border_1()
+                        .border_color(p.border_variant)
+                        .text_color(p.text)
+                        .children(names.iter().map(|n| {
+                            h_flex()
+                                .gap(px(8.))
+                                .items_center()
+                                .child(
+                                    Icon::new(IconName::File)
+                                        .size(px(14.))
+                                        .text_color(p.text_placeholder),
+                                )
+                                .child(div().min_w_0().truncate().child(n.clone()))
+                        }))
+                        .when(more > 0, |d| {
+                            d.child(
+                                div()
+                                    .text_color(p.text_placeholder)
+                                    .child(format!("and {more} more")),
+                            )
+                        }),
+                );
+            let mods = if one {
+                "Mods like this one go through the Mod Importer, which turns them into addons."
+            } else {
+                "Mods like these go through the Mod Importer, which turns them into addons."
+            };
+            alert
+                .width(px(540.))
+                .title(if one {
+                    "That isn't a Swofty addon"
+                } else {
+                    "Those aren't Swofty addons"
+                })
+                .description(files)
+                .child(
+                    v_flex()
+                        .gap(px(10.))
+                        .child(drop_choice(
+                            IconName::FolderInput,
+                            "Trying to add a mod?",
+                            mods,
+                            Button::new("not-addon-importer")
+                                .primary()
+                                .icon(IconName::ArrowRight)
+                                .label("Go to Mod Importer")
+                                .on_click(move |_, window, cx| {
+                                    window.close_dialog(cx);
+                                    shell.update(cx, |s, cx| s.open_page(Page::Importer, cx)).ok();
+                                }),
+                            p,
+                        ))
+                        .child(drop_choice(
+                            IconName::BookOpen,
+                            "Making a Swofty addon?",
+                            "An addon is a folder with a swofty.json.",
+                            crate::tools::web_link("not-addon-docs", "Read the addon docs", ADDON_DOCS, p),
+                            p,
+                        )),
+                )
+                .ok_text("Close")
+                .ok_variant(ButtonVariant::Secondary)
+        });
     }
 
     pub(crate) fn follow_progress(&mut self, shared: Shared, cx: &mut Context<Self>) {
@@ -512,6 +644,16 @@ impl Shell {
             .collect();
         let width = self.content_width;
         let mut search_bar = None;
+        let mut footer = view.footer.clone().map(|f| {
+            div()
+                .flex_shrink_0()
+                .py(px(10.))
+                .border_t_1()
+                .border_color(p.border_variant)
+                .text_size(px(12.))
+                .text_color(p.text_placeholder)
+                .child(f)
+        });
         let body = match &view.body {
             Body::List {
                 rows,
@@ -554,6 +696,7 @@ impl Shell {
                         .into_any_element()
                 } else {
                     self.list(SharedString::from(format!("section-{addon}-{id}")), rows, p)
+                        .children(footer.take().map(|f| f.mt(px(16.))))
                         .into_any_element()
                 }
             }
@@ -583,6 +726,7 @@ impl Shell {
                     };
                     self.block_at(at, b, p, cx)
                 }))
+                .children(footer.take())
                 .into_any_element(),
         };
         v_flex()
@@ -596,17 +740,7 @@ impl Shell {
             .children(notices)
             .children(search_bar.map(|s| h_flex().px(px(GUTTER)).pb(px(12.)).flex_shrink_0().child(s)))
             .child(body)
-            .children(view.footer.clone().map(|f| {
-                div()
-                    .flex_shrink_0()
-                    .px(px(GUTTER))
-                    .py(px(10.))
-                    .border_t_1()
-                    .border_color(p.border_variant)
-                    .text_size(px(12.))
-                    .text_color(p.text_placeholder)
-                    .child(f)
-            }))
+            .children(footer.map(|f| f.mx(px(GUTTER))))
             .into_any_element()
     }
 
@@ -959,9 +1093,11 @@ impl Shell {
             Style::Ghost => button.ghost(),
             Style::Danger => button.danger().ghost(),
         };
-        if small {
-            button = button.small();
-        }
+        button = match b.size {
+            view::ButtonSize::Large => button.large().h(px(52.)).px(px(32.)).text_size(px(16.)),
+            view::ButtonSize::Normal if small => button.small(),
+            view::ButtonSize::Normal => button,
+        };
         if let Some(i) = b.icon {
             button = button.icon(icon(i));
         }
@@ -1112,6 +1248,86 @@ impl Shell {
     }
 }
 
+// When each installed addon's folder last changed, by addon id.
+fn installed(store: &Store) -> BTreeMap<String, SystemTime> {
+    let Ok(dirs) = std::fs::read_dir(store.addons_dir()) else {
+        return BTreeMap::new();
+    };
+    dirs.flatten()
+        .filter(|e| e.path().join(swofty_core::manifest::MANIFEST_FILE).is_file())
+        .filter_map(|e| {
+            Some((
+                e.file_name().into_string().ok()?,
+                e.metadata().ok()?.modified().ok()?,
+            ))
+        })
+        .collect()
+}
+
+// The addons installed or replaced between two snapshots, newest first.
+fn installed_since(
+    before: &BTreeMap<String, SystemTime>,
+    after: &BTreeMap<String, SystemTime>,
+) -> Vec<String> {
+    let mut fresh: Vec<(&String, &SystemTime)> = after
+        .iter()
+        .filter(|(id, at)| before.get(*id) != Some(at))
+        .collect();
+    fresh.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+    fresh.into_iter().map(|(id, _)| id.clone()).collect()
+}
+
+const ADDON_DOCS: &str = "https://f1.swofty.net/reference/addons/";
+
+fn drop_choice(
+    icon: IconName,
+    title: &str,
+    text: &str,
+    action: impl IntoElement,
+    p: Palette,
+) -> impl IntoElement {
+    h_flex()
+        .p(px(14.))
+        .gap(px(14.))
+        .items_start()
+        .rounded(px(10.))
+        .border_1()
+        .border_color(p.border_variant)
+        .bg(p.background)
+        .child(
+            div()
+                .size(px(34.))
+                .flex_shrink_0()
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(8.))
+                .bg(p.selected)
+                .child(Icon::new(icon).size(px(17.)).text_color(p.accent_hover)),
+        )
+        .child(
+            v_flex()
+                .flex_1()
+                .min_w_0()
+                .gap(px(4.))
+                .child(
+                    div()
+                        .text_size(px(14.))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(p.text)
+                        .child(title.to_owned()),
+                )
+                .child(
+                    div()
+                        .text_size(px(13.))
+                        .line_height(px(19.))
+                        .text_color(p.text_muted)
+                        .child(text.to_owned()),
+                )
+                .child(h_flex().pt(px(6.)).child(action)),
+        )
+}
+
 fn import_all(
     store: &Store,
     registry: &Registry,
@@ -1119,13 +1335,10 @@ fn import_all(
     install: Option<&Install>,
     paths: &[PathBuf],
     progress: &Reporter,
-) -> (Vec<String>, Vec<String>) {
+) -> (Vec<String>, Vec<String>, Vec<PathBuf>) {
     let (batches, unclaimed) = import::route_all(registry, paths);
     let mut done = Vec::new();
-    let mut failed: Vec<String> = unclaimed
-        .iter()
-        .map(|p| format!("No addon imports {}", file_name(p)))
-        .collect();
+    let mut failed = Vec::new();
     let mut game_files = None;
     for (route, paths) in batches {
         match route {
@@ -1154,5 +1367,41 @@ fn import_all(
             }
         }
     }
-    (done, failed)
+    (done, failed, unclaimed)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+    use std::time::{Duration, SystemTime};
+
+    use swofty_core::store::Store;
+
+    use super::{installed, installed_since};
+
+    #[test]
+    fn an_import_shows_what_it_installed_or_replaced_newest_first() {
+        let t = |s: u64| SystemTime::UNIX_EPOCH + Duration::from_secs(s);
+        let snap = |v: &[(&str, u64)]| -> BTreeMap<String, SystemTime> {
+            v.iter().map(|(id, s)| ((*id).to_owned(), t(*s))).collect()
+        };
+        let before = snap(&[("a.kept", 1), ("a.replaced", 2), ("a.removed", 3)]);
+        let after = snap(&[("a.kept", 1), ("a.replaced", 9), ("b.new", 8), ("c.new", 9)]);
+        assert_eq!(installed_since(&before, &after), ["a.replaced", "c.new", "b.new"]);
+        assert!(installed_since(&before, &before).is_empty());
+    }
+
+    #[test]
+    fn snapshots_list_only_folders_with_a_manifest() {
+        let root = std::env::temp_dir().join(format!("swofty-launcher-installed-{}", std::process::id()));
+        std::fs::remove_dir_all(&root).ok();
+        let store = Store::new(&root);
+        let addon = store.addons_dir().join("t.one");
+        std::fs::create_dir_all(&addon).unwrap();
+        std::fs::create_dir_all(store.addons_dir().join(".importing")).unwrap();
+        std::fs::write(addon.join(swofty_core::manifest::MANIFEST_FILE), "{}").unwrap();
+        let before = BTreeMap::new();
+        assert_eq!(installed_since(&before, &installed(&store)), ["t.one"]);
+        std::fs::remove_dir_all(&root).ok();
+    }
 }

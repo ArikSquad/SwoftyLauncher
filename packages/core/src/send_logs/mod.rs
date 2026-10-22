@@ -263,6 +263,15 @@ impl Bundle {
         }
         let addons = serde_json::to_string_pretty(&addons_summary(store)).unwrap_or_default();
         c.push("addons.json".into(), addons.into_bytes(), None);
+        if let Ok(p) = store.profile(&store.active_profile()) {
+            for id in p
+                .enabled()
+                .filter(|id| crate::dbedit::package::is_package(store, id))
+            {
+                let source = store.addons_dir().join(id).join(crate::dbedit::package::MARKER);
+                c.file(format!("db-packages/{id}.json"), &source, None);
+            }
+        }
         let sessions = newest_sessions(store, SESSIONS);
         let mut loader = Vec::new();
         let mut live_perf = None;
@@ -287,6 +296,9 @@ impl Bundle {
         for (id, log) in helper_logs(store) {
             c.file(format!("addons/{id}/{}", crate::helper::LOG_FILE), &log, None);
         }
+        for (id, log) in addon_logs(store) {
+            c.file(format!("addons/{id}/logs/{}", file_name(&log)), &log, None);
+        }
         if let Some(snapshot) = report.game.dir.as_ref().map(|d| d.join(SNAPSHOT))
             && snapshot.is_file()
         {
@@ -295,6 +307,10 @@ impl Bundle {
         for log in state_logs(store) {
             let name = file_name(&log);
             c.file(format!("state/{name}"), &log, None);
+        }
+        let not_stock = store.root.join("state/not-stock.json");
+        if not_stock.is_file() {
+            c.file("state/not-stock.json".into(), &not_stock, None);
         }
         for dir in &sessions {
             let session = file_name(dir);
@@ -401,6 +417,8 @@ impl Bundle {
             }
             None => s.push_str("No crash report was found (the game did not write one this session)\n"),
         }
+        s.push_str("\nGame files against Steam\n");
+        s.push_str(&game_files_section(store, report.game.dir.as_deref()));
         s.push_str("\nPerformance\n");
         match perf {
             Some((label, path)) => {
@@ -684,6 +702,66 @@ fn crash_excerpt(text: &str) -> Vec<String> {
     out
 }
 
+/// The stock check's last verdict and the EA AntiCheat launcher files in the
+/// game root, so a blocked player's bundle shows which file failed and what EA
+/// rewrote.
+fn game_files_section(store: &Store, game: Option<&Path>) -> String {
+    let mut s = String::new();
+    match crate::stock::Report::read(&store.root) {
+        Some(r) if !r.detail.is_empty() => {
+            s.push_str(&format!("  last launch stopped: {}\n", r.title()));
+            for f in &r.detail {
+                s.push_str(&format!(
+                    "  {} (measured {}, size {}, Steam {}, modified {})\n",
+                    f.rel,
+                    f.measured,
+                    f.size.map_or("missing".to_owned(), |n| n.to_string()),
+                    f.steam,
+                    f.modified.map_or("unknown".to_owned(), |t| format!("{t:.0}"))
+                ));
+            }
+        }
+        Some(r) => s.push_str(&format!(
+            "  last launch stopped: {} ({})\n",
+            r.title(),
+            r.files.join(", ")
+        )),
+        None => s.push_str("  No stock-check failure on record\n"),
+    }
+    let eac = game.map(eac_files).unwrap_or_default();
+    if eac.is_empty() {
+        s.push_str("  No EAAntiCheat.* files found in the game folder\n");
+    }
+    for line in eac {
+        s.push_str(&format!("  {line}\n"));
+    }
+    s
+}
+
+fn eac_files(game: &Path) -> Vec<String> {
+    let mut out: Vec<String> = std::fs::read_dir(game)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if !name.to_ascii_lowercase().starts_with("eaanticheat.") {
+                return None;
+            }
+            let meta = e.metadata().ok();
+            let size = meta.as_ref().map_or("?".to_owned(), |m| m.len().to_string());
+            let modified = meta
+                .as_ref()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map_or("?".to_owned(), |d| d.as_secs().to_string());
+            Some(format!("{name} (size {size}, modified {modified})"))
+        })
+        .collect();
+    out.sort();
+    out
+}
+
 fn state_logs(store: &Store) -> Vec<PathBuf> {
     let mut out: Vec<PathBuf> = std::fs::read_dir(store.root.join("state"))
         .into_iter()
@@ -747,6 +825,9 @@ fn files_under(dir: &Path, depth: usize) -> Vec<(String, PathBuf)> {
     out
 }
 
+/// Converter and other addon logs sent per addon, newest first.
+const ADDON_LOGS: usize = 5;
+
 fn helper_logs(store: &Store) -> Vec<(String, PathBuf)> {
     let mut out: Vec<(String, PathBuf)> = std::fs::read_dir(store.root.join("cache/addons"))
         .into_iter()
@@ -760,6 +841,31 @@ fn helper_logs(store: &Store) -> Vec<(String, PathBuf)> {
         })
         .filter(|(_, log)| log.is_file())
         .collect();
+    out.sort();
+    out
+}
+
+/// The newest `.log` files addons keep in `addon-data/<id>/logs/`, such as
+/// the Mod Importer's converter logs.
+fn addon_logs(store: &Store) -> Vec<(String, PathBuf)> {
+    let mut out = Vec::new();
+    for e in std::fs::read_dir(store.root.join("addon-data"))
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
+        let id = e.file_name().to_string_lossy().into_owned();
+        let mut logs: Vec<(std::time::SystemTime, PathBuf)> = std::fs::read_dir(e.path().join("logs"))
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|f| f.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "log") && p.is_file())
+            .filter_map(|p| Some((std::fs::metadata(&p).ok()?.modified().ok()?, p)))
+            .collect();
+        logs.sort_by_key(|l| std::cmp::Reverse(l.0));
+        out.extend(logs.into_iter().take(ADDON_LOGS).map(|(_, p)| (id.clone(), p)));
+    }
     out.sort();
     out
 }

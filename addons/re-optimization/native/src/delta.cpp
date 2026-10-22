@@ -2,8 +2,8 @@
 // Copyright (c) 2026 xanpavle. Ported to a Swofty Launcher addon by Swofty.
 //
 // Deliberately NOT touched (as in the original profile.cpp):
-//   mirrors.*, rt_* / RayTracing, weather rain*, and aa_quality. Only the backend
-//   booleans of <antialiasing> change, and only when an upscaler is chosen.
+//   mirrors.*, rt_reflections / rt_shadows, weather rain*, and aa_quality. Only the
+//   backend selectors of <antialiasing> change, and only when an upscaler is chosen.
 #include "delta.hpp"
 
 #include <cstring>
@@ -15,6 +15,7 @@ struct Ov {
     const char *tag;
     const char *attr;
     const char *val;
+    bool rt = false;
 };
 
 const Ov kOv[] = {
@@ -43,6 +44,9 @@ const Ov kOv[] = {
     {"vehicle_reflections", "cubeMapUpdateMode", "oneFacePerFrame"},
 
     {"weather_effects", "proceduralCloudRTScale", "2.0"},
+
+    {"rt_ao", "enabled", "false", true},
+    {"rt_ddgi", "enabled", "false", true},
 
     {"ground_cover", "drawDistance", "80.0"},
     {"hair", "enabled", "false"},
@@ -107,9 +111,11 @@ void replace_attr(std::string &line, const std::string &tag, std::string_view at
         rec->changes.push_back({tag, std::string(attr), std::move(original), std::string(val)});
 }
 
+// taa, dlss and xess are read as "true"/"false"; fsr3 and cas are read as numbers,
+// so fsr3="true" parses as 0 and FSR 3 never engages (fixed upstream in 0.2.1).
 void apply_upscaler(std::string &line, const std::string &tag, Upscaler up, Record *rec)
 {
-    const char *taa = "false", *dlss = "false", *fsr = "false", *xess = "false";
+    const char *taa = "false", *dlss = "false", *fsr = "0", *xess = "false", *cas = nullptr;
     switch (up) {
     case Upscaler::Taa:
         taa = "true";
@@ -118,7 +124,8 @@ void apply_upscaler(std::string &line, const std::string &tag, Upscaler up, Reco
         dlss = "true";
         break;
     case Upscaler::Fsr3:
-        fsr = "true";
+        fsr = "1";
+        cas = "1";
         break;
     case Upscaler::Xess:
         xess = "true";
@@ -132,6 +139,8 @@ void apply_upscaler(std::string &line, const std::string &tag, Upscaler up, Reco
     replace_attr(line, tag, "dlss", dlss, rec);
     replace_attr(line, tag, "fsr3", fsr, rec);
     replace_attr(line, tag, "xess", xess, rec);
+    if (cas)
+        replace_attr(line, tag, "cas", cas, rec);
 }
 
 std::string elem_tag(const std::string &line)
@@ -274,15 +283,15 @@ bool is_hardware_settings_config(const char *text, size_t n)
     return false;
 }
 
-std::string transform(std::string_view in, Upscaler up, bool profile, Record *record)
+std::string transform(std::string_view in, Upscaler up, const Tuning &tuning, Record *record)
 {
     return each_element(in, [&](std::string &line, const std::string &tag) {
         if (up != Upscaler::Keep && tag == "antialiasing")
             apply_upscaler(line, tag, up, record);
-        if (!profile)
+        if (!tuning.profile)
             return;
         for (const Ov &o : kOv)
-            if (tag == o.tag)
+            if (tag == o.tag && (!o.rt || tuning.rt_passes_off))
                 replace_attr(line, tag, o.attr, o.val, record);
     });
 }

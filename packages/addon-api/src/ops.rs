@@ -84,6 +84,7 @@ pub enum DbOp {
         tag: u8,
         value: String,
     },
+    /// Removing a key already absent is a no-op.
     RemoveRecord {
         key: String,
     },
@@ -123,6 +124,7 @@ pub enum ErpOp {
         #[serde(default, rename = "as", skip_serializing_if = "Option::is_none")]
         rename: Option<String>,
     },
+    /// Removing a resource the archive does not have is a no-op.
     RemoveResource {
         erp: String,
         resource: String,
@@ -142,6 +144,13 @@ pub enum ErpOp {
     // put-resource from it would. On the runtime route the archive is loaded as it is.
     Overlay {
         erps: Vec<String>,
+        source: Source,
+    },
+    // Each slice of the texture array `resource` in `source` that differs from the
+    // game's stock slice goes over the array already in `erp`.
+    MergeSlices {
+        erp: String,
+        resource: String,
         source: Source,
     },
 }
@@ -557,6 +566,35 @@ pub fn apply_db_ops_report(
     Ok(replaced)
 }
 
+/// Like [`apply_db_ops`], but an op that fails is skipped and returned with
+/// its error instead of stopping the rest. A failing op changes nothing.
+pub fn apply_db_ops_lenient(
+    db: &mut Gvdb,
+    ops: &DbOps,
+    names: &dyn FieldNames,
+    report: &mut DbReport,
+) -> (Vec<u64>, Vec<(usize, Error)>) {
+    let schema = Schema {
+        file: &ops.fields,
+        names,
+    };
+    let mut db = Db::new(db);
+    let mut cx = Cx {
+        strict: ops.strict,
+        report,
+    };
+    let mut replaced = Vec::new();
+    let mut failed = Vec::new();
+    for (i, op) in ops.ops.iter().enumerate() {
+        match apply(&mut db, op, &schema, &mut cx) {
+            Ok(key) => replaced.extend(key),
+            Err(e) => failed.push((i, e)),
+        }
+    }
+    db.finish();
+    (replaced, failed)
+}
+
 pub fn apply_db_op(db: &mut Gvdb, op: &DbOp, names: &dyn FieldNames) -> Result<Option<u64>> {
     let mut db = Db::new(db);
     let mut report = DbReport::default();
@@ -701,7 +739,8 @@ fn apply(db: &mut Db, op: &DbOp, names: &dyn FieldNames, cx: &mut Cx) -> Result<
         DbOp::RemoveRecord { key } => {
             let k = resolve_key(db, key)?;
             if !db.remove(k) {
-                return Err(Error::Resolve(format!("{key}: no such key")));
+                cx.report.lines.push(format!("{key}: already removed"));
+                return Ok(None);
             }
             Ok(Some(k))
         }
@@ -1123,13 +1162,35 @@ mod tests {
         assert!(db.get("entrants.teams.team_1.stat_id").is_none());
         assert_eq!(db.records.len(), count);
         for bad in [
-            r#"{"op":"remove-record","key":"entrants.teams.team_1.nope"}"#,
             r#"{"op":"put-record","key":"0x12","type":0,"value":"00"}"#,
             r#"{"op":"put-record","key":"a.b","type":0,"value":"0"}"#,
         ] {
             let op: DbOp = serde_json::from_str(bad).unwrap();
             assert!(apply_db_op(&mut db, &op, &names()).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn remove_record_twice_is_idempotent() {
+        let key = "entrants.teams.team_1.stat_id";
+        let json = format!(
+            r#"{{"schema_version":1,"ops":[
+            {{"op":"remove-record","key":"{key}"}},
+            {{"op":"remove-record","key":"{key}"}}]}}"#
+        );
+        let mut lenient = db();
+        let mut report = DbReport::default();
+        let replaced = apply_db_ops_report(&mut lenient, &ops(&json), &names(), &mut report).unwrap();
+        assert_eq!(replaced, [fnv1a64(key)]);
+        assert!(lenient.get(key).is_none());
+        assert_eq!(report.lines, [format!("{key}: already removed")]);
+
+        let strict = format!(
+            r#"{{"schema_version":1,"strict":true,"ops":[
+            {{"op":"remove-record","key":"{key}"}},
+            {{"op":"remove-record","key":"{key}"}}]}}"#
+        );
+        apply_db_ops(&mut db(), &ops(&strict), &names()).unwrap();
     }
 
     const SETS: &str = "track_data.game_setup";

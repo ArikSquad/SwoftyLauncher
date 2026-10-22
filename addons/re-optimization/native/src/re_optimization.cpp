@@ -16,10 +16,16 @@
 // back for every attribute that still holds a tuned value, so a save never
 // stores the delta either. Every target is a signature binding; a binding that
 // does not resolve leaves its feature off and logs SAFE.
+//
+// In-engine enforcement (upstream 0.2.x): the hardware-settings readers parse each
+// attribute with Ne_Parse_Long (strtol) or Ne_Compare_StringNoCase(value, "true").
+// The strtol wrap swaps the result when its return address is one of the 12 integer
+// call sites; the 16 boolean call sites are redirected one by one.
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
 
+#include <array>
 #include <atomic>
 #include <cstdio>
 #include <cstring>
@@ -29,12 +35,16 @@
 #include <swofty/mixin.hpp>
 
 #include "delta.hpp"
+#include "enforce.hpp"
 #include "gpu.hpp"
 #include "overrides.hpp"
 
-#define REOPT_VERSION "0.1.0"
+#define REOPT_VERSION "0.2.5"
 
 SWOFTY_SETTING(bool, apply_profile, true);
+SWOFTY_SETTING(bool, keep_rt_ao_ddgi, false);
+SWOFTY_SETTING(std::string_view, enforce_mode, "cheaper");
+SWOFTY_SETTING(bool, pin_effects, true);
 SWOFTY_SETTING(std::string_view, upscaler, "auto");
 SWOFTY_SETTING(bool, override_vrs_async, true);
 SWOFTY_SETTING(bool, override_ground_cover, true);
@@ -59,12 +69,24 @@ using ParseFn = int (*)(void *, Reader *, uint8_t, uint8_t);
 using WriteFn = size_t (*)(const void *, size_t, size_t, void *);
 using BoolGetFn = uint64_t (*)(void *, const char *, uint8_t *, uint8_t);
 using U32GetFn = uint64_t (*)(void *, const char *, uint32_t *, uint32_t);
+using ParseLongFn = int32_t (*)(const char *, char **, int32_t);
+using CompareFn = int32_t (*)(const char *, const char *);
 
 BoolGetFn orig_bool;
 U32GetFn orig_u32;
 ParseFn orig_parse_mount;
 ParseFn orig_parse_config;
 WriteFn orig_write;
+ParseLongFn orig_parse_long;
+
+namespace enf = reopt::enforce;
+
+std::atomic<int> g_mode{int(enf::Mode::Off)};
+std::atomic<bool> g_pins{true};
+uintptr_t g_int_ret[enf::kIntCount];
+std::atomic<bool> g_int_logged[enf::kIntCount];
+CompareFn g_bool_orig[enf::kBoolCount];
+std::atomic<bool> g_bool_logged[enf::kBoolCount];
 
 std::atomic<uint32_t> g_groups{0};
 std::atomic<bool> g_log_reads{false};
@@ -172,6 +194,46 @@ uint64_t get_u32(void *node, const char *name, uint32_t *out, uint32_t def)
     return r;
 }
 
+enf::Mode mode_now()
+{
+    return enf::Mode(g_mode.load(std::memory_order_relaxed));
+}
+
+int32_t parse_long(const char *text, char **end, int32_t base)
+{
+    const auto ret = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
+    const int32_t v = orig_parse_long(text, end, base);
+    for (size_t i = 0; i < enf::kIntCount; i++) {
+        if (g_int_ret[i] != ret)
+            continue;
+        const enf::Mode m = mode_now();
+        const int32_t out = enf::int_value(m, v, enf::kIntSites[i].tuned);
+        if (!g_int_logged[i].exchange(true))
+            swofty::log("[re-opt] enforce: %s -> %d (engine read %d, mode %s)", enf::kIntSites[i].attr, out, v,
+                        enf::mode_name(m));
+        return out;
+    }
+    return v;
+}
+
+template <size_t I> int32_t compare_at(const char *a, const char *b)
+{
+    const int32_t v = g_bool_orig[I](a, b);
+    const enf::Pin pin = enf::bool_pin(mode_now(), g_pins.load(std::memory_order_relaxed), enf::kBoolSites[I].tuned);
+    const int32_t out = enf::compare_result(pin, v);
+    if (pin != enf::Pin::Keep && !g_bool_logged[I].exchange(true))
+        swofty::log("[re-opt] pin: %s -> %s (engine read %s)", enf::kBoolSites[I].attr, out == 0 ? "on" : "off",
+                    v == 0 ? "on" : "off");
+    return out;
+}
+
+template <size_t... I> constexpr std::array<CompareFn, sizeof...(I)> compare_handlers(std::index_sequence<I...>)
+{
+    return {&compare_at<I>...};
+}
+
+constexpr auto kCompareAt = compare_handlers(std::make_index_sequence<enf::kBoolCount>{});
+
 reopt::Upscaler pick_upscaler()
 {
     std::string mode(upscaler.get());
@@ -201,7 +263,8 @@ int parse_tuned(ParseFn orig, const char *site, void *doc, Reader *reader, uint8
         !reopt::is_hardware_settings_config(ms->data, ms->size))
         return orig(doc, reader, a, b);
 
-    const bool profile = apply_profile;
+    const reopt::Tuning tuning{apply_profile, !keep_rt_ao_ddgi};
+    const bool profile = tuning.profile;
     const reopt::Upscaler up = pick_upscaler();
     if (!profile && up == reopt::Upscaler::Keep) {
         swofty::log("[re-opt] %s: hardware_settings_config read; profile off and upscaler keep, left as read", site);
@@ -209,7 +272,7 @@ int parse_tuned(ParseFn orig, const char *site, void *doc, Reader *reader, uint8
     }
 
     reopt::Record rec;
-    std::string tuned = reopt::transform(std::string_view(ms->data, ms->size), up, profile, &rec);
+    std::string tuned = reopt::transform(std::string_view(ms->data, ms->size), up, tuning, &rec);
     char *saved_data = ms->data;
     size_t saved_size = ms->size;
     ms->data = tuned.data();
@@ -264,6 +327,59 @@ bool have(const SwoftyApi *a, const char *id, const char *what)
     return false;
 }
 
+uintptr_t call_target(uintptr_t site)
+{
+    if (!site || !readable(reinterpret_cast<const void *>(site), 5) || *reinterpret_cast<const uint8_t *>(site) != 0xE8)
+        return 0;
+    int32_t rel;
+    memcpy(&rel, reinterpret_cast<const void *>(site + 1), 4);
+    return site + 5 + rel;
+}
+
+uintptr_t checked_site(const SwoftyApi *a, const char *binding, const char *attr, uintptr_t callee)
+{
+    const uintptr_t site = a->resolve(binding);
+    if (site && call_target(site) == callee)
+        return site;
+    swofty::log("[re-opt] enforce: %s (%s) %s; skipped (SAFE)", attr, binding,
+                site ? "does not call the resolved parser" : "does not resolve on this build");
+    return 0;
+}
+
+void add_enforcement(const SwoftyApi *a, std::vector<SwoftyMixin> &list)
+{
+    const enf::Mode mode = enf::parse_mode(enforce_mode.get());
+    g_mode = int(mode);
+    g_pins = pin_effects;
+    if (mode == enf::Mode::Off) {
+        swofty::log("[re-opt] enforce: mode off; nothing installed");
+        return;
+    }
+    size_t ints = 0, bools = 0;
+    if (have(a, "Ne_Parse_Long", "enforce (integer parser)")) {
+        const uintptr_t parser = a->resolve("Ne_Parse_Long");
+        for (size_t i = 0; i < enf::kIntCount; i++)
+            if (const uintptr_t site = checked_site(a, enf::kIntSites[i].binding, enf::kIntSites[i].attr, parser)) {
+                g_int_ret[i] = site + 5;
+                ints++;
+            }
+        if (ints)
+            list.push_back({"Ne_Parse_Long", SWOFTY_MIXIN_WRAP, 1000, reinterpret_cast<void *>(&parse_long),
+                            reinterpret_cast<void **>(&orig_parse_long)});
+    }
+    if (have(a, "Ne_Compare_StringNoCase", "enforce (bool check)")) {
+        const uintptr_t cmp = a->resolve("Ne_Compare_StringNoCase");
+        for (size_t i = 0; i < enf::kBoolCount; i++)
+            if (checked_site(a, enf::kBoolSites[i].binding, enf::kBoolSites[i].attr, cmp)) {
+                list.push_back({enf::kBoolSites[i].binding, SWOFTY_MIXIN_REDIRECT, 0,
+                                reinterpret_cast<void *>(kCompareAt[i]), reinterpret_cast<void **>(&g_bool_orig[i])});
+                bools++;
+            }
+    }
+    swofty::log("[re-opt] enforce: mode %s, effect pins %s; %zu/%zu integer and %zu/%zu boolean sites resolve",
+                enf::mode_name(mode), g_pins.load() ? "on" : "off", ints, enf::kIntCount, bools, enf::kBoolCount);
+}
+
 }
 
 SWOFTY_ON_CHANGE(override_vrs_async, bool)
@@ -284,6 +400,16 @@ SWOFTY_ON_CHANGE(override_instance_caps, bool)
 SWOFTY_ON_CHANGE(log_reads, bool on)
 {
     g_log_reads = on;
+}
+
+SWOFTY_ON_CHANGE(enforce_mode, std::string_view m)
+{
+    g_mode = int(reopt::enforce::parse_mode(m));
+}
+
+SWOFTY_ON_CHANGE(pin_effects, bool on)
+{
+    g_pins = on;
 }
 
 extern "C" __declspec(dllexport) const uint32_t SwoftyAddonApi = SWOFTY_API_VERSION;
@@ -324,6 +450,8 @@ extern "C" __declspec(dllexport) int SwoftyAddonInit(const SwoftyApi *a)
         swofty::log("[re-opt] graphics profile and upscaler: NOT installed (SAFE); without both a load and the save "
                     "site the settings file could not be kept as the player wrote it");
     }
+
+    add_enforcement(a, list);
 
     if (list.empty()) {
         swofty::log("[re-opt] no binding resolves on this build; nothing installed (SAFE)");

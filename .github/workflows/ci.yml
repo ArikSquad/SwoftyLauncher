@@ -52,6 +52,7 @@ jobs:
               - addons/swoftymod/**
               - addons/custom-grid-size/**
               - re/db/functions.tsv
+              - tools/gamedb/catalog/**
             # The installer crate, its path dependencies (swofty-core, -addon, -formats, -sdk) and what they embed.
             installer:
               - *always
@@ -63,6 +64,7 @@ jobs:
               - packages/addon-api/**
               - packages/formats/**
               - packages/sdk/**
+              - tools/gamedb/catalog/**
               - templates/addon/native/include/**
               - addons/swoftymod/swofty.json
               - apps/launcher/assets/**
@@ -331,9 +333,6 @@ jobs:
               print(p, names)
           EOF
 
-      - name: RE-Optimization settings delta unit test
-        run: addons/re-optimization/native/test/run.sh
-
       - name: Events dispatcher unit test
         run: native/test/run_events_test.sh
       - name: Overlay draw-list unit test
@@ -354,6 +353,9 @@ jobs:
           while [ ! -f "$RUNNER_TEMP/wine-install.status" ]; do sleep 2; done
           cat "$RUNNER_TEMP/wine-install.log"
           exit "$(cat "$RUNNER_TEMP/wine-install.status")"
+
+      - name: RE-Optimization unit and Wine hook tests
+        run: addons/re-optimization/native/test/run.sh
 
       # A synthetic F1_25.exe carries the signatures; no game files are used.
       - name: Wine test

@@ -35,6 +35,7 @@ You can write the plugin in any language that reads and writes a line of JSON. T
 | [Forms](#forms) | Number, text, slider, select and toggle fields with an Apply button |
 | [Tables](#tables) | Sortable columns, searchable rows and editable cells |
 | [Live pages](#live-pages) | `tick` from the launcher and `invalidate` from the plugin |
+| [Task lists](#task-lists) | A dialog that ticks off items while an event runs |
 | [The build reply](#the-build-reply) | Asset ops returned at build |
 | [Importers and drag-and-drop](#importers-and-drag-and-drop) | Claiming dropped files and folders |
 | [Commands](#commands) | `swofty` subcommands |
@@ -165,7 +166,7 @@ From `hello.params`, you get your addon's id, its two directories, the active pr
 
 `launcher` is missing before 1.0.10. Everything this page marks *1.0.10* needs that launcher: set `"compat": { "launcher": ">=1.0.10" }` in `swofty.json` when you use it. An older launcher fails a view that holds a block it doesn't know.
 
-A launcher that answers the [addon host calls](#managing-addons) also lists them in `host_calls`: `["addons", "install_addon", "set_addon_enabled", "remove_addon"]`. An older launcher leaves `host_calls` out.
+A launcher that answers the [addon host calls](#managing-addons) also lists them in `host_calls`: `["addons", "install_addon", "set_addon_enabled", "remove_addon"]`. From 1.3.0 `"move_addon"` follows them, and the list always ends with `"tasks"` ([Task lists](#task-lists)), with or without the addon calls. An older launcher that answers no addon host calls leaves `host_calls` out.
 
 - Every profile shares `data_dir`. Use `cache_dir` for anything your plugin caches; it also holds the plugin's `helper.log`.
 - Check `profile.enabled` to see whether your addon is on in the active profile. `profile.vanilla` identifies the untouched profile: it takes no addons and refuses state writes.
@@ -209,11 +210,12 @@ Use the path and arguments in `command` to identify what to run. The path starts
 
 ### Host calls the plugin sends back
 
-While handling a request, you can call back to the launcher. Include an `id` when you expect a reply; send `progress` without an `id`.
+While handling a request, you can call back to the launcher. Include an `id` when you expect a reply; send `progress` and `tasks` without an `id`.
 
 | `method` | `params` | `result` |
 |---|---|---|
 | `progress` *(notification)* | `{ done, text }` | — |
+| `tasks` *(notification, 1.3.0)* | `{ title, subtitle, items }` | — ([Task lists](#task-lists)) |
 | `get_state` | — | the addon's per-profile state, or `null` |
 | `set_state` | the new state value | `null`, or an error on the vanilla profile |
 | `game_build_key` | — | the game build's key, or `null` |
@@ -230,6 +232,7 @@ While handling a request, you can call back to the launcher. Include an `id` whe
 | `install_addon` | `{ path }` | the addon it installed |
 | `set_addon_enabled` | `{ id, on }` | `null`, or an error on the vanilla profile |
 | `remove_addon` | `{ id }` | `null` |
+| `move_addon` *(1.3.0)* | `{ id, delta }` | `null`, or an error on the vanilla profile |
 | `invalidate` *(notification, 1.0.10)* | `{ section }` | — ([Live pages](#live-pages)) |
 
 ```json
@@ -285,18 +288,42 @@ While handling a request, you can call back to the launcher. Include an `id` whe
 
 #### Managing addons {#managing-addons}
 
-The four addon calls let a plugin install, list, turn on and off, and remove other addons, such as a page that gathers the data addons that add a track. Send them only when `hello.params.host_calls` lists them: a launcher that doesn't know a host call stops the plugin. A Rust helper gets them from `Cx::addons()`, which is `None` on such a launcher.
+The addon calls let a plugin install, list, turn on and off, reorder and remove other addons, such as a page that gathers the data addons that add a track. Send them only when `hello.params.host_calls` lists them: a launcher that doesn't know a host call stops the plugin. A Rust helper gets them from `Cx::addons()`, which is `None` on such a launcher. Its `move_addon` returns an error when the launcher doesn't list `move_addon`.
 
 `addons` lists every installed addon, with its folder and whether it is on in the active profile:
 
 ```json
 [ { "id": "yourname.okayama-named", "name": "Okayama with its own name", "version": "1.0.0", "author": "Your Name",
-    "dir": "/home/you/.local/share/swofty/addons/yourname.okayama-named", "enabled": true } ]
+    "dir": "/home/you/.local/share/swofty/addons/yourname.okayama-named", "enabled": true, "position": 3 } ]
 ```
 
-- `install_addon` installs the addon at `path` as a drop on the window does: a `.swoftyaddon`, a zip that holds an addon, or a folder with `swofty.json`. It replaces an installed copy with the same id and returns the addon in the shape above. It doesn't turn the addon on.
+- *(1.3.0)* The list is in the active profile's load order: the addons that are on, in the order a build loads them, then the rest by id.
+- *(1.3.0)* `position` is the addon's index in the active profile's addon list, from `0`, or `null` when the profile doesn't list it. An addon that is off keeps its place in that list. Launchers before 1.3.0 list the addons by id and send no `position`, which `AddonInfo::position` reads as `None`.
+
+- `install_addon` installs the addon at `path` as a drop on the window does: a `.swoftyaddon`, a zip that holds an addon, or a folder with `swofty.json`. It replaces an installed copy with the same id and returns the addon in the shape above. It doesn't turn the addon on. *(1.3.0)* It refuses an addon with a `dbedit.` id unless the folder or zip is a DB Editor addon, which installs as a new DB Editor addon.
 - `set_addon_enabled` turns an addon on or off in the active profile. It refuses to turn off an addon that is always on, or one that [keeps data in the saves](./manifest#saves), since only the **Addons** page warns about that.
 - `remove_addon` deletes the addon and takes it out of every profile, as **Remove** on the **Addons** page does. A plugin can't remove its own addon, a built-in one, one the launcher manages or one that keeps data in the saves.
+- `move_addon` moves an addon `delta` places in the active profile's addon list: negative moves it up, positive down. The list holds the addons that are on and the ones turned off, and `delta` counts both. The addons that are on load in that list's order, and a later addon wins where two write the same thing. The move stops at either end of the list, and `swofty.core` stays first. The addon must be in the profile's list, which `set_addon_enabled` puts it in.
+
+A Rust helper that turns files into addons can write the addon folder with `swofty_addon::builder::AddonBuilder` *(1.3.0)*, then pass it to `install_addon`:
+
+```rust [src/import.rs]
+let mut b = AddonBuilder::new("you.okayama", "Okayama", "You");
+b.category = Some(Category::Tracks);
+b.origin = Some(Origin { tool: "you.importer".into(), tool_version: None, file: Some("okayama.zip".into()), sha256: None });
+b.text("*", "lng_okayama", "Okayama").track(&unpacked, "okayama");
+let out = cx.cache_dir.join("okayama");
+let _ = std::fs::remove_dir_all(&out);
+b.write(&out)?;
+```
+
+- `db`, `db_ops`, `erp`, `text`, `lang`, `file` and `track` add operations. `file` and `track` copy their source into the addon; `source` copies a file or folder an ERP or language op names.
+- `write` writes `swofty.json`, `database.json`, `erp.json`, `text.json` and `tracks.json` as needed, and sets `compat.launcher` to `>=1.3.0`, or to the crate's own version when it is older.
+- `write` sets `kind` to each of `database`, `erp`, `text` and `files` the addon has ops for.
+- `write` refuses an invalid, `swofty.` or `dbedit.` id, a path that leaves the addon or the game folder, a file put twice, an op source that wasn't added, and a source outside the addon folder.
+- `write` refuses programs (`.dll`, `.exe`, `.asi`, `.so`, `.dylib`, `.bat`) as a source file, a path inside the addon or a game path.
+- `write` refuses a symbolic link or junction anywhere in a source.
+- `write` refuses an output folder that isn't empty, and the example removes it first.
 
 The template uses state to track which items are on, reading it here and writing it when the selection changes:
 
@@ -329,7 +356,7 @@ Return one page from `view`, describing its header, content and footer:
 | `actions` | Buttons in the header. |
 | `notices` | Bars under the header, each with an optional button. `tone` colours the bar. |
 | `body` | One of the three bodies below. |
-| `footer` | A muted line under the body. |
+| `footer` | A muted line at the end of the page, after the body. |
 | `tick` *(1.0.10)* | `true` asks for a `tick` about once a second while the page is open ([Live pages](#live-pages)). Default `false`. |
 
 Choose one of these shapes for `body`:
@@ -420,6 +447,7 @@ When you handle `event`, you receive one event and return one effect to tell the
 | A form's Apply, a live field or an edited table cell *(1.0.10)* | `{ "submit": { "form": "finance", "values": { "cash": 15000000 }, "changed": ["cash"] } }`, plus `"row"` for a table cell ([Forms](#forms), [Tables](#tables)) |
 | A search box, when it asks for events *(1.0.10)* | `{ "search": { "id": "drivers", "query": "ver" } }` ([Search](#search)) |
 | A tab click *(1.0.10)* | `{ "tab": { "id": "page", "tab": "drivers" } }` ([Tabs](#tabs)) |
+| Launcher start, once, to the first section of an addon whose manifest sets `launcher.startup` *(1.3.0)* | `{ "startup": {} }` |
 
 | Effect | The launcher |
 |---|---|
@@ -428,6 +456,8 @@ When you handle `event`, you receive one event and return one effect to tell the
 | `{ "notice": "Imported okayama.exmod" }` | shows a notification and reloads |
 | `{ "set_addon_enabled": true }` | turns the addon on or off in the active profile |
 | `{ "open": "/home/you/.local/share/swofty/addon-data/example.launcher-addon/items" }` | opens the file or folder with the system handler |
+| `{ "show_addon": "yourname.okayama" }` *(1.3.0)* | switches to the **Addons** page and highlights that addon |
+| `{ "show_addon": { "id": "yourname.okayama", "notice": "Imported okayama.exmod" } }` *(1.3.0)* | shows the notice as a notification, switches to the **Addons** page and highlights that addon |
 
 Answer `view` and `summary` within 5 seconds. For `event`, `import`, `build` and `command`, you have 300 seconds; each message your plugin sends resets the wait. Until you return an effect, the control that fired the event shows busy.
 
@@ -702,6 +732,41 @@ launcher  {"id":13,"method":"view","params":{"section":"overview"}}
 - It asks only for sections that are open or that it has already loaded, and only once for several invalidations that arrive together. While another call runs, it asks once that call ends.
 - An `invalidate` has no `id` and gets no reply.
 
+## Task lists {#task-lists}
+
+*Launcher 1.3.0.* While an `event` runs, a plugin can show a dialog that ticks off a list of items, such as the mods a first-run migration converts. Send `tasks` only when `hello.params.host_calls` lists it.
+
+```json
+{ "method": "tasks", "params": {
+  "title": "Migrating your mods to Swofty addons",
+  "subtitle": "Each mod in your library becomes an addon.",
+  "items": [
+    { "id": "okayama", "label": "Okayama", "state": "done" },
+    { "id": "liveries-2026", "label": "2026 liveries", "state": "running" },
+    { "id": "old-hud", "label": "Old HUD", "state": "failed", "note": "No archive inside the zip" },
+    { "id": "sounds", "label": "Sounds", "state": "waiting" }
+  ] } }
+```
+
+| Field | Value |
+|---|---|
+| `title` | The dialog's heading. |
+| `subtitle` | A line under the heading. Optional. |
+| `items` | One row each, in order. |
+| `id` | The item's key, unique in the list. |
+| `label` | The row's text. |
+| `state` | `waiting`, `running`, `done`, `failed` or `skipped`. |
+| `note` | Short text under the label, such as why the item failed. Optional. |
+
+- Each `tasks` carries the whole list and replaces the last one.
+- The first `tasks` during an event opens the dialog, and later ones update it. It stays open when the player switches pages.
+- **Close** stays off until the event returns.
+- When the event returns, its notice or error shows inside the dialog instead of as a notification: a `notice` effect, the `notice` of a `show_addon` effect, or an error.
+- When an item has failed, the dialog also offers **Send Logs to Developers**.
+- The launcher shows lists sent while it handles an `event` and ignores the rest.
+- A `tasks` has no `id` and gets no reply.
+- A Rust helper calls `cx.tasks(&TaskList { … })`, which sends nothing and returns `false` when the launcher doesn't list `tasks`.
+
 ## The build reply {#the-build-reply}
 
 Return your addon's asset ops from `build`, along with lines and warnings:
@@ -753,7 +818,7 @@ List your file extensions in `imports` to claim dropped files that match. The la
 
 1. The launcher claims addons first: a folder with `swofty.json`, a `.swoftyaddon` file (or a legacy `.swoftymod`), or a zip that holds an addon. Those install as addons.
 2. It checks every plugin with `imports` or `claims`, in registry order. A plugin with `imports` claims a file when its extension matches. A plugin with `claims` decides for itself (see below).
-3. A claimed file goes to that plugin's `import`. An unclaimed one is reported: `No addon imports <file>`.
+3. A claimed file goes to that plugin's `import`. An unclaimed one opens a dialog that names it, with **Go to Mod Importer** and **Read the addon docs**.
 
 Matching extensions can't tell a mod's zip from any other zip, and can't claim a folder. To decide for yourself, set `claims` to `true`. The launcher then runs your program on its own for each drop, as `<program> claims <path>`, and reads one line: `yes`, `maybe` or `no`. A `maybe` wins only when no other plugin says `yes` or `maybe`. Answer within 5 seconds, without the protocol: there is no `hello` and no profile. If your program fails, stalls or prints anything else, the launcher falls back to `imports`. A Rust helper that uses `swofty_addon::helper::run_helper` answers from its `Importer::claims` for you.
 

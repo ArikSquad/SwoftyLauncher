@@ -4,7 +4,7 @@ use std::process::ExitCode;
 use anyhow::{Context, Result, bail};
 use swofty_core::baseline::DepotHashes;
 use swofty_core::build::GVDB;
-use swofty_core::install::{Game, Installer};
+use swofty_core::install::{EA_APP_EXPERIMENTAL, Game, Installer, Source};
 use swofty_core::recovery::{Blocked, Scope, SessionLock};
 use swofty_core::settings::SETTINGS_FILE;
 use swofty_core::stock::{self, Depots};
@@ -19,11 +19,25 @@ pub const UI_ERPS: &[&str] = &[
     "2025_asset_groups/ui_package/screens/fe_home.erp",
 ];
 pub fn game(store: &Store, explicit: Option<PathBuf>) -> Result<Game> {
-    Ok(Game::locate(&store.root, game_dir(explicit)?)?)
+    Ok(Game::locate(&store.root, game_dir(store, explicit)?)?)
 }
 
-fn game_dir(explicit: Option<PathBuf>) -> Result<PathBuf> {
+pub fn supported(g: &Game) -> Result<()> {
+    if Source::detect(&g.dir) == Source::EaApp {
+        eprintln!("swofty: {}: {EA_APP_EXPERIMENTAL}", g.dir.display());
+    }
+    Ok(())
+}
+
+/// `--game`, else the folder picked with Locate F1 25 in the launcher, else Steam's copy.
+fn game_dir(store: &Store, explicit: Option<PathBuf>) -> Result<PathBuf> {
     explicit
+        .or_else(|| {
+            store
+                .config()
+                .game_dir
+                .filter(|d| d.join(swofty_core::GAME_EXE).is_file())
+        })
         .or_else(|| steam::find_game().map(|g| g.dir))
         .context("F1 25 not found; pass --game or run swofty doctor")
 }
@@ -89,6 +103,51 @@ fn report(profile: &str, built: &swofty_core::build::Built) {
     }
 }
 
+pub fn conflicts(store: &Store, profile: &str, check: bool, game: Option<PathBuf>) -> Result<ExitCode> {
+    let report = match check {
+        true => swofty_core::conflicts::check(store, profile, &self::game(store, game)?)?,
+        false => match swofty_core::conflicts::last(store, profile) {
+            Some(report) => report,
+            None => {
+                println!("{profile} has not been built yet; run swofty conflicts --check");
+                return Ok(ExitCode::SUCCESS);
+            }
+        },
+    };
+    let names: std::collections::BTreeMap<String, String> = store
+        .registry()?
+        .manifests()
+        .into_iter()
+        .map(|(id, m)| (id, m.name))
+        .collect();
+    print!("{}", conflicts_text(&report, &names));
+    Ok(ExitCode::SUCCESS)
+}
+
+fn conflicts_text(
+    report: &swofty_core::conflicts::Report,
+    names: &std::collections::BTreeMap<String, String>,
+) -> String {
+    if report.pairs.is_empty() {
+        return format!("{}: no addon overrides another\n", report.profile);
+    }
+    let name = |id: &str| names.get(id).cloned().unwrap_or_else(|| id.to_owned());
+    let mut out = String::new();
+    for pair in &report.pairs {
+        out.push_str(&pair.line(&name));
+        out.push('\n');
+        for item in &pair.items {
+            out.push_str(&format!("  {item}\n"));
+        }
+        let more =
+            (pair.database + pair.resources + pair.files + pair.strings).saturating_sub(pair.items.len());
+        if more > 0 && pair.items.len() >= swofty_core::conflicts::MAX_ITEMS {
+            out.push_str(&format!("  and {more} more\n"));
+        }
+    }
+    out
+}
+
 fn common_root<'a>(paths: impl Iterator<Item = &'a String>) -> String {
     let mut roots: Vec<&str> = paths.filter_map(|p| p.split('/').next()).collect();
     roots.sort();
@@ -142,9 +201,11 @@ fn check_stock(store: &Store, g: &Game, out: &dyn Fn(&str)) -> Result<Option<Dep
             out(&format!(
                 "[stock] {why}; the game files are not checked against Steam"
             ));
+            heal_launcher(store, &g.dir, None, out)?;
             return Ok(None);
         }
     };
+    heal_launcher(store, &g.dir, Some(&depots as &dyn DepotHashes), out)?;
     let checked = stock::check(&store.root, g, &depots)?;
     if checked.proven > 0 {
         out(&format!(
@@ -157,14 +218,49 @@ fn check_stock(store: &Store, g: &Game, out: &dyn Fn(&str)) -> Result<Option<Dep
             "[stock] {rel} matches Steam's copy again; backed up as the original"
         ));
     }
+    for d in &checked.eac {
+        out(&format!(
+            "[stock] {} differs from Steam's copy (size {}, Steam {}); not used by modded sessions, continuing",
+            d.rel,
+            d.size.map_or("missing".to_owned(), |n| n.to_string()),
+            d.steam
+        ));
+    }
     if let Some(n) = checked.swept {
         out(&format!("[stock] {n} game file(s) checked against Steam's list"));
     }
     if !checked.foreign.is_empty() {
-        stock::Report::new(checked.foreign.clone(), &g.dir).write(&store.root)?;
+        for f in &checked.detail {
+            out(&format!(
+                "[stock] {} is not Steam's copy (measured {}, size {}, Steam {}, modified {})",
+                f.rel,
+                f.measured,
+                f.size.map_or("missing".to_owned(), |n| n.to_string()),
+                f.steam,
+                f.modified.map_or("unknown".to_owned(), |t| format!("{t:.0}"))
+            ));
+        }
+        stock::Report::new(checked.foreign.clone(), &g.dir)
+            .with_detail(checked.detail.clone())
+            .write(&store.root)?;
         return Err(swofty_core::Error::NotStock(checked.foreign).into());
     }
     Ok(Some(depots))
+}
+
+/// Clear a stale EA AntiCheat backup an interrupted session left before the
+/// stock check runs, logging what it did. Does nothing while a session is
+/// pending.
+fn heal_launcher(
+    store: &Store,
+    game: &Path,
+    depot: Option<&dyn DepotHashes>,
+    out: &dyn Fn(&str),
+) -> Result<()> {
+    for note in swofty_core::offline::heal_before_check(&store.root, game, depot)? {
+        out(&format!("[stock] {note}"));
+    }
+    Ok(())
 }
 
 /// An original that turned out not to be Steam's while the install backed it
@@ -178,6 +274,7 @@ fn not_stock(store: &Store, g: &Game, r: swofty_core::Result<()>) -> swofty_core
 
 pub fn apply(store: &Store, profile: &str, game: Option<PathBuf>) -> Result<ExitCode> {
     let g = self::game(store, game)?;
+    supported(&g)?;
     let out = |l: &str| println!("{l}");
     let Some(lock) = SessionLock::try_acquire(&store.root)? else {
         bail!("a modded session is running or rolling back; close F1 25 and try again");
@@ -257,6 +354,7 @@ pub fn restore(store: &Store, game: Option<PathBuf>) -> Result<ExitCode> {
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
+    use std::collections::BTreeMap;
     use std::sync::Arc;
 
     use swofty_core::asset::{AssetBatch, AssetOp, FileOp, Op, Origin, Root, Source};
@@ -491,5 +589,41 @@ mod tests {
         let log = RefCell::new(Vec::new());
         h.install(&log).unwrap();
         assert_eq!(h.mip(), "mip-ferrari");
+    }
+
+    #[test]
+    fn prints_each_pair_then_its_items() {
+        use swofty_core::conflicts::{Pair, Report};
+        let mut report = Report {
+            profile: "default".into(),
+            built_at: 1.0,
+            ..Report::default()
+        };
+        let names = BTreeMap::from([("t.b".to_owned(), "Second".to_owned())]);
+        assert_eq!(
+            conflicts_text(&report, &names),
+            "default: no addon overrides another\n"
+        );
+        report.pairs.push(Pair {
+            winner: "t.b".into(),
+            loser: "t.a".into(),
+            database: 1,
+            resources: 0,
+            files: 1,
+            strings: 0,
+            items: vec!["rules.laps".into(), "x/a.dds".into()],
+        });
+        assert_eq!(
+            conflicts_text(&report, &names),
+            "Second overrides t.a on 1 database value and 1 file\n  rules.laps\n  x/a.dds\n"
+        );
+        let max = swofty_core::conflicts::MAX_ITEMS;
+        report.pairs[0] = Pair {
+            database: max,
+            strings: 2,
+            items: vec!["rules.laps".into(); max],
+            ..report.pairs[0].clone()
+        };
+        assert!(conflicts_text(&report, &names).ends_with("  and 3 more\n"));
     }
 }

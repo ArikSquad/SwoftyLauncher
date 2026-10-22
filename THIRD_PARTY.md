@@ -38,7 +38,7 @@ The homepage in `docs/.vitepress/theme/components/Landing.vue` and `docs/.vitepr
 
 ## Simplified Suite
 
-The built-in Team Simplified addon, `addons/simplified`, reads the `.serps` package format of the Simplified Suite by Team Simplified, <https://github.com/TeamSimplified/simplified-suite>. Its `mod.serps` reader (`src/serps.rs`) and its package root, content root and entry path checks (`src/package.rs`) are ported from `ModManifest.cs`, `ModImport.cs` and `ModStaging.cs` of the Simplified Launcher, with Team Simplified's permission. The Simplified Suite is licensed under the GNU General Public License version 3, which section 13 lets this AGPL-3.0-or-later program combine with.
+The built-in Team Simplified addon, `addons/simplified`, reads the `.serps` package format of the Simplified Suite by Team Simplified, <https://github.com/TeamSimplified/simplified-suite>. Its `mod.serps` reader (`src/serps.rs`) and its package root, content root and entry path checks (`src/package.rs`) are ported from `ModManifest.cs`, `ModImport.cs` and `ModStaging.cs` of the Simplified Launcher, with Team Simplified's permission. The texture array layout and slice merge behind the `erp.merge-slices` operation (`packages/formats/src/texarray.rs`, used by `packages/core/src/erpbuild.rs`) are ported from `src/texarray.rs` of the Team Simplified addon for Swofty Launcher, which ports them from `merge_resources.py` of the Simplified Launcher and `LogoBaker.cs` and `LogoSource.cs` of the Simplified Team Editor. The Simplified Suite is licensed under the GNU General Public License version 3, which section 13 lets this AGPL-3.0-or-later program combine with.
 
 Based on Simplified Suite by Team Simplified - https://github.com/TeamSimplified/simplified-suite
 
@@ -64,7 +64,7 @@ attribution requirement applies to this work and to every work based on it:
 
 ## F1 25 RE-Optimization
 
-The bundled addon `addons/re-optimization` (`xanpavle.re-optimization`) is a port of F1 25 RE-Optimization by xanpavle, <https://github.com/xanpavle/F1-25-RE-Optimization>, with his permission. Its settings delta, engine override names and values, GPU detection and upscaler choice are ported from `src/profile.cpp`, `src/tune.cpp`, `src/gpu.cpp` and `f125_tune.ini` of version 0.1.0. The proxy `dinput8.dll` and the inline-detour engine are not used; the addon loads as an engine plugin and hooks through the mixin system. The addon folder keeps the licence as `addons/re-optimization/LICENSE`.
+The bundled addon `addons/re-optimization` (`xanpavle.re-optimization`) is a port of F1 25 RE-Optimization by xanpavle, <https://github.com/xanpavle/F1-25-RE-Optimization>, with his permission. Its settings delta, engine override names and values, in-engine enforcement table and modes, GPU detection and upscaler choice are ported from `src/profile.cpp`, `src/tune.cpp`, `src/enforce.cpp`, `src/gpu.cpp` and `f125_tune.ini` of version 0.2.5. The proxy `dinput8.dll`, the inline-detour engine and the signature scanner are not used; the addon loads as an engine plugin and hooks through the mixin system. The addon folder keeps the licence as `addons/re-optimization/LICENSE`.
 
 ```
 MIT License

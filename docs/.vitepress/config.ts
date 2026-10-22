@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { defineConfigWithTheme } from "vitepress";
+import { newsFeed } from "../scripts/news.mjs";
 import gameApi from "./game-api.json";
 import { flashCodeTheme } from "./theme/code-theme";
 import type { DocsThemeConfig } from "./theme/types";
@@ -61,6 +62,7 @@ export default defineConfigWithTheme<DocsThemeConfig>({
   srcExclude: ["**/public/**", "scripts/**"],
   sitemap: { hostname: site },
   buildEnd({ outDir }) {
+    writeFileSync(join(outDir, "news.json"), `${JSON.stringify(newsFeed())}\n`);
     for (const [from, to] of Object.entries(moved)) {
       const url = to.endsWith("/") ? `${base}${to.slice(1)}` : `${base}${to.slice(1)}.html`;
       const file = join(outDir, `${from}.html`);
@@ -139,14 +141,17 @@ export default defineConfigWithTheme<DocsThemeConfig>({
             text: "Using the launcher",
             items: [
               { text: "Overview", link: "/using/" },
+              { text: "News", link: "/using/news" },
               { text: "Addons", link: "/using/addons" },
               { text: "Addons that ship with the launcher", link: "/using/bundled-addons" },
-              { text: "Mods and tracks", link: "/using/mods" },
+              { text: "Mod Importer", link: "/using/mods" },
               { text: "Profiles", link: "/using/profiles" },
               { text: "In-game addon settings", link: "/using/swofty-mod" },
               { text: "Playing in VR", link: "/using/vr" },
               { text: "Career Mode Editor", link: "/using/career-editor" },
               { text: "Driver Manager", link: "/using/driver-manager" },
+              { text: "DB Editor", link: "/using/db-editor" },
+              { text: "Tools", link: "/using/tools" },
               { text: "Restoring the game", link: "/using/profiles-and-restoring" },
               { text: "Updating", link: "/using/updating" },
               { text: "Sending your logs", link: "/using/send-logs" },
@@ -164,6 +169,7 @@ export default defineConfigWithTheme<DocsThemeConfig>({
           {
             text: "Releases",
             items: [
+              { text: "1.3.0", link: "/releases/1.3.0" },
               { text: "1.2.6", link: "/releases/1.2.6" },
               { text: "1.2.5", link: "/releases/1.2.5" },
               { text: "1.2.4", link: "/releases/1.2.4" },

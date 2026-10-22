@@ -1,16 +1,24 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+mod addons;
 mod blocks;
 mod console;
+mod db;
 mod discord;
+mod ea_app;
 mod game;
+mod game_edited;
+mod importer;
 mod library;
+mod news;
 mod pages;
 mod play_bar;
 mod sections;
 mod send_logs;
 mod shell;
+mod tasks;
 mod theme;
+mod tools;
 mod update;
 
 use gpui_kit::component::TitleBar;
@@ -48,7 +56,7 @@ fn main() {
             .detach();
             shell.update(cx, |s, cx| s.restore_console(cx));
             main.update(cx, |_, window, cx| {
-                shell.update(cx, |s, cx| s.show_news(window, cx))
+                shell.update(cx, |s, cx| s.run_startup(window, cx))
             })
             .ok();
             cx.activate(true);

@@ -146,6 +146,7 @@ impl Registry {
 pub struct ProfileState {
     store: Store,
     profile: String,
+    read_only: bool,
 }
 
 impl StateStore for ProfileState {
@@ -162,6 +163,15 @@ impl StateStore for ProfileState {
 }
 
 impl ProfileState {
+    fn writable(&self) -> swofty_addon::Result<()> {
+        match self.read_only {
+            true => Err(swofty_addon::Error::Other(
+                "addons can't be changed while conflicts are checked".into(),
+            )),
+            false => Ok(()),
+        }
+    }
+
     fn info(&self, m: &AddonManifest, p: &Profile) -> AddonInfo {
         AddonInfo {
             id: m.id.clone(),
@@ -170,18 +180,30 @@ impl ProfileState {
             author: m.author.clone(),
             dir: self.store.addons_dir().join(&m.id),
             enabled: p.enabled().any(|on| on == m.id),
+            position: p.addons.iter().position(|a| a.id == m.id),
         }
     }
 }
 
 impl AddonStore for ProfileState {
+    // The enabled addons in the order a build loads them, then the rest by id.
     fn list(&self) -> swofty_addon::Result<Vec<AddonInfo>> {
         let p = self.store.profile(&self.profile).map_err(other)?;
-        let addons = self.store.addons().map_err(other)?;
-        Ok(addons.values().map(|m| self.info(m, &p)).collect())
+        let mut addons = self.store.addons().map_err(other)?;
+        let order = crate::resolver::resolve(&p, &addons)
+            .map(|plan| plan.order)
+            .unwrap_or_else(|_| p.enabled().map(str::to_owned).collect());
+        let mut out: Vec<AddonInfo> = order
+            .iter()
+            .filter_map(|id| addons.remove(id))
+            .map(|m| self.info(&m, &p))
+            .collect();
+        out.extend(addons.values().map(|m| self.info(m, &p)));
+        Ok(out)
     }
 
     fn install(&self, path: &Path) -> swofty_addon::Result<AddonInfo> {
+        self.writable()?;
         let m = self.store.install_addon(path).map_err(other)?;
         let p = self.store.profile(&self.profile).map_err(other)?;
         Ok(self.info(&m, &p))
@@ -190,6 +212,7 @@ impl AddonStore for ProfileState {
     // As the Addons page does, except that turning off or removing an addon that
     // keeps data in the saves is refused here, since only that page warns about it.
     fn set_enabled(&self, id: &str, on: bool) -> swofty_addon::Result<()> {
+        self.writable()?;
         let registry = self.store.registry().map_err(other)?;
         let Some(entry) = registry.get(id) else {
             return Err(swofty_addon::Error::Other(format!(
@@ -209,6 +232,7 @@ impl AddonStore for ProfileState {
     }
 
     fn remove(&self, id: &str) -> swofty_addon::Result<()> {
+        self.writable()?;
         if let Some(m) = self.store.addons().map_err(other)?.get(id)
             && SavesWarning::of(m).is_some()
         {
@@ -218,6 +242,13 @@ impl AddonStore for ProfileState {
             )));
         }
         self.store.remove_addon(id).map_err(other)
+    }
+
+    fn move_addon(&self, id: &str, delta: isize) -> swofty_addon::Result<()> {
+        self.writable()?;
+        self.store
+            .update_profile(&self.profile, |p| p.move_addon(id, delta))
+            .map_err(other)
     }
 }
 
@@ -328,8 +359,14 @@ impl Host {
             state: ProfileState {
                 store: store.clone(),
                 profile: profile.name.clone(),
+                read_only: false,
             },
         })
+    }
+
+    pub fn read_only(mut self, on: bool) -> Self {
+        self.state.read_only = on;
+        self
     }
 
     pub fn cx(&self) -> Cx<'_> {
@@ -508,10 +545,45 @@ mod tests {
         );
         assert_eq!(info.dir, store.addons_dir().join("t.okayama"));
         addons.set_enabled("t.okayama", true).unwrap();
+        let order = || -> Vec<String> {
+            let p = store.profile("default").unwrap();
+            p.addons.iter().map(|a| a.id.clone()).collect()
+        };
+        assert_eq!(order(), [CORE_ID, "t.a", "t.okayama"]);
+        addons.move_addon("t.okayama", -1).unwrap();
+        assert_eq!(order(), [CORE_ID, "t.okayama", "t.a"]);
+        addons.move_addon("t.okayama", -5).unwrap();
+        assert_eq!(order(), [CORE_ID, "t.okayama", "t.a"]);
+        assert!(addons.move_addon(CORE_ID, 1).is_err());
+        assert!(addons.move_addon("t.missing", 1).is_err());
         let listed = addons.list().unwrap();
         let okayama = listed.iter().find(|a| a.id == "t.okayama").unwrap();
         assert!(okayama.enabled && okayama.dir.join(crate::manifest::MANIFEST_FILE).is_file());
+        let ids = |l: &[AddonInfo]| -> Vec<(String, Option<usize>)> {
+            l.iter().map(|a| (a.id.clone(), a.position)).collect()
+        };
+        let at = |id: &str, n: Option<usize>| (id.to_owned(), n);
+        assert_eq!(
+            ids(&listed),
+            [
+                at(CORE_ID, Some(0)),
+                at("t.okayama", Some(1)),
+                at("t.a", Some(2)),
+                at("t.saves", None)
+            ]
+        );
         assert!(listed.iter().any(|a| a.id == CORE_ID && a.enabled));
+        addons.set_enabled("t.okayama", false).unwrap();
+        assert_eq!(
+            ids(&addons.list().unwrap()),
+            [
+                at(CORE_ID, Some(0)),
+                at("t.a", Some(2)),
+                at("t.okayama", Some(1)),
+                at("t.saves", None)
+            ]
+        );
+        addons.set_enabled("t.okayama", true).unwrap();
         assert!(addons.set_enabled("t.missing", true).is_err());
         addons.set_enabled("t.saves", true).unwrap();
         let e = addons.set_enabled("t.saves", false).unwrap_err();

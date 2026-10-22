@@ -1,21 +1,24 @@
 // The client side of the helper protocol: the mirror of core's HelperAddon. A
 // helper binary hands its Addon to run_helper, which reads Request<Call> lines
-// from stdin, drives the addon, and answers its StateStore, GameFiles and
-// Progress through host calls back up stdout. Usage is single-threaded, so the
+// from stdin, drives the addon, and answers its StateStore, GameFiles,
+// Progress and Tasks through host calls back up stdout. Usage is single-threaded, so the
 // shared stdin/stdout handles and request-id counter live behind one Mutex that
 // a host call holds across its write-then-read exchange.
 
 use std::io::{BufRead, Write};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::helper::{ADDON_CALLS, API_VERSION, Built, Call, HostCall, Invalidate, Reply, Request, Welcome};
+use crate::helper::{
+    ADDON_CALLS, API_VERSION, Built, Call, HostCall, Invalidate, MOVE_ADDON, Reply, Request, TASKS, Welcome,
+};
 use crate::launcher::{
     Addon, AddonInfo, AddonStore, BuildCx, Claim, Cx, GameFiles, GameStatus, ProfileInfo, ProfileTracks,
-    Progress, StateStore,
+    Progress, StateStore, TaskList, Tasks,
 };
 use crate::{Error, Result};
 
@@ -52,6 +55,7 @@ struct Session {
     cache_dir: PathBuf,
     profile: ProfileInfo,
     manages_addons: bool,
+    shows_tasks: bool,
 }
 
 fn dispatch(
@@ -61,6 +65,10 @@ fn dispatch(
     call: Call,
 ) -> std::result::Result<Value, String> {
     if let Call::Hello(hello) = call {
+        host.moves.store(
+            hello.host_calls.iter().any(|h| h == MOVE_ADDON),
+            Ordering::Relaxed,
+        );
         *session = Some(Session {
             addon: hello.addon,
             data_dir: hello.data_dir,
@@ -69,6 +77,7 @@ fn dispatch(
             manages_addons: ADDON_CALLS
                 .iter()
                 .all(|c| hello.host_calls.iter().any(|h| h == c)),
+            shows_tasks: hello.host_calls.iter().any(|h| h == TASKS),
         });
         return json(Welcome { api: API_VERSION });
     }
@@ -89,6 +98,10 @@ fn dispatch(
     // An older launcher stops a plugin that sends a host call it doesn't know.
     let cx = match session.manages_addons {
         true => cx.with_addons(host as &dyn AddonStore),
+        false => cx,
+    };
+    let cx = match session.shows_tasks {
+        true => cx.with_tasks(host as &dyn Tasks),
         false => cx,
     };
     match call {
@@ -167,6 +180,7 @@ impl Io {
 
 struct Host {
     io: Mutex<Io>,
+    moves: AtomicBool,
 }
 
 impl Host {
@@ -177,6 +191,7 @@ impl Host {
                 stdout: std::io::stdout(),
                 next: 0,
             }),
+            moves: AtomicBool::new(false),
         }
     }
 
@@ -331,6 +346,17 @@ impl AddonStore for Host {
             .map_err(Error::Other)?;
         Ok(())
     }
+
+    fn move_addon(&self, id: &str, delta: isize) -> Result<()> {
+        if !self.moves.load(Ordering::Relaxed) {
+            return Err(Error::Other(
+                "this launcher can't reorder addons; it needs 1.3.0".into(),
+            ));
+        }
+        self.call(HostCall::MoveAddon { id: id.into(), delta })
+            .map_err(Error::Other)?;
+        Ok(())
+    }
 }
 
 impl Progress for Host {
@@ -341,6 +367,15 @@ impl Progress for Host {
                 done,
                 text: text.into(),
             },
+        });
+    }
+}
+
+impl Tasks for Host {
+    fn show(&self, list: &TaskList) {
+        self.lock().write(&Request::<HostCall> {
+            id: None,
+            call: HostCall::Tasks(list.clone()),
         });
     }
 }

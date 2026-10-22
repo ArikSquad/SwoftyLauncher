@@ -181,6 +181,31 @@ fn collects_the_logs_the_developers_need() {
 }
 
 #[test]
+fn includes_the_db_editor_packages_the_active_profile_runs() {
+    use crate::dbedit::package::Package;
+    let root = tmp("dbpackages");
+    let (store, game) = fake_data(&root);
+    let on = Package::create(&store, "On").unwrap();
+    let off = Package::create(&store, "Off").unwrap();
+    store
+        .update_profile("default", |p| {
+            p.set_enabled(&on.id, true)?;
+            p.set_enabled(&off.id, false)
+        })
+        .unwrap();
+    let zip = Bundle::collect_with(&store, &report(&game), Limits::default(), "x")
+        .zip()
+        .unwrap();
+    let got: Vec<String> = names(&zip)
+        .into_iter()
+        .filter(|n| n.starts_with("db-packages/"))
+        .collect();
+    assert_eq!(got, ["db-packages/dbedit.on.json"]);
+    assert!(entry(&zip, "db-packages/dbedit.on.json").contains("swofty-db-package"));
+    std::fs::remove_dir_all(&root).ok();
+}
+
+#[test]
 fn redacts_secrets_from_config_and_environment() {
     let root = tmp("redact");
     let (store, game) = fake_data(&root);
@@ -1071,6 +1096,40 @@ fn says_when_the_mod_loader_never_attached() {
     assert!(
         summary.contains("\nMod loader\n  last launch: Mods did not load (version.dll)\n"),
         "{summary}"
+    );
+    std::fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn sends_the_newest_addon_logs() {
+    let root = tmp("addon-logs");
+    let (store, game) = fake_data(&root);
+    let dir = store.root.join("addon-data/teamsimplified.mods/logs");
+    std::fs::create_dir_all(&dir).unwrap();
+    let base = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+    for i in 0..7 {
+        let path = dir.join(format!("convert-{i}.log"));
+        std::fs::write(&path, format!("conversion {i}\n")).unwrap();
+        let f = std::fs::File::options().write(true).open(&path).unwrap();
+        f.set_modified(base + std::time::Duration::from_secs(i * 60))
+            .unwrap();
+    }
+    std::fs::write(dir.join("notes.txt"), "not a log").unwrap();
+    let bundle = Bundle::collect_with(&store, &report(&game), Limits::default(), "20261020-101010");
+    let zip = bundle.zip().unwrap();
+    let logs: Vec<String> = names(&zip)
+        .into_iter()
+        .filter(|n| n.starts_with("addons/teamsimplified.mods/logs/"))
+        .collect();
+    assert_eq!(
+        logs,
+        (2..7)
+            .map(|i| format!("addons/teamsimplified.mods/logs/convert-{i}.log"))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        entry(&zip, "addons/teamsimplified.mods/logs/convert-6.log"),
+        "conversion 6\n"
     );
     std::fs::remove_dir_all(&root).ok();
 }

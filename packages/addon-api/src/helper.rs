@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::asset::{AssetOp, Features};
-use crate::launcher::ProfileInfo;
+use crate::launcher::{ProfileInfo, TaskList};
 use crate::view::Event;
 
 pub use crate::run_helper::{claim_word, run_helper};
@@ -14,6 +14,10 @@ pub const API_VERSION: u32 = 1;
 pub const RESTART: &str = "swofty.restart";
 // The host calls a launcher lists in hello's host_calls when it answers them.
 pub const ADDON_CALLS: [&str; 4] = ["addons", "install_addon", "set_addon_enabled", "remove_addon"];
+// Listed from launcher 1.3.0, beside ADDON_CALLS.
+pub const MOVE_ADDON: &str = "move_addon";
+// Listed from launcher 1.3.0; a helper sends tasks only when hello lists it.
+pub const TASKS: &str = "tasks";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Request<C> {
@@ -69,6 +73,7 @@ pub struct Hello {
 #[serde(tag = "method", content = "params", rename_all = "snake_case")]
 pub enum HostCall {
     Progress { done: f32, text: String },
+    Tasks(TaskList),
     GetState,
     SetState(Value),
     GameBuildKey,
@@ -85,6 +90,7 @@ pub enum HostCall {
     InstallAddon { path: PathBuf },
     SetAddonEnabled { id: String, on: bool },
     RemoveAddon { id: String },
+    MoveAddon { id: String, delta: isize },
     Invalidate(#[serde(default)] Invalidate),
 }
 
@@ -136,6 +142,7 @@ mod tests {
 
     use super::*;
     use crate::asset::{FileOp, Kind, Source};
+    use crate::launcher::{TaskItem, TaskState};
 
     fn profile() -> ProfileInfo {
         ProfileInfo {
@@ -250,6 +257,52 @@ mod tests {
             }),
             json!({"method": "progress", "params": {"done": 0.5, "text": "half"}}),
         );
+        round(
+            Incoming::Call(Request {
+                id: None,
+                call: HostCall::Tasks(TaskList {
+                    title: "Migrating your mods to Swofty addons".into(),
+                    subtitle: "2 mods".into(),
+                    items: vec![
+                        TaskItem {
+                            id: "okayama".into(),
+                            label: "Okayama".into(),
+                            state: TaskState::Done,
+                            note: None,
+                        },
+                        TaskItem {
+                            id: "liveries".into(),
+                            label: "Liveries".into(),
+                            state: TaskState::Failed,
+                            note: Some("no archive inside".into()),
+                        },
+                    ],
+                }),
+            }),
+            json!({"method": "tasks", "params": {"title": "Migrating your mods to Swofty addons",
+            "subtitle": "2 mods", "items": [
+                {"id": "okayama", "label": "Okayama", "state": "done"},
+                {"id": "liveries", "label": "Liveries", "state": "failed", "note": "no archive inside"}
+            ]}}),
+        );
+        let bare: Incoming = serde_json::from_value(json!({"method": "tasks", "params": {
+            "title": "T", "items": [{"id": "a", "label": "A", "state": "skipped"}]}}))
+        .unwrap();
+        let Incoming::Call(Request {
+            call: HostCall::Tasks(bare),
+            ..
+        }) = bare
+        else {
+            panic!("not a task list");
+        };
+        assert_eq!(
+            (bare.subtitle.as_str(), bare.items[0].state),
+            ("", TaskState::Skipped)
+        );
+        for state in ["waiting", "running", "done", "failed", "skipped"] {
+            assert!(serde_json::from_value::<TaskState>(json!(state)).is_ok());
+        }
+        assert!(serde_json::from_value::<TaskState>(json!("paused")).is_err());
         round(
             Incoming::Call(Request {
                 id: Some(7),
@@ -367,9 +420,17 @@ mod tests {
                 },
                 json!({"id": "you.okayama"}),
             ),
+            (
+                HostCall::MoveAddon {
+                    id: "you.okayama".into(),
+                    delta: -2,
+                },
+                json!({"id": "you.okayama", "delta": -2}),
+            ),
         ] {
             let method = serde_json::to_value(&call).unwrap()["method"].clone();
-            assert!(ADDON_CALLS.contains(&method.as_str().unwrap()));
+            let method_name = method.as_str().unwrap();
+            assert!(ADDON_CALLS.contains(&method_name) || method_name == MOVE_ADDON);
             round(
                 Incoming::Call(Request { id: Some(12), call }),
                 json!({"id": 12, "method": method, "params": params}),

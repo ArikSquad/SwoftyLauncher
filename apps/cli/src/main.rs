@@ -1,4 +1,5 @@
 mod build;
+mod db;
 mod doctor;
 mod offline;
 mod recover;
@@ -40,20 +41,29 @@ struct Cli {
     command: Command,
 }
 
+const GAME_HELP: &str = "Game folder (default: the one the launcher located, else Steam's)";
+
 #[derive(Subcommand)]
 enum Command {
     #[command(about = "Launch F1 25 modded and offline, streaming logs; use as the Steam launch option")]
     Run(run::RunArgs),
     #[command(about = "Resolve the profile and build its overlay")]
     Build {
-        #[arg(long, help = "Game folder (default: discovered from Steam)")]
+        #[arg(long, help = GAME_HELP)]
+        game: Option<PathBuf>,
+    },
+    #[command(about = "Show which addons override which in the profile's last build")]
+    Conflicts {
+        #[arg(long, help = "Build the profile without installing it and show its conflicts")]
+        check: bool,
+        #[arg(long, help = GAME_HELP)]
         game: Option<PathBuf>,
     },
     #[command(
         about = "Build the profile and install it into the game folder (database, tracks); swofty restore undoes it"
     )]
     Apply {
-        #[arg(long, help = "Game folder (default: discovered from Steam)")]
+        #[arg(long, help = GAME_HELP)]
         game: Option<PathBuf>,
     },
     #[command(about = "Report drift from the baseline and check the game files parse and round-trip")]
@@ -83,6 +93,13 @@ enum Command {
     Settings(SettingsCommand),
     #[command(subcommand, about = "List and delete profiles")]
     Profile(ProfileCommand),
+    #[command(about = "Browse the game database and edit DB Editor addons")]
+    Db {
+        #[arg(long, help = GAME_HELP)]
+        game: Option<PathBuf>,
+        #[command(subcommand)]
+        cmd: db::DbCommand,
+    },
     #[command(
         about = "Summarise a previous session's logs and crashes; `logs send` sends your logs to the developers"
     )]
@@ -282,6 +299,23 @@ fn command_input(m: &ArgMatches, spec: &CommandSpec, path: &mut Vec<String>, arg
     }
 }
 
+/// Addon commands run in their own folder, so a value naming an existing
+/// path relative to `cwd` is passed on as an absolute path.
+fn absolute_paths(args: &mut [String], cwd: &Path) {
+    for a in args {
+        let at = cwd.join(a.as_str());
+        if !a.is_empty()
+            && Path::new(a.as_str()).is_relative()
+            && at.exists()
+            && let Some(abs) = std::path::absolute(&at)
+                .ok()
+                .and_then(|p| p.to_str().map(str::to_owned))
+        {
+            *a = abs;
+        }
+    }
+}
+
 fn command_at(args: &[OsString]) -> Option<usize> {
     let mut skip = false;
     args.iter().enumerate().skip(1).find_map(|(i, a)| {
@@ -345,6 +379,9 @@ fn run_cli(store: &Store, mut args: Vec<OsString>) -> Result<ExitCode> {
             .unwrap_or_else(|| store.active_profile());
         let (mut path, mut input) = (vec![name.to_owned()], Vec::new());
         command_input(sub, spec, &mut path, &mut input);
+        if let Ok(cwd) = std::env::current_dir() {
+            absolute_paths(&mut input, &cwd);
+        }
         let entry = addons.registry.get(id).context("addon is gone")?;
         let p = store.profile(&profile)?;
         let game = build::game(store, None).ok();
@@ -364,6 +401,7 @@ fn dispatch(store: &Store, cli: Cli) -> Result<ExitCode> {
     match cli.command {
         Command::Run(args) => run::run(&store, &profile, args),
         Command::Build { game } => build::build(&store, &profile, game),
+        Command::Conflicts { check, game } => build::conflicts(&store, &profile, check, game),
         Command::Apply { game } => build::apply(&store, &profile, game),
         Command::Verify { game } => build::verify(&store, game),
         Command::Restore { game } => build::restore(&store, game),
@@ -371,6 +409,7 @@ fn dispatch(store: &Store, cli: Cli) -> Result<ExitCode> {
         Command::Offline(cmd) => offline::command(&store, cmd).map(|_| ExitCode::SUCCESS),
         Command::Settings(cmd) => settings(&store, &profile, cmd).map(|_| ExitCode::SUCCESS),
         Command::Profile(cmd) => profiles(&store, cmd).map(|_| ExitCode::SUCCESS),
+        Command::Db { game, cmd } => db::command(&store, &profile, game, cmd),
         Command::Logs {
             action: Some(LogsCommand::Send(args)),
             ..
@@ -807,6 +846,12 @@ mod tests {
         command_input(sub, &addons.specs[0].1, &mut path, &mut input);
         assert_eq!(path, ["mods", "import"]);
         assert_eq!(input, ["a.serps", "b.zip"]);
+        std::fs::write(root.join("b.zip"), "zip").unwrap();
+        absolute_paths(&mut input, &root);
+        assert_eq!(input, ["a.serps", root.join("b.zip").to_str().unwrap()]);
+        let mut dotted = vec!["./my-addon".to_owned(), "on".to_owned()];
+        absolute_paths(&mut dotted, &root);
+        assert_eq!(dotted, [addon.to_str().unwrap(), "on"]);
         let dir = addon.to_str().unwrap();
         let (args, note) =
             forward_mods(&store, &os(&["swofty", "--profile", "p", "mods", "install", dir])).unwrap();

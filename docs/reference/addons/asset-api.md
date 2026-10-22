@@ -42,6 +42,7 @@ Inside each file, the prefix on an op names its kind:
 | `erp.replace-resource`, `erp.add-resource`, `erp.remove-resource` | As in [ERP operations](/reference/ops/erp) | Replace one fragment of a resource with a raw file, add a resource from raw fragment files, or remove a resource |
 | `erp.copy-resource`, `erp.patch-pkg` | As in [ERP operations](/reference/ops/erp) | Copy a resource, or edit a `!pkg` resource in place |
 | `erp.overlay` | `erps` (target archives), `source` (a ready overlay archive) | Put every resource in a ready archive into each target, as a `put-resource` of each would. On the runtime route the archive loads as it is |
+| `erp.merge-slices` | `erp`, `resource`, `source` (an archive in the addon) | Write the slices of a texture array that differ from the game's over the array in `erp` ([Texture arrays](/reference/ops/erp#texture-arrays)) |
 | `erp.add-mipmaps` | `source`, `target` | Copy a mip file, or a folder of them, into the game folder |
 | `db.set`, `db.add-row` | As in [database operations](/reference/ops/database) | Change a field, or copy a row |
 | `db.remove-row`, `db.list-append`, `db.list-remove` | As in [database operations](/reference/ops/database) | Not built yet: a build with one fails |
@@ -49,6 +50,7 @@ Inside each file, the prefix on an op names its kind:
 | `db.remove-record` | `key` | Remove one record |
 | `lang.set` | `language` (a code, or `*` for every language), `key`, `value` | Set one string |
 | `lang.table` | `language`, `source` (an `.lng` file) | Set every string in a table |
+| `lang.default` | `language`, `key`, `value` | Set one string before every `lang.set` and `lang.table`, which win over it ([In-game text](/reference/data/text)) |
 | `file.put` | `source`, `target` (a path in the game folder) | Replace or add a loose game file |
 | `track.add` | `source` (a folder holding an unpacked track package) | Activate a track before every database op ([A track with its own name](/reference/data/track-names)) |
 | `item.show` | `id`, `name`, optional `author`, `version`, `description` | Show a read-only tile in the in-game **ADDON SETTINGS** screen, such as one per mod a build hook merges |
@@ -123,18 +125,25 @@ A later write wins, so load order matters when addons write to the same target. 
 | Target | Written by |
 |---|---|
 | An asset group | `group.register` |
-| A resource in an archive | `erp.put-resource`, `erp.replace-resource`, `erp.remove-resource`, `erp.add-resource`, `erp.copy-resource`, `erp.patch-pkg` (`erp.overlay` writes resources the planner doesn't list, since they are only known from its archive) |
+| A resource in an archive | `erp.put-resource`, `erp.replace-resource`, `erp.remove-resource`, `erp.add-resource`, `erp.copy-resource`, `erp.patch-pkg`, `erp.overlay` (each resource its archive holds, in each of its `erps`) |
 | A database record | `db.set`, `db.put-record`, `db.remove-record` |
 | A string in a language | `lang.set` |
 | A game path | `file.put`, `erp.add-mipmaps` (its `target`) |
 
-If one origin has already written to a target, replacing it counts as a conflict. That applies to `erp.put-resource`, `erp.replace-resource`, `erp.remove-resource`, `erp.add-mipmaps`, `db.set`, `db.put-record`, `db.remove-record`, `lang.set` and `file.put`. By contrast, `erp.add-resource`, `erp.copy-resource`, `erp.patch-pkg`, `group.register` and added rows compose. For each conflict, the build shows you the winner and the origins it overrides:
+If one origin has already written to a target, replacing it counts as a conflict. That applies to `erp.put-resource`, `erp.replace-resource`, `erp.remove-resource`, `erp.overlay`, `erp.add-mipmaps`, `db.set`, `db.put-record`, `db.remove-record`, `lang.set` and `file.put`. By contrast, `erp.add-resource`, `erp.copy-resource`, `erp.patch-pkg`, `group.register` and added rows compose. After its stages, the build prints a line per addon with what it writes, then a warning per pair of addons in conflict, the winner first:
 
 ```text
-conflict: text lng_team_tor_hashtag (eng): teamsimplified.mods (rm-designs.scuderia-alphatauri-orlen) overrides example.livery
+Scuderia AlphaTauri: 412 database values, 3 archive resources, 2 files, 5 text strings
+Scuderia AlphaTauri overrides Example Livery on 12 database values and 1 file
 ```
 
-The origin tells you where the write came from: the addon id, with the item inside that addon in brackets, such as a mod in the Team Simplified library.
+A conflict between two items of one addon, from ops its build hook returns, prints the target and both origins, each an addon id with the item in brackets:
+
+```text
+conflict: text lng_team_tor_hashtag (eng): example.pack (alphatauri) overrides example.pack (base)
+```
+
+Each build also writes the pairs, with the overridden items, to `$DATA/cache/overlay/<profile>/conflicts.json` ([`swofty conflicts`](/reference/cli#swofty-conflicts)).
 
 ## In the game
 

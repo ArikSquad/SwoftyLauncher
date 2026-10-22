@@ -66,12 +66,27 @@ pub fn install_release(store: &Store, release: &Release, progress: &dyn Progress
     let text = format!("Downloading {}", release.tag_name);
     let verified = update::download(asset, &file, &|n| progress.report(0.9 * n as f32 / total, &text))
         .and_then(|(len, sha256)| update::check_download(asset, len, &sha256, sums.as_ref()))
+        .and_then(|()| compatible(&file, release, &update::current_version()))
         .and_then(|()| {
             progress.report(0.95, &format!("Installing {}", release.tag_name));
             store.install_addon(&file).map(|m| m.version)
         });
     std::fs::remove_file(&file).ok();
     verified
+}
+
+// Checked before installing, because a launcher only checks an addon's
+// launcher requirement when it loads it: installing first would replace a
+// working copy with one this launcher then refuses to load.
+fn compatible(package: &std::path::Path, release: &Release, launcher: &Version) -> Result<()> {
+    let manifest = crate::bundled::package_manifest(package)?;
+    match manifest.compat.accepts_launcher(launcher) {
+        true => Ok(()),
+        false => Err(Error::Other(format!(
+            "{NAME} {} needs a newer Swofty Launcher than {launcher}; update the launcher first",
+            release.tag_name
+        ))),
+    }
 }
 
 #[cfg(test)]
@@ -158,5 +173,34 @@ mod tests {
             ..release("v0.5.0")
         };
         assert!(!ready(&empty));
+    }
+
+    fn package(launcher: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("swofty-managed-{launcher}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(ASSET);
+        let manifest = format!(
+            r#"{{"schema_version":1,"id":"{ID}","name":"{NAME}","version":"0.7.0","author":"t","compat":{{"game":"f1_25","launcher":"{launcher}"}}}}"#
+        );
+        let mut z = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
+        z.start_file(
+            crate::manifest::MANIFEST_FILE,
+            zip::write::SimpleFileOptions::default(),
+        )
+        .unwrap();
+        std::io::Write::write_all(&mut z, manifest.as_bytes()).unwrap();
+        z.finish().unwrap();
+        path
+    }
+
+    #[test]
+    fn refuses_a_release_that_needs_a_newer_launcher() {
+        let r = release("v0.7.0");
+        let pkg = package(">=1.3.0");
+        assert!(compatible(&pkg, &r, &v("1.3.0")).is_ok());
+        assert!(compatible(&pkg, &r, &v("1.4.2")).is_ok());
+        let err = compatible(&pkg, &r, &v("1.2.6")).unwrap_err().to_string();
+        assert!(err.contains("needs a newer Swofty Launcher than 1.2.6"), "{err}");
+        std::fs::remove_dir_all(pkg.parent().unwrap()).ok();
     }
 }

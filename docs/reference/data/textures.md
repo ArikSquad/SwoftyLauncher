@@ -90,6 +90,21 @@ To append a new resource built from raw files, use `add-resource` with one file 
 
 Use `put-resource` to replace a resource of the same name or add it if it's missing. To take one out, use `remove-resource`. The loader can't remove a resource from a stock archive, so a build with any `remove-resource` rewrites the archives into the game folder and prints `erp: built into the game files; <n> resource removal(s) cannot apply at runtime`.
 
+## Merge texture array slices
+
+Team logos and flags sit in texture arrays: one resource whose slices are separate images. When several addons change different slices of one array, use `merge-slices` instead of `put-resource`. Ship the whole array in an archive in your addon, and the build writes only the slices that differ from the game's:
+
+```json
+{
+  "op": "merge-slices",
+  "erp": "2025_asset_groups/vfx_package/common.erp",
+  "resource": "eaid://ui_package/art/texture_arrays/overrides.uidb/overrides.team_logos.f1_2026.texarray.image",
+  "source": "logos/ui_textures.erp"
+}
+```
+
+Each addon's changed slices go over the array the addons before it wrote. Two addons that change different logos both show. See [Texture arrays](/reference/ops/erp#texture-arrays) for arrays of another size or format.
+
 ## Add mip files
 
 A texture's remaining mip chain lives outside the archive, in a loose `.mipmaps` file. Fragment 2 holds its path. To supply that file, use `add-mipmaps` to copy one file, or a folder of them, to a path in the game folder:
