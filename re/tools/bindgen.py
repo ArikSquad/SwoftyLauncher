@@ -374,7 +374,12 @@ def build_set(overlay, bindings, is_kb):
             e['status'] = 'unresolvable'
             e['reason'] = unres[i]
         out.append(e)
-    return {'schema': 1, 'generator': 're/tools/bindgen.py', 'build': {k: b[k] for k in BUILD_KEYS}, 'bindings': out}
+    doc = {'schema': 1, 'generator': 're/tools/bindgen.py', 'build': {k: b[k] for k in BUILD_KEYS}}
+    if sections:
+        # core's read_section_map sends core and addon scans of a KB section name to this build's section
+        doc['sections'] = dict(sections)
+    doc['bindings'] = out
+    return doc
 
 
 def unknown_ids(overlay, bindings):
