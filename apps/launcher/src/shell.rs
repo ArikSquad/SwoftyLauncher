@@ -55,14 +55,6 @@ impl Page {
         }
     }
 
-    // The sidebar's shorter name, under its Simplified for Swofty heading.
-    fn nav_label(self) -> &'static str {
-        match self {
-            Self::Importer => "Importer",
-            page => page.label(),
-        }
-    }
-
     pub fn icon(self) -> IconName {
         match self {
             Self::News => IconName::Newspaper,
@@ -1048,7 +1040,7 @@ impl Shell {
                 }
             })
             .child(nav_art(self.big_art(page), 28., active, p))
-            .child(div().flex_1().truncate().child(page.nav_label()))
+            .child(div().flex_1().truncate().child(page.label()))
             .children(count.map(|n| {
                 div()
                     .text_size(px(12.))
