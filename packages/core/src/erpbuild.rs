@@ -17,6 +17,10 @@ use crate::{Error, Result};
 const SCENE: &str = "UILayout";
 const ASSET_GROUPS: &str = "2025_asset_groups";
 
+pub fn served_at_runtime(rel: &str) -> bool {
+    rel.starts_with(ASSET_GROUPS)
+}
+
 type SourceKey = (String, String, usize);
 
 enum Slot {
@@ -718,6 +722,24 @@ impl<'a> ErpBuild<'a> {
         found
     }
 
+    // The in-game loader patches only archives the asset groups list, through the
+    // manifest's name map; the engine opens any other archive, such as the shader
+    // packages Simplified Studio packs mods into, through a hashed path an overlay never
+    // reaches. Those are written whole: the stock archive with every addon's resources.
+    pub fn take_outside(&mut self, out: &Path) -> Result<Vec<String>> {
+        let outside: Vec<String> = self
+            .erps
+            .iter()
+            .filter(|(rel, a)| !served_at_runtime(rel) && !a.untouched())
+            .map(|(rel, _)| rel.clone())
+            .collect();
+        for rel in &outside {
+            let archive = self.erps.remove(rel).expect("listed above");
+            write_archive(out, rel, archive)?;
+        }
+        Ok(outside)
+    }
+
     pub fn take_resized(&mut self, out: &Path) -> Result<Vec<Resized>> {
         let found = self.resized();
         for r in &found {
@@ -895,6 +917,42 @@ mod tests {
                 ("eaid://two".to_owned(), "mods (c)".to_owned())
             ]
         );
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn archives_outside_the_asset_groups_are_written_whole() {
+        let root = std::env::temp_dir().join(format!("swofty-erpbuild-outside-{}", std::process::id()));
+        std::fs::remove_dir_all(&root).ok();
+        let (game, addon, out) = (root.join("game"), root.join("addon"), root.join("out"));
+        let shader = "shader_package_2025/object_flag.nefx2.sm51.erp";
+        let group = "2025_asset_groups/vfx_package/common.erp";
+        std::fs::create_dir_all(game.join("shader_package_2025")).unwrap();
+        std::fs::create_dir_all(game.join("2025_asset_groups/vfx_package")).unwrap();
+        std::fs::create_dir_all(addon.join("mods")).unwrap();
+        let body = |s: &str| layer(&[s]);
+        std::fs::write(game.join(shader), erp(&[("eaid://shader", body("shader"))])).unwrap();
+        std::fs::write(game.join(group), erp(&[("eaid://vfx", body("vfx"))])).unwrap();
+        std::fs::write(addon.join("mods/car.erp"), erp(&[("eaid://car", body("car"))])).unwrap();
+        let put = |to: &str| {
+            format!(r#"{{"op":"put-resource","erp":"{to}","resource":"eaid://car","source":"mods/car.erp"}}"#)
+        };
+        let ops = erp_ops(&format!(
+            r#"{{"schema_version":1,"ops":[{},{}]}}"#,
+            put(shader),
+            put(group)
+        ));
+        let original = |rel: &str| game.join(rel);
+        let mut b = ErpBuild::new(&original);
+        apply(&mut b, &ops, &addon).unwrap();
+
+        assert!(served_at_runtime(group) && !served_at_runtime(shader));
+        assert_eq!(b.take_outside(&out).unwrap(), [shader]);
+        let written = Erp::parse(&std::fs::read(out.join(shader)).unwrap()).unwrap();
+        let names: Vec<&str> = written.resources.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, ["eaid://shader", "eaid://car"]);
+        let left: Vec<&str> = b.resources().map(|(rel, ..)| rel).collect();
+        assert_eq!(left, [group]);
         std::fs::remove_dir_all(&root).ok();
     }
 

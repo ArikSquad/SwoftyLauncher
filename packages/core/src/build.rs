@@ -834,6 +834,9 @@ pub(crate) fn build_as(store: &Store, profile: &str, game: &Game, checking: bool
                     let path = resolve(source)?;
                     let fits = match merged_later(&slices, at, targets, &path)? {
                         Some(why) => Err(why),
+                        None if targets.iter().any(|t| !crate::erpbuild::served_at_runtime(t)) => {
+                            Err("the in-game loader patches only archives under 2025_asset_groups".to_owned())
+                        }
                         None => overlay_fits(&path, targets, &base)?,
                     };
                     match fits {
@@ -878,6 +881,12 @@ pub(crate) fn build_as(store: &Store, profile: &str, game: &Game, checking: bool
             built.lines.push(format!("erp: {note}"));
         }
         let resized = if planner.route(Kind::Erp) == Route::Runtime {
+            let outside = erps.take_outside(&built.overlay)?;
+            for rel in &outside {
+                built.lines.push(format!(
+                    "erp: {rel} built into the game files; the in-game loader patches only archives under 2025_asset_groups"
+                ));
+            }
             let resized = erps.take_resized(&built.overlay)?;
             for r in &resized {
                 let (uri, why) = &r.resources[0];
@@ -887,7 +896,7 @@ pub(crate) fn build_as(store: &Store, profile: &str, game: &Game, checking: bool
                     r.resources.len()
                 ));
             }
-            let built_in: Vec<String> = resized.iter().map(|r| r.erp.clone()).collect();
+            let built_in: Vec<String> = resized.iter().map(|r| r.erp.clone()).chain(outside).collect();
             if !prebuilt.is_empty() {
                 built.lines.push(format!(
                     "erp: {} ready overlay archive(s) load as they are",

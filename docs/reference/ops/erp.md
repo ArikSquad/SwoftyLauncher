@@ -102,6 +102,12 @@ erp: example.pack: its overlay archive goes in resource by resource; a later erp
 
 A whole replacement that changes the layout of a stock entry in `erp` rewrites that archive into the game files and prints `erp: <erp> built into the game files; ...`, as for any other [layout change](#editing-pkg-resources).
 
+The in-game loader patches only archives under `2025_asset_groups`. Every ERP operation on any other archive, such as a shader package in `shader_package_2025`, merges into the game's copy of that archive in load order and writes it into the game files, and the build prints:
+
+```text
+erp: shader_package_2025/object_flag.nefx2.sm51.erp built into the game files; the in-game loader patches only archives under 2025_asset_groups
+```
+
 ## Removing resources
 
 `remove-resource` takes `resource` out of `erp`. Removing a resource `erp` does not have is a no-op, logged. The in-game loader cannot take a resource out of a stock archive, so a build with any `remove-resource` delivers every ERP operation by rewriting the archives, and prints:
