@@ -147,6 +147,7 @@ export default defineConfigWithTheme<DocsThemeConfig>({
               { text: "Mod Importer", link: "/using/mods" },
               { text: "Profiles", link: "/using/profiles" },
               { text: "In-game addon settings", link: "/using/swofty-mod" },
+              { text: "Steam and EA app copies", link: "/using/game-copies" },
               { text: "Playing in VR", link: "/using/vr" },
               { text: "Career Mode Editor", link: "/using/career-editor" },
               { text: "Driver Manager", link: "/using/driver-manager" },
@@ -169,6 +170,7 @@ export default defineConfigWithTheme<DocsThemeConfig>({
           {
             text: "Releases",
             items: [
+              { text: "1.3.1", link: "/releases/1.3.1" },
               { text: "1.3.0", link: "/releases/1.3.0" },
               { text: "1.2.6", link: "/releases/1.2.6" },
               { text: "1.2.5", link: "/releases/1.2.5" },

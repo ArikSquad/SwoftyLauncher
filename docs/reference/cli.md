@@ -17,10 +17,10 @@ To stop following the logs while keeping the game running, press **Ctrl-C**. Whe
 | Flag | Purpose |
 |---|---|
 | `--profile <name>` | Choose a profile; otherwise, use the active profile |
-| `--game <dir>` | Set the game folder if it wasn't found |
+| `--game <dir>` | Play this game folder instead of the [active copy](/using/game-copies) |
 | `--restart` | Close a running F1 25 first |
 | `--direct` | Launch directly instead of asking Steam |
-| `--no-start-steam` | Don't start Steam when it's closed. The launcher's **Start Steam automatically** setting does the same for every launch |
+| `--no-start-store` | Don't start Steam or the EA app when it's closed. `--no-start-steam` still works. The launcher's **Start Steam automatically** setting does the same for every launch |
 | `--vr` | Start the game in VR, like Steam's **Launch in SteamVR mode**: passes `-vr` to the game and, on Linux, starts SteamVR first. See [Playing in VR](/using/vr) |
 | `--winedebug <channels>` | Choose Wine log channels |
 | `--exe <file>` | Use a copy of `F1_25.exe` to identify crash locations |
@@ -248,6 +248,16 @@ swofty steam [--start]
 
 Shows whether Steam is running and signed in, with what the launcher read it from, and exits with an error when it isn't. With `--start`, it starts Steam when it's closed and waits up to 90 seconds for it to sign in, as **Play** does, without launching the game. See [Steam](/reference/launch#steam).
 
+## `swofty game`
+
+```sh
+swofty game list
+swofty game use <steam|ea|folder>
+swofty game add <folder>
+```
+
+From 1.3.1. `list` shows every copy of F1 25 the launcher found, with its store, version and folder, and `*` next to the active one. `use` picks the copy that `run`, `apply`, `build` and the launcher play. `add` adds a folder with `F1_25.exe` and makes it the active copy. See [Steam and EA app copies](/using/game-copies).
+
 ## `swofty doctor`
 
-Use `swofty doctor` to check Steam, your game install, Proton, launch options and the data folder. You'll also see any changes from the backed-up originals. The `steam client` row shows whether Steam is running and signed in. On Windows, the `run as admin` row shows whether `F1_25.exe` is set to run as administrator, which stops modded sessions from starting (see [Launching the game](/reference/launch#windows)).
+Use `swofty doctor` to check Steam, your game copies (`copy` rows, the active one marked), your game install, Proton, launch options and the data folder. You'll also see any changes from the backed-up originals. The `steam client` row shows whether Steam is running and signed in. On Windows, the `run as admin` row shows whether `F1_25.exe` is set to run as administrator, which stops modded sessions from starting (see [Launching the game](/reference/launch#windows)).

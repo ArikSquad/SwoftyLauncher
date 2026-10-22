@@ -36,7 +36,9 @@ If Steam is closed, the launcher starts it and waits for it to sign in first; se
 
 To see live logs as you play, select the arrow next to **Play** and choose **Play with console**, or run `swofty run` from a terminal.
 
-If the status line reads **Install it with Steam or locate its folder**, select **Locate game**, choose the folder with `F1_25.exe`, usually `.../steamapps/common/F1 25`, and select **Use this folder**.
+If you see **F1 25 not found** next to the cover art, select **Locate game**, choose the folder with `F1_25.exe`, usually `.../steamapps/common/F1 25`, and select **Add and play this copy**.
+
+To play the EA app copy, add its folder with **Add another folder…** in the game switcher and set `ea_launch_command`; see [The EA app copy on Linux](/using/game-copies#the-ea-app-copy-on-linux).
 
 ## Steam Deck
 
@@ -70,7 +72,7 @@ To read a summary of your last session, run `swofty logs`.
 
 ## Advanced launch settings
 
-If your setup needs CPU affinity or environment variables, set them in `$DATA/config.json`. To stop the launcher from starting Steam, add `"start_steam": false` under `"launch"`.
+If your setup needs CPU affinity or environment variables, set them in `$DATA/config.json`. To stop the launcher from starting Steam or the EA app, add `"start_store": false` under `"launch"`.
 
 ```json
 {
