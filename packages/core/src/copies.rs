@@ -239,6 +239,32 @@ mod tests {
     }
 
     #[test]
+    fn switching_copies_switches_the_store_and_the_build() {
+        let root = Root::new("swap");
+        let s = root.game("steam", false);
+        let e = root.game("ea", true);
+        std::fs::write(e.join(GAME_EXE), b"MZ another build").unwrap();
+        let copies = gather(Some(steam(&s)), vec![e.clone()], &[]);
+        let data = root.0.join("data");
+        let mut config = Config::default();
+        let seen: Vec<_> = [&s, &e, &s]
+            .into_iter()
+            .map(|dir| {
+                set_active(&mut config, dir);
+                let c = active(&copies, &config).unwrap();
+                let id = crate::baseline::Identity::detect_cached(&data, &c.dir, c.build_id()).unwrap();
+                (c.dir.clone(), c.source, c.build_id(), id.key())
+            })
+            .collect();
+        assert_eq!((seen[0].1, seen[0].2), (Source::Steam, Some(7)));
+        assert_eq!((seen[1].1, seen[1].2), (Source::EaApp, None));
+        assert_eq!(seen[1].0, e);
+        assert!(seen[1].3.starts_with("exe-"));
+        assert_ne!(seen[0].3, seen[1].3);
+        assert_eq!(seen[0], seen[2]);
+    }
+
+    #[test]
     fn a_located_folder_stays_the_active_copy_after_migration() {
         let root = Root::new("migrate");
         let s = root.game("steam", false);
