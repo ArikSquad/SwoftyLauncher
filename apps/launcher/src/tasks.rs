@@ -10,7 +10,7 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use swofty_core::launcher::{TaskItem, TaskList, TaskState, Tasks};
 use swofty_core::send_logs;
-use swofty_core::view::Effect;
+use swofty_core::view::{Effect, Shown};
 
 use crate::shell::Shell;
 use crate::theme::Palette;
@@ -142,10 +142,22 @@ impl Shell {
         };
         let (outcome, effect) = match effect {
             Ok(Effect::Notice(text)) => (Outcome::Notice(text), Ok(Effect::Reload)),
+            Ok(Effect::ShowAddon(shown)) if shown.notice().is_some() => (
+                Outcome::Notice(shown.notice().unwrap_or_default().to_owned()),
+                Ok(Effect::ShowAddon(Shown::Id(shown.id().to_owned()))),
+            ),
             Err(e) => (Outcome::Error(e), Ok(Effect::None)),
             other => (Outcome::Quiet, other),
         };
         dialog.outcome = Some(outcome);
+        if let Some(ix) = dialog
+            .list
+            .items
+            .iter()
+            .position(|i| i.state == TaskState::Failed)
+        {
+            dialog.scroll.scroll_to_item(ix);
+        }
         cx.notify();
         effect
     }

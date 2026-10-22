@@ -761,7 +761,7 @@ launcher  {"id":13,"method":"view","params":{"section":"overview"}}
 - Each `tasks` carries the whole list and replaces the last one.
 - The first `tasks` during an event opens the dialog, and later ones update it. It stays open when the player switches pages.
 - **Close** stays off until the event returns.
-- When the event returns, a `notice` effect or an error shows inside the dialog instead of as a notification.
+- When the event returns, its notice or error shows inside the dialog instead of as a notification: a `notice` effect, the `notice` of a `show_addon` effect, or an error.
 - When an item has failed, the dialog also offers **Send Logs to Developers**.
 - The launcher shows lists sent while it handles an `event` and ignores the rest.
 - A `tasks` has no `id` and gets no reply.
