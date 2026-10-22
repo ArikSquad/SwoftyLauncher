@@ -285,12 +285,7 @@ impl Shell {
             .child(h_flex().gap(px(8.)).pb(px(2.)).child(actions))
     }
 
-    pub(crate) fn list(
-        &self,
-        id: impl Into<ElementId>,
-        rows: Vec<AnyElement>,
-        p: Palette,
-    ) -> impl IntoElement {
+    pub(crate) fn list(&self, id: impl Into<ElementId>, rows: Vec<AnyElement>, p: Palette) -> Stateful<Div> {
         v_flex()
             .id(id)
             .flex_1()

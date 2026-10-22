@@ -4,7 +4,7 @@ use std::process::ExitCode;
 use anyhow::{Context, Result, bail};
 use swofty_core::baseline::DepotHashes;
 use swofty_core::build::GVDB;
-use swofty_core::install::{Game, Installer};
+use swofty_core::install::{EA_APP_UNSUPPORTED, Game, Installer, Source};
 use swofty_core::recovery::{Blocked, Scope, SessionLock};
 use swofty_core::settings::SETTINGS_FILE;
 use swofty_core::stock::{self, Depots};
@@ -20,6 +20,13 @@ pub const UI_ERPS: &[&str] = &[
 ];
 pub fn game(store: &Store, explicit: Option<PathBuf>) -> Result<Game> {
     Ok(Game::locate(&store.root, game_dir(store, explicit)?)?)
+}
+
+pub fn supported(g: &Game) -> Result<()> {
+    if Source::detect(&g.dir) == Source::EaApp {
+        bail!("{}: {EA_APP_UNSUPPORTED}", g.dir.display());
+    }
+    Ok(())
 }
 
 /// `--game`, else the folder picked with Locate F1 25 in the launcher, else Steam's copy.
@@ -230,6 +237,7 @@ fn not_stock(store: &Store, g: &Game, r: swofty_core::Result<()>) -> swofty_core
 
 pub fn apply(store: &Store, profile: &str, game: Option<PathBuf>) -> Result<ExitCode> {
     let g = self::game(store, game)?;
+    supported(&g)?;
     let out = |l: &str| println!("{l}");
     let Some(lock) = SessionLock::try_acquire(&store.root)? else {
         bail!("a modded session is running or rolling back; close F1 25 and try again");

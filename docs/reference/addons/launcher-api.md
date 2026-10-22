@@ -354,7 +354,7 @@ Return one page from `view`, describing its header, content and footer:
 | `actions` | Buttons in the header. |
 | `notices` | Bars under the header, each with an optional button. `tone` colours the bar. |
 | `body` | One of the three bodies below. |
-| `footer` | A muted line under the body. |
+| `footer` | A muted line at the end of the page, after the body. |
 | `tick` *(1.0.10)* | `true` asks for a `tick` about once a second while the page is open ([Live pages](#live-pages)). Default `false`. |
 
 Choose one of these shapes for `body`:
@@ -455,6 +455,7 @@ When you handle `event`, you receive one event and return one effect to tell the
 | `{ "set_addon_enabled": true }` | turns the addon on or off in the active profile |
 | `{ "open": "/home/you/.local/share/swofty/addon-data/example.launcher-addon/items" }` | opens the file or folder with the system handler |
 | `{ "show_addon": "yourname.okayama" }` *(1.3.0)* | switches to the **Addons** page and highlights that addon |
+| `{ "show_addon": { "id": "yourname.okayama", "notice": "Imported okayama.exmod" } }` *(1.3.0)* | shows the notice as a notification, switches to the **Addons** page and highlights that addon |
 
 Answer `view` and `summary` within 5 seconds. For `event`, `import`, `build` and `command`, you have 300 seconds; each message your plugin sends resets the wait. Until you return an effect, the control that fired the event shows busy.
 

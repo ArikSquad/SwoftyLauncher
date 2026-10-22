@@ -5,7 +5,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use swofty_core::crash::{LogScan, StartFailure, Symbols, fatal_name};
-use swofty_core::install::Game;
+use swofty_core::install::{Game, Source};
 use swofty_core::launch;
 use swofty_core::process::{GameProcess, game_processes};
 use swofty_core::quarantine;
@@ -25,6 +25,7 @@ pub struct Install {
     pub mode: String,
     pub via_steam: bool,
     pub manual: bool,
+    pub source: Source,
 }
 
 pub struct Probe {
@@ -137,6 +138,7 @@ pub fn discover(store: &Store) -> Option<Install> {
         (Some(dir), found) => Some(Install {
             build_id: found.filter(|g| g.dir == dir).and_then(|g| g.build_id),
             exe_version: swofty_core::exe_version::read(&dir.join(GAME_EXE)),
+            source: Source::detect(&dir),
             dir,
             mode,
             via_steam,
@@ -144,6 +146,7 @@ pub fn discover(store: &Store) -> Option<Install> {
         }),
         (None, Some(g)) => Some(Install {
             exe_version: swofty_core::exe_version::read(&g.dir.join(GAME_EXE)),
+            source: Source::detect(&g.dir),
             dir: g.dir,
             build_id: g.build_id,
             mode,

@@ -299,6 +299,23 @@ fn command_input(m: &ArgMatches, spec: &CommandSpec, path: &mut Vec<String>, arg
     }
 }
 
+/// Addon commands run in their own folder, so a value naming an existing
+/// path relative to `cwd` is passed on as an absolute path.
+fn absolute_paths(args: &mut [String], cwd: &Path) {
+    for a in args {
+        let at = cwd.join(a.as_str());
+        if !a.is_empty()
+            && Path::new(a.as_str()).is_relative()
+            && at.exists()
+            && let Some(abs) = std::path::absolute(&at)
+                .ok()
+                .and_then(|p| p.to_str().map(str::to_owned))
+        {
+            *a = abs;
+        }
+    }
+}
+
 fn command_at(args: &[OsString]) -> Option<usize> {
     let mut skip = false;
     args.iter().enumerate().skip(1).find_map(|(i, a)| {
@@ -362,6 +379,9 @@ fn run_cli(store: &Store, mut args: Vec<OsString>) -> Result<ExitCode> {
             .unwrap_or_else(|| store.active_profile());
         let (mut path, mut input) = (vec![name.to_owned()], Vec::new());
         command_input(sub, spec, &mut path, &mut input);
+        if let Ok(cwd) = std::env::current_dir() {
+            absolute_paths(&mut input, &cwd);
+        }
         let entry = addons.registry.get(id).context("addon is gone")?;
         let p = store.profile(&profile)?;
         let game = build::game(store, None).ok();
@@ -826,6 +846,12 @@ mod tests {
         command_input(sub, &addons.specs[0].1, &mut path, &mut input);
         assert_eq!(path, ["mods", "import"]);
         assert_eq!(input, ["a.serps", "b.zip"]);
+        std::fs::write(root.join("b.zip"), "zip").unwrap();
+        absolute_paths(&mut input, &root);
+        assert_eq!(input, ["a.serps", root.join("b.zip").to_str().unwrap()]);
+        let mut dotted = vec!["./my-addon".to_owned(), "on".to_owned()];
+        absolute_paths(&mut dotted, &root);
+        assert_eq!(dotted, [addon.to_str().unwrap(), "on"]);
         let dir = addon.to_str().unwrap();
         let (args, note) =
             forward_mods(&store, &os(&["swofty", "--profile", "p", "mods", "install", dir])).unwrap();

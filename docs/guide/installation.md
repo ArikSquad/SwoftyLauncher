@@ -10,6 +10,7 @@ Install the launcher with the installer or by hand, then follow the setup steps 
 ## Requirements
 
 - F1 25 on Steam, with the F1 2026 season content installed.
+- The EA app version of F1 25 is not supported yet; **Play** on it shows a dialog instead of starting the game, and `swofty run` and `swofty apply` refuse it.
 - Windows 10 or 11 (x86-64), or Linux with Steam and Proton. Steam Deck, NixOS and Flatpak Steam work. macOS does not.
 - Free disk space: your content changes copies of the game files, so you'll need room for those copies.
 
