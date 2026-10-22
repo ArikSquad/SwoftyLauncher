@@ -672,6 +672,26 @@ mod tests {
         assert_eq!(set.argv("u"), [r"C:\Tools\ea open.exe", "u"]);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn one_setting_both_opens_the_app_and_hands_over_the_link() {
+        let root = std::env::temp_dir().join(format!("swofty-ea-branch-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let out = root.join("out");
+        let h = Handoff::Shell(format!(
+            r#"u={{url}}; if [ -z "$u" ]; then echo open >> '{0}'; else echo "link $u" >> '{0}'; fi"#,
+            out.display()
+        ));
+        assert!(opener(&h).unwrap().status().unwrap().success());
+        let url = "origin2://game/launch?offerIds=1&autoDownload=1&cmdParams=-vr";
+        assert!(h.command(url).status().unwrap().success());
+        assert_eq!(
+            std::fs::read_to_string(&out).unwrap(),
+            format!("open\nlink {url}\n")
+        );
+        std::fs::remove_dir_all(&root).ok();
+    }
+
     #[test]
     fn splits_quoted_commands() {
         assert_eq!(
