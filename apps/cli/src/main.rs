@@ -151,6 +151,17 @@ enum GameCommand {
     Use { copy: String },
     #[command(about = "Add a game folder (with F1_25.exe) and play it")]
     Add { path: PathBuf },
+    #[command(
+        about = "Start the EA app copy through the EA app as installed: no profile, no offline play, EA AntiCheat runs"
+    )]
+    Launch {
+        #[arg(long, help = "Start F1 25 in VR (passes -vr)")]
+        vr: bool,
+        #[arg(long, help = "Don't start the EA app when it's closed")]
+        no_start_store: bool,
+        #[arg(long, help = crate::GAME_HELP)]
+        game: Option<PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -472,6 +483,14 @@ fn game(store: &Store, cmd: GameCommand) -> Result<()> {
                 copies::store_name(c.source),
                 dir.display()
             );
+        }
+        GameCommand::Launch {
+            vr,
+            no_start_store,
+            game,
+        } => {
+            let g = crate::build::game(store, game)?;
+            crate::ea::launch_installed(store, &g, vr, no_start_store)?;
         }
         GameCommand::Add { path } => {
             let dir = std::path::absolute(&path)?;

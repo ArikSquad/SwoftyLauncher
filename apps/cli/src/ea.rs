@@ -4,14 +4,18 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Result, anyhow, bail};
 use swofty_core::ea_app::{self, Handoff};
-use swofty_core::install::Source;
+use swofty_core::install::{Game, Source};
 use swofty_core::process::{game_processes, stop_process};
+use swofty_core::recovery::Scope;
 use swofty_core::steam_client;
 use swofty_core::store::Store;
 
 use crate::run::{StageFile, ending, say};
 
 const APP_START_TIMEOUT: Duration = Duration::from_secs(90);
+// A link handed over while the EA app is still starting can be dropped:
+// under Proton one sent a second after EADesktop.exe appeared never arrived.
+const APP_SETTLE: Duration = Duration::from_secs(10);
 const HANDOFF_TIMEOUT: Duration = Duration::from_secs(180);
 const PRESS_PLAY_TIMEOUT: Duration = Duration::from_secs(600);
 const HANDOFF_LOG: &str = "ea_handoff.log";
@@ -52,8 +56,9 @@ fn handoff(store: &Store) -> Option<Handoff> {
 }
 
 /// An EA app copy needs the EA app: start it when it is closed and wait for
-/// it, as Steam is for a Steam copy. A link-only command starts it with the
-/// launch link instead.
+/// it, as Steam is for a Steam copy. On Linux the launch.ea_launch_command
+/// setting, run without a link, starts it; a command that needs the link
+/// leaves the start to the link.
 pub fn ensure(store: &Store, opted_out: bool) -> Result<()> {
     let h = handoff(store);
     let on = store.config().launch.start_store && !opted_out;
@@ -69,28 +74,58 @@ pub fn ensure(store: &Store, opted_out: bool) -> Result<()> {
                 say("ea app", "detected: closed; starting the EA app");
                 let stage = StageFile(store.root.join(steam_client::STAGE_FILE));
                 stage.set("Starting the EA app…");
-                let _child = detach(&mut open).map_err(|e| {
+                let mut child = detach(&mut open).map_err(|e| {
                     anyhow!("could not start the EA app ({e}); open the EA app and press Play again")
                 })?;
                 let since = Instant::now();
-                while !ea_app::running() {
-                    if since.elapsed() >= APP_START_TIMEOUT {
-                        bail!(
-                            "the EA app didn't start within {} s; open the EA app and press Play again",
-                            APP_START_TIMEOUT.as_secs()
+                match wait_for_app(&mut child, || since.elapsed() >= APP_START_TIMEOUT) {
+                    AppStart::Running => {
+                        say(
+                            "ea app",
+                            &format!("running after {:.1} s", since.elapsed().as_secs_f64()),
                         );
+                        std::thread::sleep(APP_SETTLE);
                     }
-                    std::thread::sleep(steam_client::POLL_INTERVAL);
+                    AppStart::CommandFailed(exit) => say(
+                        "ea app",
+                        &format!("the command did not open the EA app ({exit}); the launch link starts it"),
+                    ),
+                    AppStart::TimedOut => bail!(
+                        "the EA app didn't start within {} s; open the EA app and press Play again",
+                        APP_START_TIMEOUT.as_secs()
+                    ),
                 }
-                say(
-                    "ea app",
-                    &format!("running after {:.1} s", since.elapsed().as_secs_f64()),
-                );
             }
             None => say("ea app", "detected: closed; the launch link starts it"),
         },
     }
     Ok(())
+}
+
+#[derive(Debug, PartialEq)]
+enum AppStart {
+    Running,
+    CommandFailed(std::process::ExitStatus),
+    TimedOut,
+}
+
+/// Wait for EADesktop.exe after `child` was asked to open the EA app. A
+/// command that exits with an error opened nothing, so waiting is pointless.
+fn wait_for_app(child: &mut Child, timed_out: impl Fn() -> bool) -> AppStart {
+    loop {
+        if ea_app::running() {
+            return AppStart::Running;
+        }
+        if let Ok(Some(exit)) = child.try_wait()
+            && !exit.success()
+        {
+            return AppStart::CommandFailed(exit);
+        }
+        if timed_out() {
+            return AppStart::TimedOut;
+        }
+        std::thread::sleep(steam_client::POLL_INTERVAL);
+    }
 }
 
 fn detach(c: &mut std::process::Command) -> std::io::Result<Child> {
@@ -177,6 +212,66 @@ pub fn start(store: &Store, game: &Path, args: &[String], session: &Path, before
     Ok(Started { handoff })
 }
 
+/// An EA app copy started by the EA app as it is installed, with nothing
+/// staged: the profile and offline play stay out, so EA AntiCheat runs as
+/// it does from the EA app's own Play button.
+pub fn launch_installed(store: &Store, g: &Game, vr: bool, opted_out: bool) -> Result<()> {
+    if Source::detect(&g.dir) != Source::EaApp {
+        bail!(
+            "{} is not an EA app copy; start a Steam copy from Steam, or pick the EA app copy with swofty game use ea",
+            g.dir.display()
+        );
+    }
+    if let Some(running) = game_processes().first() {
+        bail!("F1 25 is already running (pid {}); close it first", running.pid);
+    }
+    {
+        let out = |l: &str| say("info", l);
+        let lock = crate::recover::lock(store, &out)?;
+        crate::recover::stale(store, &lock, g, Scope::All, &out)?;
+    }
+    ensure(store, opted_out)?;
+    let args: Vec<String> = if vr { vec!["-vr".into()] } else { Vec::new() };
+    let url = ea_app::install_url(&g.dir, &args).map_err(|e| anyhow!(e))?;
+    let h = handoff(store).ok_or_else(|| anyhow!("{}", ea_app::no_handoff()))?;
+    say("ea app", &format!("asking the EA app to launch F1 25: {url}"));
+    let state = store.root.join("state");
+    std::fs::create_dir_all(&state)?;
+    let log = std::fs::File::create(state.join(HANDOFF_LOG))?;
+    let mut c = h.command(&url);
+    c.stdin(Stdio::null()).stdout(log.try_clone()?).stderr(log);
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut c, 0);
+    let mut child = Some(c.spawn().map_err(|e| anyhow!("could not run {h}: {e}"))?);
+    let pid = wait_for_game(&[], HANDOFF_TIMEOUT, &mut child)?.ok_or_else(|| {
+        anyhow!(
+            "F1 25 did not start within {} min of the launch link; press Play on F1 25 in the EA app",
+            HANDOFF_TIMEOUT.as_secs() / 60
+        )
+    })?;
+    say("ea app", &format!("F1 25 started (pid {pid})"));
+    if let Some(line) = command_line(pid) {
+        say("ea app", &format!("command line: {line}"));
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn command_line(pid: u32) -> Option<String> {
+    let raw = std::fs::read(format!("/proc/{pid}/cmdline")).ok()?;
+    let words: Vec<String> = raw
+        .split(|b| *b == 0)
+        .filter(|w| !w.is_empty())
+        .map(|w| String::from_utf8_lossy(w).into_owned())
+        .collect();
+    (!words.is_empty()).then(|| words.join(" "))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn command_line(_: u32) -> Option<String> {
+    None
+}
+
 pub struct Started {
     handoff: Option<Child>,
 }
@@ -230,6 +325,39 @@ mod tests {
         assert_eq!(policy(true, false, true), Policy::Running);
         assert_eq!(policy(true, true, false), Policy::Start);
         assert_eq!(policy(true, false, false), Policy::Off);
+    }
+
+    #[test]
+    fn stops_waiting_when_the_open_command_fails() {
+        if ea_app::running() {
+            return;
+        }
+        let mut fail = if cfg!(windows) {
+            let mut c = std::process::Command::new("cmd");
+            c.args(["/c", "exit 3"]);
+            c
+        } else {
+            std::process::Command::new("false")
+        };
+        let mut child = fail.spawn().unwrap();
+        assert!(matches!(
+            wait_for_app(&mut child, || false),
+            AppStart::CommandFailed(_)
+        ));
+        let mut ok = if cfg!(windows) {
+            let mut c = std::process::Command::new("cmd");
+            c.args(["/c", "exit 0"]);
+            c
+        } else {
+            std::process::Command::new("true")
+        };
+        let mut child = ok.spawn().unwrap();
+        let polls = std::cell::Cell::new(0);
+        let timed_out = || {
+            polls.set(polls.get() + 1);
+            polls.get() > 3
+        };
+        assert_eq!(wait_for_app(&mut child, timed_out), AppStart::TimedOut);
     }
 
     #[cfg(unix)]
