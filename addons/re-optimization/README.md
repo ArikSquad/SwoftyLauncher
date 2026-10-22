@@ -106,6 +106,8 @@ native/build.sh      # zig cross-build of native/re_optimization.dll
 native/test/run.sh   # host tests: the delta, its reverse, the override table, GPU detection, the upscaler matrix and the enforcement table and modes
 ```
 
+`native/test/run.sh` then runs `test/wine_hooks.cpp` under Wine when `wine` is on the PATH: it loads `re_optimization.dll` with a fake `SwoftyApi`, installs its wrap and redirects on synthetic call sites, and checks the substituted values in each mode and the skipped sites.
+
 ## Changes
 
 ### 0.2.5 (upstream 0.2.5)
