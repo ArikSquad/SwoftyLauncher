@@ -17,7 +17,6 @@ use swofty_core::conflicts::{self, Pair, Report};
 use swofty_core::import::{self, Route};
 use swofty_core::manifest::{Category, Kind, MANIFEST_FILE};
 use swofty_core::profile::VANILLA;
-use swofty_core::updater::Part;
 
 use crate::library::{AddonItem, Changes, Source, plural};
 use crate::pages::{GUTTER, addon_icon, badge, chevron, fact, label, logo, tag};
@@ -377,12 +376,7 @@ impl Shell {
     }
 
     fn update_ready(&self, m: &AddonItem) -> bool {
-        m.manifest.id == swofty_core::managed::ID
-            && self
-                .updates
-                .pending()
-                .iter()
-                .any(|(part, _)| *part == Part::Addon)
+        m.manifest.id == swofty_core::managed::ID && self.updates.plan().addon.is_some()
     }
 
     fn pairs_of<'a>(&'a self, id: &'a str) -> impl Iterator<Item = &'a Pair> + 'a {
