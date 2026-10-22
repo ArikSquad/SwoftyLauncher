@@ -30,7 +30,7 @@ Steam keeps a manifest for each installed depot in `<steam>/depotcache/<depot>_<
 - Until a check passes for a game build, every file Steam installed is checked by size (`"stock_checked": true` in `baseline.json` once it has). Files `placed.json` records as written by the launcher are left to the install. While offline play has `EAAntiCheat.GameServiceLauncher.exe` parked as `.bak`, the parked copy is checked.
 - Each original the install backs up for the first time is compared with Steam's copy before it is copied.
 
-A file that doesn't match stops the session before anything is built or changed, writes `state/not-stock.json` and shows a dialog that asks the player to verify the game files in Steam. Files Steam doesn't list are not checked. A game folder outside Steam is not checked. Without a readable manifest for every installed depot, the check is skipped and the launch log says why.
+A file that doesn't match stops the session before anything is built or changed and writes `state/not-stock.json`. The launcher opens a **Your game files have been edited** modal that names the files and lists the fix: verify the game files in Steam, or add mods through the Mod Importer. Files Steam doesn't list are not checked. A game folder outside Steam is not checked. Without a readable manifest for every installed depot, the check is skipped and the launch log says why.
 
 ## Recovery rules
 
@@ -48,7 +48,7 @@ A session journal still open while the lock is free belongs to a session that en
 
 ## Leftovers
 
-A file in the way of an install counts as the launcher's own when `placed.json` records those exact bytes at that path, or when it is byte-identical to the file about to be placed and not a backed-up original. The install clears those files, logs the recovery and the `swofty doctor` report, and tries once more. Any other file stops the install untouched and is recorded in `blocked.json`; `swofty restore` moves it to `$DATA/set-aside/<time>/`.
+A file in the way of an install counts as the launcher's own when `placed.json` records those exact bytes at that path, or when it is byte-identical to the file about to be placed and not a backed-up original. The install clears those files, logs the recovery and the `swofty doctor` report, and tries once more. Any other file stops the install untouched and is recorded in `blocked.json`; `swofty restore` moves it to `$DATA/set-aside/<time>/`. The launcher opens the **Your game files have been edited** modal, whose **Restore game folder** button runs the same restore.
 
 At start, files that `placed.json` records and no open journal covers are cleared the same way.
 

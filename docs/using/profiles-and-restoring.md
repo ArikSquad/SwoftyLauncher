@@ -33,10 +33,10 @@ If the launcher itself was stopped before the session finished, the next launch,
 
 ## Files in the way
 
-When a file the profile needs to place is already in the game folder and the launcher can't prove it put it there (for example, a mod you copied in by hand), it leaves the file alone and doesn't start the game.
+When a file the profile needs to place is already in the game folder and the launcher can't prove it put it there (for example, a mod you copied in by hand), it leaves the file alone and doesn't start the game. The launcher opens a **Your game files have been edited** modal; **What to do** on the play bar reopens it.
 
-1. In the launcher, select **Restore game folder** next to the error.
-2. Read the list of files in the **Restore the game folder?** dialog, then select **Restore game folder**. From a terminal, run `swofty restore` instead.
+1. Read the list of files in the modal.
+2. Select **Restore game folder**. From a terminal, run `swofty restore` instead.
 3. Press **Play** again.
 
 Either way, restore rolls back the launcher's changes and moves those files to `$DATA/set-aside/<time>/`, where you can get them back.

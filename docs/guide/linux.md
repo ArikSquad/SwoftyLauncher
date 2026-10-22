@@ -44,7 +44,7 @@ Install the launcher and set the launch option in Desktop Mode. Once that's set,
 
 ## If your game files aren't the ones Steam installed
 
-Before a modded session builds anything, the launcher checks the game against Steam's record of the files it installed. If a file was changed outside the launcher, for example by another mod tool or a manual install, F1 25 is not started and a **Your game files aren't the ones Steam installed** dialog names the files.
+Before a modded session builds anything, the launcher checks the game against Steam's record of the files it installed. If a file was changed outside the launcher, for example by another mod tool or a manual install, F1 25 is not started and a **Your game files have been edited** modal names the files and lists the fix.
 
 To fix it:
 
