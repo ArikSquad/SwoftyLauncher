@@ -49,6 +49,8 @@ void resolve()
 
 uint8_t *database()
 {
+    if (!runtime::code_ready())
+        return nullptr;
     std::call_once(resolved, resolve);
     return g_db ? static_cast<uint8_t *>(*g_db) : nullptr;
 }
@@ -136,6 +138,8 @@ bool intern_full_logged;
 
 const uint8_t *text_key()
 {
+    if (!runtime::code_ready())
+        return nullptr;
     std::call_once(key_once, [] {
         if (!runtime::enabled("db", nullptr))
             return;

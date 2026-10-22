@@ -32,9 +32,19 @@ Values are strings. Write arrays as comma-separated values, such as `"0,-0.6,0"`
 | `list-append` | `select`, `field`, `value` | Add a value to a list if missing. Not built yet |
 | `list-remove` | `select`, `field`, `value` | Remove a value from a list. Not built yet |
 | `put-record` | `key`, `type`, `value` | Write one raw record. `key` is a path, which can use [selectors](#selecting-rows), or `0x` and 16 hex digits, `type` the record tag and `value` hex bytes |
-| `remove-record` | `key` | Remove one record |
+| `remove-record` | `key`; optional `allow_stock_removal` | Remove one record |
 
 For `set`, use `create: true` and a `type` tag to add a missing field. `value_from` copies a value from another database path. A `set` whose `select` matches no row, or whose field doesn't exist, fails the build. A `remove-record` whose key is already absent is a no-op, logged.
+
+### Removing stock records
+
+A `remove-record` of a key in the game's stock database is skipped. The build warns once per addon with the count, such as `My Mod: 12 removal(s) of stock database records skipped; the game crashes when a record it reads is missing`. The addon's row on the **Addons** page shows the count after a build or a conflict check. Keys that addons add, earlier in the same addon or in another one, are removed as before. Set `"allow_stock_removal": true` on the op to remove a stock record:
+
+```json
+{ "op": "remove-record", "key": "tracks.Track_0.PoleOnRight", "allow_stock_removal": true }
+```
+
+The game crashes on any key it reads that is missing; see [Missing keys](/reference/gamedb/reading#missing-keys). A build that removes a stock record writes the database into `gamedatabases.2025.bin` instead of editing it at runtime. **Export game files (.zip)** in the DB Editor skips the same removals and lists them.
 
 `add-row` copies every key of the source row: its fields, its sub-object keys such as `ai_vehicle_config.*` on vehicles, and its nested tables with their `_instancecount_` keys and rows, at any depth. `set` then changes keys of the copy. Every `set` key must be a key the copy has:
 
@@ -130,6 +140,8 @@ Adding a row also updates the table's `_instancecount_`. The game ignores rows b
 `add-row` raises the count of the table `table` resolves to. Adding to `track_data.game_setup.TrackDataSet[_metadata_=f1_2026]` raises `track_data.game_setup.TrackDataSet_16._TrackData_instancecount_`.
 
 `add-row` needs the table's real path, written with row numbers or selectors. A `{hash}` placeholder can be used for `set`, but not for `add-row`.
+
+A mod made for an earlier game version can lower a count and leave stock rows above it. `add-row` writes the new row over those stock keys and the build prints `reuses N stock key(s) of a row above the table's count`. A key another addon wrote at the new row's number still fails the op with `already exists`.
 
 ## Settings
 

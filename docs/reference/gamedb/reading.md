@@ -49,12 +49,14 @@ A lookup of a key that does not exist does not return null. The not-found path o
 
 `tools/gdb_hashsim.py` replays the loader and prints this sentinel for any database. The stock and modded files give the same value; the shipping game never looks up a missing key.
 
-**Rule: every key the game reads must exist.** Crashes found so far:
+**Rule: every key the game reads must exist.** The build skips `remove-record` ops on stock keys unless they set `allow_stock_removal` ([Removing stock records](/reference/ops/database#removing-stock-records)). Crashes found so far:
 
 | Case | Key | Where |
 |---|---|---|
 | New vehicle row with 28 of its 246 keys | `entrants.vehicles.vehicle_413.ai_vehicle_config.exit_fallibility.max_yaw_angle_deg` | `Sess_Parse_AiHandlingConfig` (`0x1406828a0`), fault at `0x1406831f7`, during startup |
 | New team row above `_team_instancecount_` | `Invalid.stat_id` after a failed label lookup | team branch of `Sess_Parse_Entrant` (`0x142452e60`), fault at `0x14245323c` |
+| Imported mod made for game version 1.0.138 on 1.0.141, which removed 14,618 stock records | Not identified | `Sess_Apply_ContentAvailability` reads the sentinel `0x08000f000800000e`, during startup |
+| Driver Manager built before a mod made for game version 1.0.138: the mod relabelled the entrant list Driver Manager had added a free agent to and lowered `entrants.entrant_lists.entrants._entrant_instancecount_` below the driver's entrant row | `Invalid.driver` after a failed label lookup of `dm_208` in `entrants.entrant_lists.entrants` | `0x1424de3e0` under `Sess_Parse_Entrant`, fault at `0x1424de416`, at startup under `Sess_Apply_ContentAvailability` |
 | Cloned track row missing stack-built sub-tables | `Daylight_0.start`, `Daylight_0.end`, `CareerHubFirstVisit_0.timeofday`, `CareerHubLastVisit_0.timeofday` | track reader `0x142e4c640`, fault at `0x142e53c0b`, at startup under `Sess_Apply_ContentAvailability` |
 
 ### Checked and unchecked reads
@@ -63,6 +65,7 @@ A lookup of a key that does not exist does not return null. The not-found path o
 |---|---|
 | Entrant parser, team label (`0x142452e60`) | Unchecked: crash |
 | Entrant parser, driver label | Checked |
+| Entrant list parser, `entrant_reference` label (`0x1424de3e0`) | Unchecked: crash |
 | Vehicle AI config (`0x1406828a0`, called from `Sess_Load_VehicleAiConfig` `0x1425027e0`) | Unchecked: crash |
 | Track reader `0x142e4c640` (`Daylight`, `CareerHubFirstVisit`, `CareerHubLastVisit`) | Unchecked: crash |
 | Per-race DNFs (`0x1409c2b10`): `Failures.*`, `Faults.%s.*`, `Accidents.%s.*`, `LockUps.%s.*` by track label | Unchecked: crash. A new track id needs a row in `canned_events.Per-race DNFs` |

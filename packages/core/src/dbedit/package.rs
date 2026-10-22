@@ -2,7 +2,7 @@
 //! (`<data>/addons/<id>/` with `swofty.json`, `database.json` and `dbedit.json`).
 //! The module keeps its old name, `package`.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -641,22 +641,26 @@ pub fn export_packages(store: &Store, game: &Game, packages: &[Package], out: &P
     let src = super::stock_database(store, game)?;
     let stock = std::fs::read(&src).map_err(io_err(&src))?;
     let mut db = Gvdb::parse(&stock)?;
+    let keys: HashSet<u64> = db.records.iter().map(|r| r.key).collect();
     let mut export = GameExport::default();
+    let mut left_out = 0;
     for p in packages {
         let ops = p.edits.to_ops();
-        let (_, failed) = crate::ops::apply_db_ops_lenient(
-            &mut db,
-            &ops,
-            &BTreeMap::new(),
-            &mut crate::ops::DbReport::default(),
-        );
-        export.changes += ops.ops.len() - failed.len();
+        let mut report = crate::ops::DbReport::default();
+        let (_, failed) = crate::ops::apply_db_ops_lenient(&mut db, &ops, &keys, &mut report);
+        left_out += failed.len() + report.stock_removals;
+        export.changes += ops.ops.len() - failed.len() - report.stock_removals;
         let name = &p.manifest.name;
         export.skipped.extend(
             failed
                 .into_iter()
                 .map(|(_, e)| format!("{name}: change skipped: {e}")),
         );
+        if report.stock_removals > 0 {
+            export
+                .skipped
+                .push(crate::planner::stock_removals_line(name, report.stock_removals));
+        }
     }
     let bytes = db.to_bytes();
     if bytes == stock {
@@ -665,7 +669,7 @@ pub fn export_packages(store: &Store, game: &Game, packages: &[Package], out: &P
         ));
     }
     let build = crate::baseline::sha256_bytes(&stock)[..16].to_owned();
-    let readme = readme(packages, game, &build, export.skipped.len());
+    let readme = readme(packages, game, &build, left_out);
     let tmp = out.with_extension(format!("zip.{}.tmp", std::process::id()));
     let written = write_game_zip(&tmp, &bytes, &readme).and_then(|()| {
         std::fs::rename(&tmp, out).map_err(io_err(out))?;
@@ -883,6 +887,8 @@ impl Package {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
     use crate::dbedit::catalog::tests::sample;
     use swofty_formats::hash::fnv1a64;
@@ -1393,9 +1399,13 @@ mod tests {
         let out = s.root.join("export.zip");
         let ids = [a.id.clone(), b.id.clone()];
         let got = export_game_files(&s, &game, &ids, &out).unwrap();
-        assert_eq!(got.changes, 5, "{got:?}");
-        assert_eq!(got.skipped.len(), 1, "{got:?}");
+        assert_eq!(got.changes, 4, "{got:?}");
+        assert_eq!(got.skipped.len(), 2, "{got:?}");
         assert!(got.skipped[0].starts_with("Grid: change skipped: "), "{got:?}");
+        assert_eq!(
+            got.skipped[1],
+            "Grid: 1 removal(s) of stock database records skipped; the game crashes when a record it reads is missing"
+        );
         assert_eq!(got.bytes, std::fs::metadata(&out).unwrap().len());
         let files = unzip_all(&out);
         assert_eq!(files.keys().collect::<Vec<_>>(), [README, crate::build::GVDB]);
@@ -1408,7 +1418,6 @@ mod tests {
             tag: 2,
             value: b"Lando".to_vec(),
         });
-        want.remove("tracks.Track_0.PoleOnRight").unwrap();
         let db = Gvdb::parse(&files[crate::build::GVDB]).unwrap();
         assert_eq!(records(&db), records(&want));
         let readme = String::from_utf8(files[README].clone()).unwrap();
@@ -1417,7 +1426,7 @@ mod tests {
             "- Grid 1.0.0 by Unknown (4 change(s))",
             &format!("game build {}", game.identity.key()),
             &format!("stock database {}", cat.build_id()),
-            "1 change(s) did not apply",
+            "2 change(s) did not apply",
             "Verify integrity of game files",
             "refuses modded launches",
         ] {

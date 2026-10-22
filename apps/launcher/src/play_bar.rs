@@ -7,15 +7,34 @@ use gpui_kit::component::{Disableable, Icon, Side, Sizable, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 
-use crate::game::{self, ago, duration};
+use crate::game::{self, Owner, ago, duration};
 
 pub(crate) const HEIGHT: f32 = 72.;
 use crate::library::plural;
 use crate::pages::avatar;
 use crate::shell::{Page, PlayState, Shell};
 use crate::theme::Palette;
+use swofty_core::install::Source;
 use swofty_core::session::LaunchMode;
 use swofty_core::updater::Gate;
+
+pub(crate) fn store_badge(source: Source, p: Palette) -> Div {
+    let (text, color) = match source {
+        Source::Steam => ("STEAM", p.accent),
+        Source::EaApp => ("EA APP", p.warning),
+        Source::Unknown => ("FOLDER", p.text_muted),
+    };
+    div()
+        .flex_shrink_0()
+        .px(px(5.))
+        .rounded(px(4.))
+        .bg(color.opacity(0.14))
+        .text_size(px(10.))
+        .line_height(px(16.))
+        .font_weight(FontWeight::BOLD)
+        .text_color(color)
+        .child(text)
+}
 
 pub(crate) fn link(id: &'static str, label: &'static str, p: Palette) -> Stateful<Div> {
     div()
@@ -56,46 +75,166 @@ fn launch_failed(row: Div, text: impl std::fmt::Display, p: Palette) -> Div {
 }
 
 impl Shell {
-    fn game_info(&self, p: Palette, wide: bool) -> impl IntoElement {
-        let (title, line) = match &self.install {
-            Some(i) => {
-                let version = i
-                    .exe_version
-                    .clone()
-                    .or_else(|| i.build_id.map(|b| b.to_string()));
-                (
-                    match version {
-                        Some(v) => format!("F1 25 · {v}"),
-                        None => "F1 25".into(),
-                    },
-                    i.mode.clone(),
+    fn game_info(&self, p: Palette, wide: bool, cx: &mut Context<Self>) -> AnyElement {
+        let width = if wide { 320. } else { 240. };
+        let text = |title: String, line: AnyElement| {
+            v_flex()
+                .flex_1()
+                .min_w_0()
+                .items_start()
+                .gap(px(1.))
+                .child(
+                    div()
+                        .w_full()
+                        .text_size(px(14.))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(p.text)
+                        .truncate()
+                        .child(title),
                 )
-            }
-            None if self.detected => (
-                "F1 25 not found".into(),
-                "No Steam library has app 3059520".into(),
-            ),
-            None => ("F1 25".into(), "Looking for the game…".into()),
+                .child(line)
         };
-        v_flex()
-            .w(px(if wide { 320. } else { 240. }))
+        let muted = |s: String| {
+            div()
+                .min_w_0()
+                .text_size(px(12.))
+                .text_color(p.text_placeholder)
+                .truncate()
+                .child(s)
+                .into_any_element()
+        };
+        let Some(i) = &self.install else {
+            let (title, line) = if self.detected {
+                ("F1 25 not found", "Not in Steam or the EA app")
+            } else {
+                ("F1 25", "Looking for the game…")
+            };
+            return v_flex()
+                .w(px(width))
+                .flex_shrink_1()
+                .min_w(px(170.))
+                .child(text(title.into(), muted(line.into())))
+                .into_any_element();
+        };
+        let title = match i.version() {
+            Some(v) => format!("F1 25 · {v}"),
+            None => "F1 25".into(),
+        };
+        let mode = match i.source {
+            Source::EaApp if !cfg!(windows) => "Proton".to_owned(),
+            _ => i.mode.clone(),
+        };
+        let line = h_flex()
+            .w_full()
+            .min_w_0()
+            .gap(px(6.))
+            .child(store_badge(i.source, p))
+            .child(muted(mode))
+            .into_any_element();
+        let shell = cx.entity().downgrade();
+        let copies = self.copies.clone();
+        let missing = self.missing_copies.clone();
+        let active = i.dir.clone();
+        Button::new("game-switcher")
+            .ghost()
+            .h(px(48.))
+            .w(px(width))
             .flex_shrink_1()
             .min_w(px(170.))
-            .gap(px(1.))
+            .px(px(8.))
+            .ml(px(-8.))
             .child(
-                div()
-                    .text_size(px(14.))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .truncate()
-                    .child(title),
+                h_flex()
+                    .w_full()
+                    .min_w_0()
+                    .gap(px(8.))
+                    .child(text(title, line))
+                    .child(
+                        Icon::new(IconName::ChevronsUpDown)
+                            .size(px(14.))
+                            .text_color(p.text_muted)
+                            .flex_shrink_0(),
+                    ),
             )
-            .child(
-                div()
-                    .text_size(px(12.))
-                    .text_color(p.text_placeholder)
-                    .truncate()
-                    .child(line),
-            )
+            .tooltip("Switch the copy of F1 25 Play uses")
+            .disabled(matches!(
+                self.play_state(),
+                PlayState::Running | PlayState::Launching | PlayState::Restoring
+            ))
+            .dropdown_menu_with_anchor(Anchor::BottomLeft, move |mut menu, _, _| {
+                menu = menu
+                    .min_w(px(360.))
+                    .max_w(px(560.))
+                    .check_side(Side::Right)
+                    .label("Play this copy");
+                for c in &copies {
+                    let (shell, dir) = (shell.clone(), c.dir.clone());
+                    let (source, version) =
+                        (c.source, c.version().unwrap_or_else(|| "version unknown".into()));
+                    let folder = c.dir.display().to_string();
+                    menu = menu.item(
+                        PopupMenuItem::element(move |_, _| {
+                            v_flex()
+                                .w_full()
+                                .min_w_0()
+                                .gap(px(3.))
+                                .py(px(3.))
+                                .child(
+                                    h_flex()
+                                        .gap(px(8.))
+                                        .child(store_badge(source, p))
+                                        .child(div().text_size(px(13.)).child(version.clone())),
+                                )
+                                .child(
+                                    div()
+                                        .text_size(px(12.))
+                                        .text_color(p.text_muted)
+                                        .truncate()
+                                        .child(folder.clone()),
+                                )
+                        })
+                        .checked(c.dir == active)
+                        .on_click(move |_, window, cx| {
+                            shell.update(cx, |s, cx| s.use_copy(dir.clone(), window, cx)).ok();
+                        }),
+                    );
+                }
+                for dir in &missing {
+                    let folder = dir.display().to_string();
+                    menu = menu.item(
+                        PopupMenuItem::element(move |_, _| {
+                            v_flex()
+                                .w_full()
+                                .min_w_0()
+                                .gap(px(3.))
+                                .py(px(3.))
+                                .child(
+                                    div()
+                                        .text_size(px(13.))
+                                        .text_color(p.text_muted)
+                                        .child("Folder not found"),
+                                )
+                                .child(
+                                    div()
+                                        .text_size(px(12.))
+                                        .text_color(p.text_placeholder)
+                                        .truncate()
+                                        .child(folder.clone()),
+                                )
+                        })
+                        .disabled(true),
+                    );
+                }
+                let shell = shell.clone();
+                menu.separator().item(
+                    PopupMenuItem::new("Add another folder…")
+                        .icon(IconName::FolderPlus)
+                        .on_click(move |_, window, cx| {
+                            shell.update(cx, |s, cx| s.locate_game(window, cx)).ok();
+                        }),
+                )
+            })
+            .into_any_element()
     }
 
     fn status(&self, state: &PlayState, p: Palette, cx: &mut Context<Self>) -> impl IntoElement {
@@ -127,6 +266,31 @@ impl Shell {
         let rebuild = !self.library.profile.is_vanilla() && !self.library.rebuild.is_empty();
         match state {
             PlayState::Running => row,
+            PlayState::Elsewhere(owner) => {
+                let text = match owner {
+                    Owner::Other(i) => match i.source {
+                        Source::Steam => "F1 25 from Steam is running",
+                        Source::EaApp => "F1 25 from the EA app is running",
+                        Source::Unknown => "F1 25 from another folder is running",
+                    },
+                    _ => {
+                        "F1 25 is running from a folder the launcher doesn't know · close it to play this copy"
+                    }
+                };
+                let row = row
+                    .text_color(p.text_muted)
+                    .child(dot(p.warning))
+                    .child(div().min_w_0().truncate().child(text));
+                match owner {
+                    Owner::Other(i) => {
+                        let dir = i.dir.clone();
+                        row.child(link("switch-to-running", "Switch to it", p).on_click(
+                            cx.listener(move |this, _, window, cx| this.use_copy(dir.clone(), window, cx)),
+                        ))
+                    }
+                    _ => row,
+                }
+            }
             PlayState::Restoring => row.child(dot(p.warning)).child("Restoring the game files…"),
             PlayState::Launching => row
                 .child(dot(p.warning))
@@ -207,7 +371,7 @@ impl Shell {
                 div()
                     .min_w_0()
                     .truncate()
-                    .child("Install it with Steam or locate its folder"),
+                    .child("Install it with Steam or the EA app, or locate its folder"),
             ),
             PlayState::Detecting => row.text_color(p.text_muted).child("Detecting F1 25…"),
             PlayState::Checking => row.text_color(p.text_muted).child("Checking conflicts…"),
@@ -299,7 +463,11 @@ impl Shell {
     fn play_caret(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let shell = cx.entity().downgrade();
         let vr = self.launch_mode().is_vr();
-        let start_steam = self.start_steam;
+        let start_store = self.start_store;
+        let start_label = match self.install.as_ref().map(|i| i.source) {
+            Some(Source::EaApp) => "Start the EA app automatically",
+            _ => "Start Steam automatically",
+        };
         Button::new("play-menu")
             .h(px(52.))
             .w(px(34.))
@@ -342,12 +510,12 @@ impl Shell {
                     )
                     .separator()
                     .item(
-                        PopupMenuItem::new("Start Steam automatically")
+                        PopupMenuItem::new(start_label)
                             .icon(IconName::CirclePower)
-                            .checked(start_steam)
+                            .checked(start_store)
                             .on_click(move |_, window, cx| {
                                 steam
-                                    .update(cx, |s, cx| s.set_start_steam(!start_steam, window, cx))
+                                    .update(cx, |s, cx| s.set_start_store(!start_store, window, cx))
                                     .ok();
                             }),
                     )
@@ -376,6 +544,7 @@ impl Shell {
             PlayState::Detecting | PlayState::Checking => {
                 (IconName::LoaderCircle, "Play", p.elevated, p.text_muted, false)
             }
+            PlayState::Elsewhere(_) => (IconName::Play, "Play", p.elevated, p.text_muted, false),
         };
         let ready = matches!(state, PlayState::Ready | PlayState::Crashed(_));
         let missing = matches!(state, PlayState::NotInstalled);
@@ -443,7 +612,7 @@ impl Shell {
                     .pl(px(16.))
                     .pr(px(16.))
                     .gap(px(20.))
-                    .child(self.game_info(p, wide))
+                    .child(self.game_info(p, wide, cx))
                     .child(self.status(&state, p, cx))
                     .child(self.big_button(&state, p, cx)),
             )

@@ -12,7 +12,7 @@ F1 25 supports VR headsets through SteamVR. The launcher starts it in VR the sam
 1. Install SteamVR from Steam and connect your headset.
 2. Select the arrow next to **Play** and choose **Play in VR**.
 
-The game starts in VR, and **Play** becomes **Play in VR**. The launcher remembers the choice for the active profile, so the next **Play in VR** starts in VR again. To go back to a normal launch, select the arrow and choose **Play**.
+The game starts in VR, and **Play** becomes **Play in VR**. From 1.3.1, an [EA app copy](/using/game-copies) gets `-vr` through the EA app's launch link. The launcher remembers the choice for the active profile, so the next **Play in VR** starts in VR again. To go back to a normal launch, select the arrow and choose **Play**.
 
 On Linux, the launcher starts SteamVR first when it isn't running, then starts the game. On Windows, the game starts SteamVR itself.
 

@@ -21,7 +21,7 @@ When Steam doesn't come up, the launch stops with one of these messages:
 
 On Linux, when Steam runs but never reports signing in, the launch goes ahead after 90 seconds.
 
-To turn this off, select the arrow next to **Play** and clear **Start Steam automatically**, or set `"start_steam": false` under `"launch"` in `$DATA/config.json`. For a single launch, run `swofty run --no-start-steam`. With it off, the launch goes ahead whether Steam runs or not. If Steam is open and the launch still waits for it, turn the setting off and tell the developers with [Send Logs to Developers](/using/send-logs).
+To turn this off, select the arrow next to **Play** and clear **Start Steam automatically**, or set `"start_store": false` under `"launch"` in `$DATA/config.json` (`"start_steam"` still works). For a single launch, run `swofty run --no-start-store`. With it off, the launch goes ahead whether Steam runs or not. If Steam is open and the launch still waits for it, turn the setting off and tell the developers with [Send Logs to Developers](/using/send-logs).
 
 The launcher doesn't start Steam for a game folder outside a Steam library, or in Steam Deck Game Mode.
 
@@ -41,6 +41,45 @@ The launcher doesn't start Steam for a game folder outside a Steam library, or i
 ```
 
 `swofty steam` shows the same check on its own, and `swofty steam --start` runs the start and the wait without launching the game. `swofty doctor` shows it in its `steam client` row.
+
+## EA app
+
+From 1.3.1, **Play** on an [EA app copy](/using/game-copies) runs in this order:
+
+1. The launcher starts the EA app when it's closed, waits up to 90 seconds for `EADesktop.exe`, then waits 10 seconds more. On Windows it runs `EALauncher.exe`. On Linux it runs `ea_launch_command` without the link. The status line reads **Starting the EA app…**.
+2. It installs your profile and offline play into the game folder.
+3. It hands the EA app the launch link `origin2://game/launch?offerIds=<ids>&autoDownload=1`, with `&cmdParams=-vr` for **Play in VR**. The IDs are the `<contentID>` values in the game folder's `__Installer/installerdata.xml`. The status line reads **Starting F1 25 through the EA app…**.
+4. It waits for F1 25 to start and close, including a second copy the EA app starts, then rolls the game folder back.
+
+When F1 25 hasn't started 3 minutes after the link, the launcher opens the EA app and the status line reads **Press Play on F1 25 in the EA app**. Pressing **Play** there starts the modded session. After 10 more minutes without the game, the launch stops and the game folder rolls back.
+
+| | Running | Launch link handed to |
+|---|---|---|
+| Windows | An `EADesktop.exe` process | The `origin2` handler in `HKEY_CLASSES_ROOT\origin2\shell\open\command`; otherwise `EALauncher.exe` from `HKEY_LOCAL_MACHINE\SOFTWARE\Electronic Arts\EA Desktop` or `Program Files\Electronic Arts\EA Desktop\EA Desktop` |
+| Linux | An `EADesktop.exe` process under Wine | The `ea_launch_command` setting; see [The EA app copy on Linux](/using/game-copies#the-ea-app-copy-on-linux) |
+
+On Windows, `ea_launch_command` replaces the handler when it's set. The EA app registers the handler with an unquoted path, and the launcher runs everything up to `.exe` as the program.
+
+When the EA app doesn't come up, the launch stops with one of these messages:
+
+| Message | What to do |
+|---|---|
+| `the EA app didn't start within 90 s; open the EA app and press Play again` | Open the EA app yourself, then select **Play** again |
+| `could not start the EA app (...); open the EA app and press Play again` | Open the EA app yourself, then select **Play** again |
+| `the EA app is closed and starting it is turned off ...` | Open the EA app, or turn **Start the EA app automatically** back on |
+| `the EA app was not found on this computer ...` | Install or repair the EA app |
+| `... Swofty starts it through the EA app with the launch.ea_launch_command setting ...` | Set `ea_launch_command` on Linux |
+
+`swofty run` and the launcher's log show each step on `[ea app]` lines:
+
+```text
+[ea app] detected: closed; starting the EA app
+[ea app] running after 6.5 s
+[ea app] asking the EA app to launch F1 25: origin2://game/launch?offerIds=16425845,16425845_oa&autoDownload=1
+[ea app] F1 25 started (pid 5120)
+```
+
+`swofty doctor` shows whether the EA app runs and how the link reaches it, in its `ea app` and `ea app hand-off` rows. `swofty run --direct` starts an EA app copy through Proton instead, without the EA app. `swofty game launch` hands the EA app the launch link for the copy as it's installed, without your profile or offline play.
 
 ## Linux: the Steam wrapper
 

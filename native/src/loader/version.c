@@ -234,7 +234,7 @@ static int scan(const char *section, const char *pattern, uintptr_t *out)
 }
 
 static SwoftyApi api = {1, slog, module_base, scan, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
-static const SwoftyApi api_v1 = {1, slog, module_base, scan, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
+static SwoftyApi api_v1 = {1, slog, module_base, scan, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
 static SwoftyCoreInitFn core_init;
 static SwoftyCoreCommitFn core_commit;
 static SwoftyCoreStageFn core_stage;
@@ -288,6 +288,8 @@ static void load_addon(const wchar_t *dir, const wchar_t *name, int core_dir)
         if (ci && cc && attach(&api)) {
             core_init = ci;
             core_commit = cc;
+            /* v1 plugins scan through the core as well, so on a packed build they are refused encrypted code. */
+            api_v1.scan = api.scan;
             core_stage = (SwoftyCoreStageFn)(void *)GetProcAddress(m, "SwoftyCoreStage");
             slog("addon %ls: provides the mixin API v%u%s", name, api.version, core_stage ? ", stage handlers" : "");
         } else {
@@ -880,48 +882,6 @@ static LONG WINAPI loader_unhandled(EXCEPTION_POINTERS *e)
     return prev_filter ? prev_filter(e) : EXCEPTION_CONTINUE_SEARCH;
 }
 
-/* On a non-matching build whose code reads as still-encrypted, write the code section to
-   swofty\ea-rdata.dump (page-guarded, size-capped) so the bytes can be analysed offline. */
-static void dump_code_section(void)
-{
-    static volatile LONG done;
-    if (InterlockedExchange(&done, 1))
-        return;
-    const Section *s = code_section();
-    if (!s)
-        return;
-    MEMORY_BASIC_INFORMATION probe;
-    if (!page_live(s->start, &probe) || page_entropy((const uint8_t *)s->start, 0x1000) < 7.0) {
-        ediag("rdata dump: skipped (section %s first page reads as plaintext or is unreadable; no dump needed)",
-              s->name);
-        return;
-    }
-    const size_t CAP = (size_t)64 << 20;
-    size_t total = s->size < CAP ? s->size : CAP;
-    wchar_t path[MAX_PATH * 2];
-    swprintf(path, MAX_PATH * 2, L"%ls\\swofty\\ea-rdata.dump", game_dir);
-    HANDLE f = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (f == INVALID_HANDLE_VALUE) {
-        ediag("rdata dump: cannot create swofty\\ea-rdata.dump (error %lu)", GetLastError());
-        return;
-    }
-    static uint8_t zero[0x1000];
-    size_t written = 0, gaps = 0;
-    for (size_t off = 0; off < total; off += 0x1000) {
-        MEMORY_BASIC_INFORMATION m;
-        const void *src = page_live(s->start + off, &m) ? (const void *)(s->start + off) : (gaps++, (const void *)zero);
-        DWORD wr;
-        if (!WriteFile(f, src, 0x1000, &wr, NULL))
-            break;
-        written += wr;
-    }
-    CloseHandle(f);
-    ediag("rdata dump: wrote %llu bytes of section %s (cap %llu, section size 0x%llx, %llu unreadable page(s) zero-"
-          "filled) to swofty\\ea-rdata.dump for offline pattern derivation",
-          (unsigned long long)written, s->name, (unsigned long long)CAP, (unsigned long long)s->size,
-          (unsigned long long)gaps);
-}
-
 static void ea_stage_probe(const char *when, int window)
 {
     if (!ea_diag)
@@ -930,7 +890,6 @@ static void ea_stage_probe(const char *when, int window)
     check_activation_gate();
     if (window) {
         gate3_verdict(when, 1);
-        dump_code_section();
     }
 }
 

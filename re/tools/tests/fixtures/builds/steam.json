@@ -1,0 +1,29 @@
+{
+ "schema": 1,
+ "build": {
+  "exe": "F1_25.exe",
+  "sha256": "d873a1c8d2044cef2fd76c99c9d5a97649c5b815d055540995105f46619865ae",
+  "size": 408063872,
+  "pe_timestamp": 1789118616,
+  "image_base": "0x140000000",
+  "distribution": "Steam",
+  "packed": false
+ },
+ "overrides": {
+  "Vm_Set_Bool": {
+   "pattern": "48 89 5C 24 ?? 57 48 83 EC 20",
+   "note": "fixture override"
+  }
+ },
+ "hints": {
+  "FeTile_Build_List": {
+   "match": "0x173df00"
+  },
+  "Ne_Log_Thunk": {
+   "match": "0x6d4c80"
+  }
+ },
+ "unresolvable": {
+  "Car_Reset_LastFittedUpgrade": "fixture: no unique pattern"
+ }
+}

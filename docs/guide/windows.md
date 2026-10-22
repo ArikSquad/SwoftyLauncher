@@ -18,11 +18,13 @@ Watch the status line next to **Play**: you'll see **Detecting F1 25…** while 
 
 ### If the game is not found
 
-If the launcher can't find the game, you'll see **Install it with Steam or locate its folder** in the status line and a **Locate game** button. To point it to your installation:
+If the launcher can't find the game, you'll see **F1 25 not found** next to the cover art and a **Locate game** button. To point it to your installation:
 
 1. Select **Locate game**.
-2. Type the F1 25 folder's path, or select **Browse…** and choose it. It's the folder with `F1_25.exe`, usually `...\steamapps\common\F1 25`.
-3. Select **Use this folder**.
+2. Type the F1 25 folder's path, or select **Browse…** and choose it. It's the folder with `F1_25.exe`, usually `...\steamapps\common\F1 25` or `C:\Program Files\EA Games\F1 25`.
+3. Select **Add and play this copy**.
+
+With F1 25 on both Steam and the EA app, select the game name next to the cover art to pick the copy **Play** uses. See [Steam and EA app copies](/using/game-copies).
 
 ## 3. Play
 

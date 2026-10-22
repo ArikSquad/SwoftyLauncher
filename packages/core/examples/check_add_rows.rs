@@ -33,6 +33,7 @@ fn main() {
     let names = Names {
         fields: &none,
         keys: RowKeys::builtin(),
+        stock: None,
     };
     let (mut warnings, mut gaps) = (0, 0);
     for rel in files {

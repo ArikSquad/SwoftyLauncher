@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "swofty.driver-manager",
   "name": "Driver Manager",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": "Swofty",
   "description": "Create new F1 25 drivers in the launcher: name, code, number, nationality, head, kit, pose, commentary name and ratings. They join careers you start afterwards as free agents.",
   "license": "AGPL-3.0-or-later",
@@ -21,6 +21,9 @@
     "affects": true,
     "message": "Careers that use its drivers won't load without it."
   },
+  "load_after": [
+    "*"
+  ],
   "launcher": {
     "program": {
       "linux": "bin/driver-manager-helper",

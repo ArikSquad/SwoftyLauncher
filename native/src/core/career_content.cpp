@@ -661,7 +661,7 @@ const SwoftyCareerContent *career_content_table()
 std::vector<CoreMixins> career_content_mixins()
 {
     std::vector<CoreMixins> out;
-    if (offered || !used() || off)
+    if (offered || !used() || off || !code_ready())
         return out;
     offered = true;
     std::string why;

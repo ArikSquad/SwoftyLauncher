@@ -270,7 +270,8 @@ void setup()
 
 void setup_once()
 {
-    std::call_once(g_setup_once, setup);
+    if (runtime::code_ready())
+        std::call_once(g_setup_once, setup);
 }
 
 const SwoftyLang table = {lang_available, lang_override_set, lang_override_clear, lang_override_clear_all,

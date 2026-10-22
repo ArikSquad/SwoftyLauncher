@@ -25,6 +25,9 @@ pub struct Report {
     /// The profile's enabled addons in load order when it was built.
     #[serde(default)]
     pub order: Vec<String>,
+    /// Per addon id, the removals of stock database records the build skipped.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub stock_removals: BTreeMap<String, usize>,
 }
 
 impl Report {
@@ -184,6 +187,7 @@ pub(crate) fn summarise(
         built_at: now(),
         pairs: pairs.into_values().collect(),
         order: Vec::new(),
+        stock_removals: BTreeMap::new(),
     };
     (report, within)
 }

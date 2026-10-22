@@ -17,7 +17,6 @@ use swofty_core::conflicts::{self, Pair, Report};
 use swofty_core::import::{self, Route};
 use swofty_core::manifest::{Category, Kind, MANIFEST_FILE};
 use swofty_core::profile::VANILLA;
-use swofty_core::updater::Part;
 
 use crate::library::{AddonItem, Changes, Source, plural};
 use crate::pages::{GUTTER, addon_icon, badge, chevron, fact, label, logo, tag};
@@ -355,6 +354,13 @@ fn checkbox(on: bool, p: Palette) -> Div {
         })
 }
 
+fn stock_removals_text(n: usize) -> String {
+    format!(
+        "{} of stock database records skipped. The game crashes when a record it reads is missing.",
+        plural(n, "removal", "removals")
+    )
+}
+
 fn pill(icon: IconName, text: impl Into<SharedString>, color: Hsla) -> Div {
     h_flex()
         .h(px(20.))
@@ -377,12 +383,7 @@ impl Shell {
     }
 
     fn update_ready(&self, m: &AddonItem) -> bool {
-        m.manifest.id == swofty_core::managed::ID
-            && self
-                .updates
-                .pending()
-                .iter()
-                .any(|(part, _)| *part == Part::Addon)
+        m.manifest.id == swofty_core::managed::ID && self.updates.plan().addon.is_some()
     }
 
     fn pairs_of<'a>(&'a self, id: &'a str) -> impl Iterator<Item = &'a Pair> + 'a {
@@ -405,6 +406,16 @@ impl Shell {
             return Vec::new();
         }
         self.pairs_of(&m.manifest.id).collect()
+    }
+
+    /// Removals of stock database records the last build of the current load order skipped.
+    fn stock_removals(&self, m: &AddonItem) -> usize {
+        match &self.addons.report {
+            Some(r) if r.is_current(&self.library.profile) && self.addon_on(m) => {
+                r.stock_removals.get(&m.manifest.id).copied().unwrap_or(0)
+            }
+            _ => 0,
+        }
     }
 
     fn changed_since(&self, id: &str, built_at: f64) -> bool {
@@ -1247,6 +1258,7 @@ impl Shell {
         let pairs = self.live_pairs(m);
         let lost = pairs.iter().filter(|pr| pr.loser == id).count();
         let won = pairs.len() - lost;
+        let kept = self.stock_removals(m);
         let trailing = if m.locked {
             h_flex()
                 .gap(px(5.))
@@ -1396,6 +1408,19 @@ impl Shell {
                     .justify_end()
                     .when(self.update_ready(m), |d| {
                         d.child(pill(IconName::CircleArrowUp, "", p.accent))
+                    })
+                    .when(kept > 0, |d| {
+                        d.child(
+                            pill(
+                                IconName::TriangleAlert,
+                                format!("{} skipped", plural(kept, "removal", "removals")),
+                                p.warning,
+                            )
+                            .id(SharedString::from(format!("kept-{id}")))
+                            .tooltip(move |window, cx| {
+                                Tooltip::new(stock_removals_text(kept)).build(window, cx)
+                            }),
+                        )
                     })
                     .when(lost > 0, |d| {
                         d.child(
@@ -1781,6 +1806,12 @@ impl Shell {
 
     fn conflicts_block(&self, id: &str, p: Palette, cx: &mut Context<Self>) -> impl IntoElement {
         let report = self.addons.report.as_ref();
+        let kept = self
+            .library
+            .addons
+            .iter()
+            .find(|a| a.manifest.id == id)
+            .map_or(0, |m| self.stock_removals(m));
         let check = self.check_button("check-conflicts", true, cx);
         let note = match report {
             _ if self.vanilla() => format!("{VANILLA} has no addons to conflict"),
@@ -1818,6 +1849,21 @@ impl Shell {
                     .text_color(p.text_placeholder)
                     .child(note),
             )
+            .when(kept > 0, |d| {
+                d.child(
+                    h_flex()
+                        .gap(px(6.))
+                        .items_start()
+                        .text_size(px(13.))
+                        .text_color(p.text_muted)
+                        .child(
+                            Icon::new(IconName::TriangleAlert)
+                                .size(px(14.))
+                                .text_color(p.warning),
+                        )
+                        .child(stock_removals_text(kept)),
+                )
+            })
             .when(report.is_some() && !stale && pairs.is_empty(), |d| {
                 d.child(
                     h_flex()

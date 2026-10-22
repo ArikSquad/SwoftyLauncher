@@ -4,6 +4,7 @@ work/
 node_modules/
 coverage/
 *.log
+!re/tools/tests/fixtures/**/*.log
 .DS_Store
 __pycache__/
 .venv/

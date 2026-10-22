@@ -1,7 +1,9 @@
 use std::process::ExitCode;
 
 use anyhow::Result;
-use swofty_core::install::{Game, Installer};
+use swofty_core::copies;
+use swofty_core::ea_app;
+use swofty_core::install::{Game, Installer, Source};
 use swofty_core::store::Store;
 use swofty_core::{STEAM_APP_ID, steam};
 
@@ -26,6 +28,38 @@ pub fn report(store: &Store, session: Option<&Game>) -> (Vec<String>, bool) {
             store.addons().map(|m| m.len()).unwrap_or(0)
         ),
     );
+    let config = store.config();
+    let found = copies::discover(&config);
+    let active = copies::active(&found, &config).cloned();
+    if found.is_empty() {
+        row("game copies", "none found (swofty game add <folder>)".into());
+    }
+    for c in &found {
+        let key = if active.as_ref().is_some_and(|a| a.dir == c.dir) {
+            "copy (active)"
+        } else {
+            "copy"
+        };
+        let version = c.version().unwrap_or_else(|| "unknown version".into());
+        row(
+            key,
+            format!(
+                "{} · {version} · {}",
+                copies::store_name(c.source),
+                c.dir.display()
+            ),
+        );
+    }
+    if active.as_ref().is_some_and(|a| a.source == Source::EaApp) {
+        let app = if ea_app::running() { "running" } else { "closed" };
+        let handoff = ea_app::handoff(config.launch.ea_launch_command.as_deref())
+            .map_or_else(|| "not found".to_owned(), |h| h.to_string());
+        row("ea app", app.into());
+        row("ea app hand-off", handoff);
+        if let Some(p) = &config.launch.ea_prefix {
+            row("ea app prefix", p.display().to_string());
+        }
+    }
     if let Some(g) = session {
         row("game dir", g.dir.display().to_string());
         row("build id", g.identity.build_id.clone());

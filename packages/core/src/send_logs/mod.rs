@@ -72,19 +72,13 @@ pub struct GameInfo {
 }
 
 impl GameInfo {
-    /// What the launcher's game detection finds: the folder saved in
-    /// `config.json`, else the Steam library that has the game.
+    /// The copy the launcher plays: the one picked in its game switcher,
+    /// else Steam's.
     pub fn detect(store: &Store) -> Self {
-        let found = crate::steam::find_game().filter(|g| g.exe().is_file());
-        let manual = store.config().game_dir.filter(|d| d.join(GAME_EXE).is_file());
-        let (dir, build_id) = match (manual, found) {
-            (Some(dir), found) => {
-                let build = found.filter(|g| g.dir == dir).and_then(|g| g.build_id);
-                (dir, build)
-            }
-            (None, Some(g)) => (g.dir, g.build_id),
-            (None, None) => return Self::default(),
+        let Some(copy) = crate::copies::find_active(&store.config()) else {
+            return Self::default();
         };
+        let (dir, build_id) = (copy.dir.clone(), copy.build_id());
         Self {
             version: crate::exe_version::read(&dir.join(GAME_EXE)),
             dir: Some(dir),

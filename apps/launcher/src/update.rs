@@ -11,7 +11,7 @@ use gpui_kit::*;
 use semver::Version;
 use swofty_core::managed;
 use swofty_core::update::{self, Install, Release};
-use swofty_core::updater::{self, Gate, Part, Phase, Track};
+use swofty_core::updater::{self, Catalog, Gate, Part, Phase, Plan, Ran, Track};
 
 use crate::play_bar::link;
 use crate::sections::{Reporter, Shared};
@@ -25,14 +25,17 @@ pub const BUTTON_WIDTH: f32 = 204.;
 pub struct Updates {
     pub copy: Result<Install, String>,
     pub launcher: Track,
-    pub addon: Track,
+    pub addon: Catalog,
     pub addon_installed: Option<Version>,
     pub phase: Phase,
     pub checking: bool,
     pub adding: bool,
     pub progress: Option<(f32, String)>,
     pub restarting: Vec<(Part, Version)>,
+    pub restarts: bool,
     pub expected: Option<String>,
+    pub held: Option<String>,
+    pub followed_up: bool,
 }
 
 impl Updates {
@@ -54,14 +57,17 @@ impl Updates {
         Self {
             copy,
             launcher: Track::default(),
-            addon: Track::default(),
+            addon: Catalog::default(),
             addon_installed: None,
             phase: Phase::Idle,
             checking: false,
             adding: false,
             progress: None,
             restarting: Vec::new(),
+            restarts: true,
             expected: std::env::var(updater::UPDATED_ENV).ok().filter(|v| !v.is_empty()),
+            held: None,
+            followed_up: false,
         }
     }
 
@@ -72,21 +78,33 @@ impl Updates {
             .flatten()
     }
 
-    fn addon_offer(&self) -> Option<&Release> {
-        self.addon_installed
-            .as_ref()
-            .and_then(|v| self.addon.offer(Some(v)))
+    pub fn plan(&self) -> Plan {
+        updater::plan(
+            &self.addon,
+            self.addon_installed.as_ref(),
+            self.launcher_offer(),
+            &update::current_version(),
+            self.held.as_deref(),
+        )
     }
 
-    pub fn pending(&self) -> Vec<(Part, Release)> {
-        updater::plan(self.addon_offer(), self.launcher_offer())
+    pub fn missing_addon(&self) -> Option<&Release> {
+        self.addon.choose(&update::current_version(), None)
     }
 
-    fn pending_versions(&self) -> Vec<(Part, Version)> {
-        self.pending()
-            .iter()
-            .filter_map(|(part, r)| r.version().map(|v| (*part, v)))
-            .collect()
+    fn waiting_notice(&self) -> Option<String> {
+        let target = self
+            .launcher_offer()
+            .and_then(Release::version)
+            .unwrap_or_else(update::current_version);
+        let c = self.addon.waiting(&target, self.addon_installed.as_ref())?;
+        Some(format!(
+            "{} {} needs Swofty Launcher {} and installs once that launcher is out. You have {}.",
+            managed::NAME,
+            c.version,
+            c.needs.as_ref()?,
+            update::current_version()
+        ))
     }
 
     fn blocked_notice(&self) -> Option<(Version, String, &str)> {
@@ -151,12 +169,12 @@ impl Shell {
                 .background_executor()
                 .spawn(async move {
                     let installed = managed::installed(&store);
-                    if addon_due {
-                        updater::check(Part::Addon, &mut addon, installed.as_ref(), true, now);
-                    }
+                    let current = update::current_version();
                     if launcher_due {
-                        let current = update::current_version();
                         updater::check(Part::Launcher, &mut launcher, Some(&current), can_install, now);
+                    }
+                    if addon_due {
+                        updater::check_importer(&store, &mut addon, installed.as_ref(), &current, now);
                     }
                     (addon, launcher, installed)
                 })
@@ -167,8 +185,15 @@ impl Shell {
         .detach();
     }
 
-    fn checked(&mut self, addon: Track, launcher: Track, installed: Option<Version>, cx: &mut Context<Self>) {
+    fn checked(
+        &mut self,
+        addon: Catalog,
+        launcher: Track,
+        installed: Option<Version>,
+        cx: &mut Context<Self>,
+    ) {
         let u = &mut self.updates;
+        log_change(Part::Addon, &u.addon.latest.error, &addon.latest.error);
         log_change(Part::Addon, &u.addon.error, &addon.error);
         log_change(Part::Launcher, &u.launcher.error, &launcher.error);
         (u.addon, u.launcher, u.addon_installed, u.checking) = (addon, launcher, installed, false);
@@ -182,9 +207,22 @@ impl Shell {
         if u.addon_installed.is_none()
             && !u.adding
             && u.phase == Phase::Idle
-            && let Some(release) = u.addon.offer(None).cloned()
+            && let Some(release) = u.missing_addon().cloned()
         {
             self.add_missing_addon(release, cx);
+        }
+        let plan = self.updates.plan();
+        if !self.updates.followed_up
+            && updater::follow_up(self.updates.expected.is_some(), &plan)
+            && self.update_gate(&self.play_state()) == Gate::Update
+        {
+            self.updates.followed_up = true;
+            let task = self.run_plan(plan, false, cx);
+            cx.spawn(async move |this, cx| {
+                let ran = task.await;
+                this.update(cx, |s, cx| s.finish_updates(ran, cx)).ok();
+            })
+            .detach();
         }
         cx.notify();
     }
@@ -195,9 +233,10 @@ impl Shell {
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_executor()
-                .spawn(
-                    async move { managed::install_release(&store, &release, &Reporter(Shared::default())) },
-                )
+                .spawn(async move {
+                    let launcher = update::current_version();
+                    managed::install_release(&store, &release, &launcher, &Reporter(Shared::default()))
+                })
                 .await;
             this.update(cx, |s, cx| {
                 s.updates.adding = false;
@@ -219,70 +258,98 @@ impl Shell {
         let busy = matches!(
             state,
             PlayState::Running
+                | PlayState::Elsewhere(_)
                 | PlayState::Launching
                 | PlayState::Restoring
                 | PlayState::Detecting
                 | PlayState::Checking
         );
-        updater::gate(&self.updates.phase, !self.updates.pending().is_empty(), busy)
+        updater::gate(&self.updates.phase, !self.updates.plan().is_empty(), busy)
     }
 
     fn start_updates(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if matches!(self.play_state(), PlayState::Running | PlayState::Launching) {
+        if matches!(
+            self.play_state(),
+            PlayState::Running | PlayState::Elsewhere(_) | PlayState::Launching
+        ) {
             window.push_notification(Notification::error("Close F1 25 before updating."), cx);
             return;
         }
-        let steps = self.updates.pending();
-        if steps.is_empty() {
+        let plan = self.updates.plan();
+        if plan.is_empty() {
             return;
         }
-        self.updates.phase = Phase::Installing;
-        let shared: Shared = Arc::new(Mutex::new(Some((0., "Starting the update".into()))));
-        let reporter = Reporter(shared.clone());
-        self.follow_update_progress(shared, cx);
-        let store = self.store.clone();
-        let copy = self.updates.copy.clone().ok();
+        let task = self.run_plan(plan, true, cx);
         cx.spawn_in(window, async move |this, cx| {
-            let ran = cx
-                .background_executor()
-                .spawn(async move {
-                    let ran = updater::run(&steps, &reporter, |part, release, progress| {
-                        updater::install(&store, copy.as_ref(), part, release, progress)
-                    });
-                    if let Ok(mut p) = reporter.0.lock() {
-                        *p = None;
-                    }
-                    ran
-                })
-                .await;
+            let ran = task.await;
             this.update_in(cx, |s, window, cx| {
-                s.updates.progress = None;
-                if let Some((_, version)) = ran.done.iter().find(|(part, _)| *part == Part::Addon) {
-                    s.updates.addon_installed = Some(version.clone());
-                    s.reload(cx);
+                if let Some(e) = s.finish_updates(ran, cx) {
+                    window.push_notification(Notification::error(e).title("Update failed"), cx);
                 }
-                match &ran.error {
-                    None => {
-                        s.updates.phase = Phase::Restarting;
-                        s.updates.restarting = ran.done.clone();
-                        let launcher = ran.launcher().map(|v| format!("v{v}"));
-                        cx.spawn(async move |this, cx| {
-                            cx.background_executor().timer(RESTART_DELAY).await;
-                            this.update(cx, |s, cx| s.restart(launcher, cx)).ok();
-                        })
-                        .detach();
-                    }
-                    Some(e) => {
-                        window.push_notification(Notification::error(e.clone()).title("Update failed"), cx);
-                        s.updates.phase = Phase::Failed(format!("Update failed: {e}"));
-                    }
-                }
-                cx.notify();
             })
             .ok();
         })
         .detach();
         cx.notify();
+    }
+
+    fn run_plan(&mut self, plan: Plan, restarts: bool, cx: &mut Context<Self>) -> Task<Ran> {
+        self.updates.phase = Phase::Installing;
+        self.updates.restarts = restarts || plan.launcher.is_some();
+        let shared: Shared = Arc::new(Mutex::new(Some((0., "Starting the update".into()))));
+        let reporter = Reporter(shared.clone());
+        self.follow_update_progress(shared, cx);
+        let store = self.store.clone();
+        let copy = self.updates.copy.clone().ok();
+        cx.background_executor().spawn(async move {
+            let current = update::current_version();
+            let ran = updater::run(&plan, &current, &reporter, |part, release, launcher, progress| {
+                updater::install(&store, copy.as_ref(), part, release, launcher, progress)
+            });
+            if let Ok(mut p) = reporter.0.lock() {
+                *p = None;
+            }
+            ran
+        })
+    }
+
+    fn finish_updates(&mut self, ran: Ran, cx: &mut Context<Self>) -> Option<String> {
+        let u = &mut self.updates;
+        u.progress = None;
+        if let Some(version) = ran.addon() {
+            u.addon_installed = Some(version.clone());
+        }
+        if let Some(tag) = ran.failed_tag(Part::Addon) {
+            u.held = Some(tag.to_owned());
+        }
+        let error = ran.error();
+        if ran.launcher().is_some() || (u.restarts && ran.restart()) {
+            u.phase = Phase::Restarting;
+            u.restarting = ran.done.clone();
+            let launcher = ran.launcher().map(|v| format!("v{v}"));
+            cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(RESTART_DELAY).await;
+                this.update(cx, |s, cx| s.restart(launcher, cx)).ok();
+            })
+            .detach();
+            cx.notify();
+            return None;
+        }
+        u.phase = match &error {
+            Some(e) => Phase::Failed(format!("Update failed: {e}")),
+            None => Phase::Idle,
+        };
+        if ran.addon().is_some() {
+            self.reload(cx);
+        }
+        cx.notify();
+        error
+    }
+
+    fn retry_addon(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.updates.held = None;
+        self.updates.phase = Phase::Idle;
+        self.start_updates(window, cx);
     }
 
     fn follow_update_progress(&mut self, shared: Shared, cx: &mut Context<Self>) {
@@ -352,8 +419,9 @@ impl Shell {
         let u = &self.updates;
         match gate {
             Gate::Update => {
-                let changes: Vec<String> = u
-                    .pending_versions()
+                let plan = u.plan();
+                let changes: Vec<String> = plan
+                    .versions()
                     .iter()
                     .map(|(part, v)| {
                         let from = match part {
@@ -366,7 +434,7 @@ impl Shell {
                         }
                     })
                     .collect();
-                let notes = u.pending().last().map(|(_, r)| r.notes_url());
+                let notes = plan.steps().first().map(|(_, r)| r.notes_url());
                 Some(
                     row.child(dot(p.accent))
                         .child(text(format!(
@@ -382,10 +450,13 @@ impl Shell {
                         }),
                 )
             }
-            Gate::Installing => Some(row.child(dot(p.warning)).child(text(format!(
-                "Updating {}. Keep the launcher open; it restarts when it's done.",
-                updater::describe(&u.pending_versions())
-            )))),
+            Gate::Installing => Some(row.child(dot(p.warning)).child(text(match u.restarts {
+                true => format!(
+                    "Updating {}. Keep the launcher open; it restarts when it's done.",
+                    updater::describe(&u.plan().versions())
+                ),
+                false => format!("Updating {}.", updater::describe(&u.plan().versions())),
+            }))),
             Gate::Restarting => Some(row.child(dot(p.success)).child(text(format!(
                 "Updated {}. Restarting the launcher…",
                 updater::describe(&u.restarting)
@@ -394,7 +465,7 @@ impl Shell {
                 let Phase::Failed(error) = &u.phase else {
                     return None;
                 };
-                if gate == Gate::Play && !u.pending().is_empty() {
+                if gate == Gate::Play && !u.plan().is_empty() {
                     return None;
                 }
                 let tip = SharedString::from(error.clone());
@@ -419,6 +490,15 @@ impl Shell {
                                     .flex_shrink_0()
                                     .on_click(cx.listener(|this, _, window, cx| this.play(window, cx))),
                             )
+                        })
+                        .when(gate == Gate::Play && u.held.is_some(), |d| {
+                            d.child(
+                                link("update-addon-again", "Try again", p)
+                                    .flex_shrink_0()
+                                    .on_click(
+                                        cx.listener(|this, _, window, cx| this.retry_addon(window, cx)),
+                                    ),
+                            )
                         }),
                 )
             }
@@ -427,7 +507,7 @@ impl Shell {
 
     pub(crate) fn update_button(&self, gate: Gate, p: Palette, cx: &mut Context<Self>) -> AnyElement {
         let u = &self.updates;
-        let summary = updater::summary(&u.pending_versions());
+        let summary = updater::summary(&u.plan().versions());
         let (progress, detail) = match &u.progress {
             Some((done, text)) => (Some(*done), text.clone()),
             None => (None, summary.clone()),
@@ -530,34 +610,41 @@ impl Shell {
         if !self.store.config().updates.check {
             return None;
         }
-        let (version, tag, reason) = self.updates.blocked_notice()?;
+        let bar = h_flex()
+            .id("update-bar")
+            .flex_shrink_0()
+            .px(px(16.))
+            .py(px(8.))
+            .gap(px(12.))
+            .bg(p.surface)
+            .border_t_1()
+            .border_color(p.border_variant)
+            .text_size(px(13.));
+        let Some((version, tag, reason)) = self.updates.blocked_notice() else {
+            let notice = self.updates.waiting_notice()?;
+            return Some(
+                bar.text_color(p.text_muted)
+                    .child(Icon::new(IconName::Info).size(px(16.)))
+                    .child(div().flex_1().min_w_0().truncate().child(notice)),
+            );
+        };
         let notes = update::notes_url(&tag);
         Some(
-            h_flex()
-                .id("update-bar")
-                .flex_shrink_0()
-                .px(px(16.))
-                .py(px(8.))
-                .gap(px(12.))
-                .bg(p.surface)
-                .border_t_1()
-                .border_color(p.border_variant)
-                .text_size(px(13.))
-                .child(
-                    Icon::new(IconName::CircleArrowUp)
-                        .size(px(16.))
-                        .text_color(p.accent),
-                )
-                .child(div().flex_1().min_w_0().truncate().child(format!(
-                    "Swofty Launcher {version} is available. {}. You have {}.",
-                    sentence(reason),
-                    update::current_version()
-                )))
-                .child(
-                    link("update-release", "Release page", p)
-                        .flex_shrink_0()
-                        .on_click(move |_, _, cx| cx.open_url(&notes)),
-                ),
+            bar.child(
+                Icon::new(IconName::CircleArrowUp)
+                    .size(px(16.))
+                    .text_color(p.accent),
+            )
+            .child(div().flex_1().min_w_0().truncate().child(format!(
+                "Swofty Launcher {version} is available. {}. You have {}.",
+                sentence(reason),
+                update::current_version()
+            )))
+            .child(
+                link("update-release", "Release page", p)
+                    .flex_shrink_0()
+                    .on_click(move |_, _, cx| cx.open_url(&notes)),
+            ),
         )
     }
 }

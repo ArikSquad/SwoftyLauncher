@@ -57,6 +57,8 @@ void md5(const void *data, size_t n, uint8_t out[16]);
 std::string hex16(uint64_t v);
 
 void on_stage(void (*fn)(int stage));
+void when_code_ready(const char *what, void (*fn)());
+bool code_ready();
 
 const Overlay *resource_overlay(DWORD wait_ms);
 void overlay_registered(const std::vector<uint64_t> &erp_hashes, size_t groups);

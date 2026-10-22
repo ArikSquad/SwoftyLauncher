@@ -31,7 +31,7 @@ Open **Driver Manager** and press **Add driver**. Set:
 
 Press **Add driver** to save. The page lists every driver with code, number, nationality, status and check result. **Edit**, **Duplicate**, **Retire** and **Restore** act on one driver. Every profile with Driver Manager on gets the same drivers.
 
-The next launch adds the drivers to the game. Start a new career to find them among the free agents. The [Career Mode Editor](/using/career-editor) swaps a free agent into a race seat in Driver Career.
+The next launch adds the drivers to the game. Start a new career to find them among the free agents. Driver Manager builds after your other addons and mods, so the drivers join the driver pools a team mod leaves. The [Career Mode Editor](/using/career-editor) swaps a free agent into a race seat in Driver Career.
 
 ## Checks
 

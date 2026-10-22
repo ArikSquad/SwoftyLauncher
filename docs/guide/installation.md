@@ -10,7 +10,7 @@ Install the launcher with the installer or by hand, then follow the setup steps 
 ## Requirements
 
 - F1 25 on Steam, with the F1 2026 season content installed.
-- The EA app version of F1 25 has experimental support; **Play** on it shows a one-time note before starting the game, and `swofty run` and `swofty apply` print the same note and continue.
+- The EA app version of F1 25 has experimental support; **Play** on it shows a one-time note before starting the game, and `swofty run` and `swofty apply` print the same note and continue. From 1.3.1, the launcher finds the EA app copy on Windows, starts it through the EA app, and switches between it and the Steam copy; see [Steam and EA app copies](/using/game-copies).
 - Windows 10 or 11 (x86-64), or Linux with Steam and Proton. Steam Deck, NixOS and Flatpak Steam work. macOS does not.
 - Free disk space: your content changes copies of the game files, so you'll need room for those copies.
 

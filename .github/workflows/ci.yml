@@ -276,6 +276,10 @@ jobs:
             echo $? > "$RUNNER_TEMP/wine-install.status"
           ) > "$RUNNER_TEMP/wine-install.log" 2>&1 &
 
+      # The binding generator, capture and verifier tests use only the standard library.
+      - name: RE tools unit tests
+        run: python3 -m unittest discover -s re/tools/tests
+
       # The native scripts pin their compilers to the maintainer's healthy cores (taskset -c 2-7,...),
       # which leaves two of a hosted runner's four. This shim drops the pin and runs the command as is.
       - name: Use every runner core
@@ -360,6 +364,10 @@ jobs:
       # A synthetic F1_25.exe carries the signatures; no game files are used.
       - name: Wine test
         run: native/test/run_wine_test.sh
+
+      # Without work/exe/F1_25.exe it runs the synthetic packed image only.
+      - name: Binding resolver Wine test
+        run: native/test/run_bind_test.sh
 
       - name: Runtime assets Wine test
         run: native/test/run_runtime_assets_test.sh

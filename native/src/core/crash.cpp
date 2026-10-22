@@ -1824,6 +1824,12 @@ void hook_heap_errors()
 
 }
 
+/* Called by the core once the game's code reads decrypted, which on a packed build is the decrypted stage. */
+void crash_game_hooks()
+{
+    hook_heap_errors();
+}
+
 namespace blackbox {
 
 void note(const char *kind, const char *a, const char *b)
@@ -1908,8 +1914,6 @@ void crash_attach(SwoftyApi *a, const std::wstring &dir)
         terminate_hook = std::move(*tp);
     if (ntt)
         nt_terminate_hook = std::move(*ntt);
-    if (!ea_build)
-        hook_heap_errors();
     cl("[crash] crash log armed: fatal exceptions (first %ld in full, deduplicated by address), the top-level "
              "filter%s, ExitProcess %s, TerminateProcess %s",
              MAX_REPORTS, previous ? " (chained to the game's)" : "", e ? "hooked" : "NOT hooked",

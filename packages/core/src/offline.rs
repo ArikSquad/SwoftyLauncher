@@ -1130,12 +1130,9 @@ mod tests {
     fn fetch_reports_an_unreachable_host() {
         let d = temp("fetch-refused");
         let marker = previous_install(&d);
-        let port = std::net::TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port();
-        let err = fetch_fake(&d, &format!("http://127.0.0.1:{port}"), &fake_release())
+        // Port 1 is below every system's ephemeral range, so no other test's server
+        // can be listening there; a port freed by a bind could be taken in between.
+        let err = fetch_fake(&d, "http://127.0.0.1:1", &fake_release())
             .unwrap_err()
             .to_string();
         assert!(err.contains("could not download"), "{err}");

@@ -172,10 +172,10 @@ bool career_start_live()
     return live;
 }
 
-void career_start_setup()
+namespace {
+
+void start_gate_setup()
 {
-    if (!enabled("career", nullptr))
-        return;
     uintptr_t at = find(S_RUN_ROUTE, "start gate", "career");
     if (!at) {
         swofty::log("[career] start gate: Vm_Run_Route did not resolve; career.starting never fires and blocks cannot "
@@ -199,6 +199,14 @@ void career_start_setup()
     }
     swofty::log("[career] start gate: live on Vm_Run_Route (base+0x%llx), %zu block(s) held",
                 (unsigned long long)(at - swofty::api->module_base()), n);
+}
+
+}
+
+void career_start_setup()
+{
+    if (enabled("career", nullptr))
+        when_code_ready("career: start gate (Vm_Run_Route hook)", start_gate_setup);
 }
 
 }

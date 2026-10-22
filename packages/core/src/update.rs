@@ -70,13 +70,17 @@ pub fn asset_name(tag: &str, os: &str, arch: &str) -> Option<String> {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct Release {
     pub tag_name: String,
     #[serde(default)]
     pub html_url: String,
     #[serde(default)]
     pub assets: Vec<Asset>,
+    #[serde(default)]
+    pub draft: bool,
+    #[serde(default)]
+    pub prerelease: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -290,12 +294,19 @@ pub fn get_text(url: &str, timeout: Duration) -> Result<String> {
         .map_err(|e| Error::Other(format!("{url}: {e}")))
 }
 
-pub fn fetch_release(url: &str, timeout: Duration) -> std::result::Result<Release, Failure> {
+pub fn fetch_json<T: serde::de::DeserializeOwned>(
+    url: &str,
+    timeout: Duration,
+) -> std::result::Result<T, Failure> {
     let text = request(url, false, Some(timeout))?
         .into_body()
         .read_to_string()
         .map_err(|e| Failure::Failed(format!("{url}: {e}")))?;
     serde_json::from_str(&text).map_err(|e| Failure::Failed(format!("{url}: {e}")))
+}
+
+pub fn fetch_release(url: &str, timeout: Duration) -> std::result::Result<Release, Failure> {
+    fetch_json(url, timeout)
 }
 
 pub fn fetch_latest(timeout: Duration) -> Result<Release> {
@@ -796,6 +807,7 @@ mod tests {
             tag_name: "v0.2.1".into(),
             html_url: String::new(),
             assets: vec![asset(name, 1, None)],
+            ..Default::default()
         };
         assert!(!verifiable(&release, &release.assets[0]));
         release.assets[0].digest = Some(format!("sha256:{}", "a".repeat(64)));
@@ -816,6 +828,7 @@ mod tests {
                 asset("swofty-launcher-v0.2.1-windows-x86_64.zip", 2, None),
                 asset(SUMS_FILE, 3, None),
             ],
+            ..Default::default()
         };
         assert_eq!(release.asset("linux", "x86_64").unwrap().size, 1);
         assert_eq!(release.asset("windows", "x86_64").unwrap().size, 2);

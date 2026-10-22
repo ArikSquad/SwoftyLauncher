@@ -17,10 +17,10 @@ To stop following the logs while keeping the game running, press **Ctrl-C**. Whe
 | Flag | Purpose |
 |---|---|
 | `--profile <name>` | Choose a profile; otherwise, use the active profile |
-| `--game <dir>` | Set the game folder if it wasn't found |
-| `--restart` | Close a running F1 25 first |
+| `--game <dir>` | Play this game folder instead of the [active copy](/using/game-copies) |
+| `--restart` | Close the copy's running F1 25 first. Another copy's game, or one the launcher can't match to a copy, is left running |
 | `--direct` | Launch directly instead of asking Steam |
-| `--no-start-steam` | Don't start Steam when it's closed. The launcher's **Start Steam automatically** setting does the same for every launch |
+| `--no-start-store` | Don't start Steam or the EA app when it's closed. `--no-start-steam` still works. The launcher's **Start Steam automatically** setting does the same for every launch |
 | `--vr` | Start the game in VR, like Steam's **Launch in SteamVR mode**: passes `-vr` to the game and, on Linux, starts SteamVR first. See [Playing in VR](/using/vr) |
 | `--winedebug <channels>` | Choose Wine log channels |
 | `--exe <file>` | Use a copy of `F1_25.exe` to identify crash locations |
@@ -236,7 +236,7 @@ The launcher's update check reads `"updates"` in `$DATA/config.json`:
 
 Older configs may still hold `skip`, `checked_at` and `latest` under `"updates"`, and `checked_at` under `"managed"`. The launcher ignores them and drops them the next time it saves the config.
 
-The launcher reads the latest release tag from the `releases/latest` redirect on github.com, which doesn't count against GitHub's API rate limit. It calls the GitHub API once for each new release, to get its downloads, and waits for `Retry-After` or the rate limit reset when GitHub refuses a request.
+The launcher reads the latest release tag from the `releases/latest` redirect on github.com, which doesn't count against GitHub's API rate limit. It calls the GitHub API once for each new launcher release, to get its downloads, and waits for `Retry-After` or the rate limit reset when GitHub refuses a request. For Simplified for Swofty, it lists the 20 newest releases through the GitHub API when it opens, when the latest tag changes and every 15 minutes. It reads each new release's launcher requirement once, from a `swofty.json` release asset when there is one and from the package otherwise.
 
 To test an update, set `SWOFTY_UPDATE_PRETEND_VERSION=0.1.0`. The launcher and `swofty update` will treat the running version as `0.1.0`.
 
@@ -248,6 +248,19 @@ swofty steam [--start]
 
 Shows whether Steam is running and signed in, with what the launcher read it from, and exits with an error when it isn't. With `--start`, it starts Steam when it's closed and waits up to 90 seconds for it to sign in, as **Play** does, without launching the game. See [Steam](/reference/launch#steam).
 
+## `swofty game`
+
+```sh
+swofty game list
+swofty game use <steam|ea|folder>
+swofty game add <folder>
+swofty game launch [--vr] [--no-start-store] [--game <dir>]
+```
+
+From 1.3.1. `list` shows every copy of F1 25 the launcher found, with its store, version and folder, and `*` next to the active one. `use` picks the copy that `run`, `apply`, `build` and the launcher play. `add` adds a folder with `F1_25.exe` and makes it the active copy. See [Steam and EA app copies](/using/game-copies).
+
+`launch` asks the EA app to start the EA app copy as it's installed, without your profile or offline play, so EA AntiCheat runs. It starts the EA app first when it's closed, prints the game's process ID once F1 25 starts, and exits. `--vr` passes `-vr`. It works only on an EA app copy.
+
 ## `swofty doctor`
 
-Use `swofty doctor` to check Steam, your game install, Proton, launch options and the data folder. You'll also see any changes from the backed-up originals. The `steam client` row shows whether Steam is running and signed in. On Windows, the `run as admin` row shows whether `F1_25.exe` is set to run as administrator, which stops modded sessions from starting (see [Launching the game](/reference/launch#windows)).
+Use `swofty doctor` to check Steam, your game copies (`copy` rows, the active one marked), your game install, Proton, launch options and the data folder. You'll also see any changes from the backed-up originals. The `steam client` row shows whether Steam is running and signed in. On Windows, the `run as admin` row shows whether `F1_25.exe` is set to run as administrator, which stops modded sessions from starting (see [Launching the game](/reference/launch#windows)).

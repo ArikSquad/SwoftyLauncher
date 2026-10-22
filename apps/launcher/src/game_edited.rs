@@ -4,6 +4,7 @@ use gpui_kit::component::dialog::DialogFooter;
 use gpui_kit::component::{Icon, WindowExt, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
+use swofty_core::install::Source;
 
 use swofty_core::recovery::Blocked;
 use swofty_core::stock;
@@ -176,7 +177,8 @@ fn step(n: u32, title: &'static str, body: &'static str, p: Palette) -> impl Int
         )
 }
 
-fn steps(edited: &Edited, p: Palette) -> impl IntoElement {
+fn steps(edited: &Edited, source: Source, p: Palette) -> impl IntoElement {
+    let (verify, how) = verify_steps(source);
     v_flex()
         .gap(px(9.))
         .child(label("WHAT TO DO", p))
@@ -186,13 +188,7 @@ fn steps(edited: &Edited, p: Palette) -> impl IntoElement {
             "If you put mod files in the F1 25 folder by hand, take them back out.",
             p,
         ))
-        .child(step(
-            2,
-            "Verify the game files in Steam",
-            "Steam > right-click F1 25 > Properties > Installed Files > Verify integrity of game \
-             files, then press Play again.",
-            p,
-        ))
+        .child(step(2, verify, how, p))
         .child(step(
             3,
             "Add mods the safe way",
@@ -207,6 +203,21 @@ fn steps(edited: &Edited, p: Palette) -> impl IntoElement {
                 p,
             ))
         })
+}
+
+/// How the active copy's store checks the game files.
+pub(crate) fn verify_steps(source: Source) -> (&'static str, &'static str) {
+    match source {
+        Source::EaApp => (
+            "Repair the game in the EA app",
+            "EA app > Library > F1 25 > the three dots > Repair, then press Play again.",
+        ),
+        _ => (
+            "Verify the game files in Steam",
+            "Steam > right-click F1 25 > Properties > Installed Files > Verify integrity of game \
+             files, then press Play again.",
+        ),
+    }
 }
 
 fn discord_link(p: Palette) -> Stateful<Div> {
@@ -283,6 +294,7 @@ impl Shell {
         };
         let shell = cx.entity().downgrade();
         let p = palette(cx);
+        let source = self.install.as_ref().map_or(Source::Steam, |i| i.source);
         window.open_alert_dialog(cx, move |alert, window, _| {
             let (shell, edited) = (shell.clone(), edited.clone());
             let vh = f32::from(window.viewport_size().height);
@@ -300,7 +312,7 @@ impl Shell {
                         .child(illustration(p))
                         .child(heading(&edited, p))
                         .child(files_box(&edited, p))
-                        .child(steps(&edited, p)),
+                        .child(steps(&edited, source, p)),
                 )
                 .footer(footer(shell, edited.leftovers(), p))
         });

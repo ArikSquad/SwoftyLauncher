@@ -229,6 +229,32 @@ pub struct FileRecord {
     pub source: Source,
 }
 
+pub const EXE_HASHES_FILE: &str = "state/exe_hash.json";
+
+/// `state/exe_hash.json`: each game exe's digest by path, with the
+/// `path|size|mtime` stamp it had when hashed. Up to 1.3.0 the file held a
+/// single `[stamp, digest]` pair.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ExeHashes {
+    Each(BTreeMap<String, (String, String)>),
+    One(String, String),
+}
+
+impl ExeHashes {
+    fn read(path: &Path) -> BTreeMap<String, (String, String)> {
+        match crate::read_json(path) {
+            Ok(Self::Each(each)) => each,
+            Ok(Self::One(stamp, sha)) => stamp
+                .rsplitn(3, '|')
+                .nth(2)
+                .map(|exe| BTreeMap::from([(exe.to_owned(), (stamp.clone(), sha))]))
+                .unwrap_or_default(),
+            Err(_) => BTreeMap::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Identity {
     pub build_id: String,
@@ -245,6 +271,15 @@ impl Identity {
     }
 
     pub fn detect_cached(data: &Path, game_dir: &Path, build_id: Option<u64>) -> Result<Self> {
+        Self::detect_cached_with(data, game_dir, build_id, sha256_file)
+    }
+
+    fn detect_cached_with(
+        data: &Path,
+        game_dir: &Path,
+        build_id: Option<u64>,
+        hash: impl FnOnce(&Path) -> Result<String>,
+    ) -> Result<Self> {
         let exe = game_dir.join(crate::GAME_EXE);
         let meta = std::fs::metadata(&exe).map_err(io_err(&exe))?;
         let mtime = meta
@@ -252,14 +287,17 @@ impl Identity {
             .ok()
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map_or(0, |d| d.as_secs());
-        let stamp = format!("{}|{}|{mtime}", exe.display(), meta.len());
-        let cache = data.join("state/exe_hash.json");
-        let cached: Option<(String, String)> = crate::read_json(&cache).ok();
-        let sha = match cached {
-            Some((s, sha)) if s == stamp => sha,
+        let key = exe.display().to_string();
+        let stamp = format!("{key}|{}|{mtime}", meta.len());
+        let cache = data.join(EXE_HASHES_FILE);
+        let mut known = ExeHashes::read(&cache);
+        let sha = match known.get(&key) {
+            Some((s, sha)) if *s == stamp => sha.clone(),
             _ => {
-                let sha = sha256_file(&exe)?;
-                crate::write_json(&cache, &(stamp, sha.clone()))?;
+                let sha = hash(&exe)?;
+                known.retain(|k, _| Path::new(k).is_file());
+                known.insert(key, (stamp, sha.clone()));
+                crate::write_json_shared(&cache, &known)?;
                 sha
             }
         };
@@ -542,5 +580,62 @@ mod tests {
         hashes.save();
         assert!(Hashes::load(&data).files.is_empty());
         std::fs::remove_dir_all(&data).ok();
+    }
+
+    #[test]
+    fn switching_copies_hashes_each_exe_once() {
+        let root = std::env::temp_dir().join(format!("swofty-exe-hashes-{}", std::process::id()));
+        std::fs::remove_dir_all(&root).ok();
+        let (data, steam, ea) = (root.join("data"), root.join("steam"), root.join("ea"));
+        for (dir, bytes) in [(&steam, &b"MZ steam"[..]), (&ea, &b"MZ ea"[..])] {
+            std::fs::create_dir_all(dir).unwrap();
+            std::fs::write(dir.join(crate::GAME_EXE), bytes).unwrap();
+        }
+        let hashed = std::cell::RefCell::new(Vec::new());
+        let detect = |dir: &Path| {
+            Identity::detect_cached_with(&data, dir, None, |exe| {
+                hashed.borrow_mut().push(exe.to_path_buf());
+                sha256_file(exe)
+            })
+            .unwrap()
+        };
+        let keys: Vec<String> = [&steam, &ea, &steam, &ea, &steam].map(|d| detect(d).key()).into();
+        assert_eq!(
+            *hashed.borrow(),
+            [steam.join(crate::GAME_EXE), ea.join(crate::GAME_EXE)]
+        );
+        assert_eq!(keys[0], format!("exe-{0}-{0}", &sha256_bytes(b"MZ steam")[..12]));
+        assert_eq!((&keys[0], &keys[1]), (&keys[2], &keys[3]));
+        assert_ne!(keys[0], keys[1]);
+
+        std::fs::write(ea.join(crate::GAME_EXE), b"MZ ea, updated").unwrap();
+        assert_eq!(detect(&ea).exe_sha256, sha256_bytes(b"MZ ea, updated"));
+        assert_eq!(detect(&steam).exe_sha256, sha256_bytes(b"MZ steam"));
+        assert_eq!(hashed.borrow().len(), 3);
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn keeps_the_single_exe_digest_an_older_launcher_saved() {
+        let root = std::env::temp_dir().join(format!("swofty-exe-hash-v1-{}", std::process::id()));
+        std::fs::remove_dir_all(&root).ok();
+        let (data, game) = (root.join("data"), root.join("game"));
+        std::fs::create_dir_all(&game).unwrap();
+        let exe = game.join(crate::GAME_EXE);
+        std::fs::write(&exe, b"MZ").unwrap();
+        let mtime = std::fs::metadata(&exe)
+            .unwrap()
+            .modified()
+            .unwrap()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let stamp = format!("{}|2|{mtime}", exe.display());
+        crate::write_json(&data.join(EXE_HASHES_FILE), &(stamp, "a".repeat(64))).unwrap();
+        let id = Identity::detect_cached_with(&data, &game, Some(7), |_| panic!("hashed again")).unwrap();
+        assert_eq!(id.exe_sha256, "a".repeat(64));
+        let saved = ExeHashes::read(&data.join(EXE_HASHES_FILE));
+        assert_eq!(saved.keys().collect::<Vec<_>>(), [&exe.display().to_string()]);
+        std::fs::remove_dir_all(&root).ok();
     }
 }
