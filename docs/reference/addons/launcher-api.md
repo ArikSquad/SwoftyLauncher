@@ -298,10 +298,10 @@ The addon calls let a plugin install, list, turn on and off, reorder and remove 
 - *(1.3.0)* The list is in the active profile's load order: the addons that are on, in the order a build loads them, then the rest by id.
 - *(1.3.0)* `position` is the addon's index in the active profile's addon list, from `0`, or `null` when the profile doesn't list it. An addon that is off keeps its place in that list. Launchers before 1.3.0 list the addons by id and send no `position`, which `AddonInfo::position` reads as `None`.
 
-- `install_addon` installs the addon at `path` as a drop on the window does: a `.swoftyaddon`, a zip that holds an addon, or a folder with `swofty.json`. It replaces an installed copy with the same id and returns the addon in the shape above. It doesn't turn the addon on.
+- `install_addon` installs the addon at `path` as a drop on the window does: a `.swoftyaddon`, a zip that holds an addon, or a folder with `swofty.json`. It replaces an installed copy with the same id and returns the addon in the shape above. It doesn't turn the addon on. *(1.3.0)* It refuses an addon with a `dbedit.` id unless the folder or zip is a DB Editor addon, which installs as a new DB Editor addon.
 - `set_addon_enabled` turns an addon on or off in the active profile. It refuses to turn off an addon that is always on, or one that [keeps data in the saves](./manifest#saves), since only the **Addons** page warns about that.
 - `remove_addon` deletes the addon and takes it out of every profile, as **Remove** on the **Addons** page does. A plugin can't remove its own addon, a built-in one, one the launcher manages or one that keeps data in the saves.
-- `move_addon` moves an addon `delta` places in the active profile's load order: negative moves it up, positive down. A later addon wins where two write the same thing. The move stops at either end of the list, and `swofty.core` stays first. The addon must be in the profile's list, which `set_addon_enabled` puts it in.
+- `move_addon` moves an addon `delta` places in the active profile's addon list: negative moves it up, positive down. The list holds the addons that are on and the ones turned off, and `delta` counts both. The addons that are on load in that list's order, and a later addon wins where two write the same thing. The move stops at either end of the list, and `swofty.core` stays first. The addon must be in the profile's list, which `set_addon_enabled` puts it in.
 
 A Rust helper that turns files into addons can write the addon folder with `swofty_addon::builder::AddonBuilder` *(1.3.0)*, then pass it to `install_addon`:
 
@@ -310,12 +310,18 @@ let mut b = AddonBuilder::new("you.okayama", "Okayama", "You");
 b.category = Some(Category::Tracks);
 b.origin = Some(Origin { tool: "you.importer".into(), tool_version: None, file: Some("okayama.zip".into()), sha256: None });
 b.text("*", "lng_okayama", "Okayama").track(&unpacked, "okayama");
-b.write(&cx.cache_dir.join("okayama"))?;
+let out = cx.cache_dir.join("okayama");
+let _ = std::fs::remove_dir_all(&out);
+b.write(&out)?;
 ```
 
 - `db`, `db_ops`, `erp`, `text`, `lang`, `file` and `track` add operations. `file` and `track` copy their source into the addon; `source` copies a file or folder an ERP or language op names.
 - `write` writes `swofty.json`, `database.json`, `erp.json`, `text.json` and `tracks.json` as needed, and sets `compat.launcher` to `>=1.3.0`, or to the crate's own version when it is older.
-- `write` refuses an invalid or `swofty.` id, a path that leaves the addon or the game folder, a file put twice, an op source that wasn't added, a source outside the addon folder, a folder that isn't empty, and programs (`.dll`, `.exe`, `.asi`, `.so`, `.dylib`, `.bat`).
+- `write` sets `kind` to each of `database`, `erp`, `text` and `files` the addon has ops for.
+- `write` refuses an invalid, `swofty.` or `dbedit.` id, a path that leaves the addon or the game folder, a file put twice, an op source that wasn't added, and a source outside the addon folder.
+- `write` refuses programs (`.dll`, `.exe`, `.asi`, `.so`, `.dylib`, `.bat`) as a source file, a path inside the addon or a game path.
+- `write` refuses a symbolic link or junction anywhere in a source.
+- `write` refuses an output folder that isn't empty, and the example removes it first.
 
 The template uses state to track which items are on, reading it here and writing it when the selection changes:
 

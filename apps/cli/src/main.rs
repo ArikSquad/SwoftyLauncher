@@ -41,27 +41,29 @@ struct Cli {
     command: Command,
 }
 
+const GAME_HELP: &str = "Game folder (default: the one the launcher located, else Steam's)";
+
 #[derive(Subcommand)]
 enum Command {
     #[command(about = "Launch F1 25 modded and offline, streaming logs; use as the Steam launch option")]
     Run(run::RunArgs),
     #[command(about = "Resolve the profile and build its overlay")]
     Build {
-        #[arg(long, help = "Game folder (default: discovered from Steam)")]
+        #[arg(long, help = GAME_HELP)]
         game: Option<PathBuf>,
     },
     #[command(about = "Show which addons override which in the profile's last build")]
     Conflicts {
         #[arg(long, help = "Build the profile without installing it and show its conflicts")]
         check: bool,
-        #[arg(long, help = "Game folder (default: discovered from Steam)")]
+        #[arg(long, help = GAME_HELP)]
         game: Option<PathBuf>,
     },
     #[command(
         about = "Build the profile and install it into the game folder (database, tracks); swofty restore undoes it"
     )]
     Apply {
-        #[arg(long, help = "Game folder (default: discovered from Steam)")]
+        #[arg(long, help = GAME_HELP)]
         game: Option<PathBuf>,
     },
     #[command(about = "Report drift from the baseline and check the game files parse and round-trip")]
@@ -93,7 +95,7 @@ enum Command {
     Profile(ProfileCommand),
     #[command(about = "Browse the game database and edit DB Editor addons")]
     Db {
-        #[arg(long, help = "Game folder (default: discovered from Steam)")]
+        #[arg(long, help = GAME_HELP)]
         game: Option<PathBuf>,
         #[command(subcommand)]
         cmd: db::DbCommand,

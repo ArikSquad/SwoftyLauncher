@@ -4,7 +4,7 @@ use std::time::Instant;
 use gpui_kit::{Image, ImageFormat};
 use swofty_core::asset::{AssetOp, OpFile};
 use swofty_core::launcher::Summary;
-use swofty_core::manifest::AddonManifest;
+use swofty_core::manifest::{AddonManifest, Category};
 use swofty_core::profile::{Profile, VANILLA};
 use swofty_core::registry::{Host, Registry};
 use swofty_core::store::Store;
@@ -15,12 +15,19 @@ pub struct AddonItem {
     pub enabled: bool,
     pub locked: bool,
     pub icon: Option<AddonIcon>,
-    /// Only tracks (see [`swofty_core::tracks::is_track_addon`]): listed on the
-    /// Tracks page while one is open in the profile.
+    /// Only tracks (see [`swofty_core::tracks::is_track_addon`]): listed on an
+    /// addon's Tracks page while the sidebar shows one.
     pub track: bool,
     /// Built from the DB Editor (see [`swofty_core::dbedit::package::is_package`]).
     pub package: bool,
     pub source: Source,
+}
+
+impl AddonItem {
+    /// The manifest's category; a track addon without one is under Tracks.
+    pub fn category(&self) -> Option<Category> {
+        self.manifest.category.or(self.track.then_some(Category::Tracks))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -170,6 +177,23 @@ pub struct SectionItem {
     pub icon: Option<AddonIcon>,
 }
 
+impl SectionItem {
+    /// The Mod Importer's old Tracks page, which the sidebar leaves out.
+    pub fn is_importer_tracks(&self) -> bool {
+        self.addon == swofty_core::managed::ID && self.spec.id == TRACKS_SECTION
+    }
+}
+
+fn tracks_page(sections: &[SectionItem]) -> Option<usize> {
+    sections
+        .iter()
+        .position(|s| s.spec.id == TRACKS_SECTION && !s.is_importer_tracks())
+}
+
+fn listed(addons: &[AddonItem], tracks_page: Option<usize>) -> impl Iterator<Item = &AddonItem> {
+    addons.iter().filter(move |m| !(m.track && tracks_page.is_some()))
+}
+
 fn section_icon(store: &Store, addon: &str, section: &str) -> Option<AddonIcon> {
     let path = store
         .addons_dir()
@@ -205,8 +229,8 @@ pub struct Library {
     pub profiles: Vec<ProfileItem>,
     pub sections: Vec<SectionItem>,
     pub registry: Registry,
-    /// The section an enabled addon offers with id `tracks`, which lists
-    /// track packages and track addons together.
+    /// The section with id `tracks` the sidebar shows, which lists track
+    /// packages and track addons together.
     pub tracks_page: Option<usize>,
     pub error: Option<String>,
     pub loaded: Instant,
@@ -277,7 +301,7 @@ impl Library {
                 })
             })
             .collect();
-        let tracks_page = sections.iter().position(|s| s.spec.id == TRACKS_SECTION);
+        let tracks_page = tracks_page(&sections);
         Self {
             tracks_page,
             rebuild: profile.rebuild_pending(&manifests),
@@ -292,10 +316,9 @@ impl Library {
     }
 
     /// The addons the Addons page lists: track addons are on the Tracks page
-    /// while one is open in the profile.
+    /// while the sidebar shows one.
     pub fn listed(&self) -> impl Iterator<Item = &AddonItem> {
-        let tracks = self.tracks_page.is_some();
-        self.addons.iter().filter(move |m| !(m.track && tracks))
+        listed(&self.addons, self.tracks_page)
     }
 
     pub fn active(&self) -> Option<&ProfileItem> {
@@ -323,9 +346,59 @@ pub fn plural(n: usize, one: &str, many: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use swofty_core::manifest::{AddonManifest, Category};
     use swofty_core::store::Store;
+    use swofty_core::view::{Icon, SectionSpec};
 
-    use super::{AddonIcon, section_icon};
+    use super::{AddonIcon, AddonItem, SectionItem, Source, listed, section_icon, tracks_page};
+
+    fn addon(id: &str, track: bool) -> AddonItem {
+        let manifest = AddonManifest::parse(&format!(
+            r#"{{"schema_version":1,"id":"{id}","name":"{id}","version":"1.0.0","author":"t","compat":{{"game":"f1_25"}}}}"#
+        ))
+        .unwrap();
+        AddonItem {
+            manifest,
+            enabled: true,
+            locked: false,
+            icon: None,
+            track,
+            package: false,
+            source: Source::Installed,
+        }
+    }
+
+    fn section(addon: &str, id: &str) -> SectionItem {
+        SectionItem {
+            addon: addon.into(),
+            spec: SectionSpec {
+                id: id.into(),
+                title: id.into(),
+                icon: Icon::Map,
+            },
+            icon: None,
+        }
+    }
+
+    #[test]
+    fn lists_track_addons_unless_the_sidebar_shows_a_tracks_page() {
+        let addons = [addon("t.mod", false), addon("t.okayama", true)];
+        let ids = |page| -> Vec<&str> { listed(&addons, page).map(|m| m.manifest.id.as_str()).collect() };
+        let importer = [
+            section(swofty_core::managed::ID, "mods"),
+            section(swofty_core::managed::ID, "tracks"),
+        ];
+        assert_eq!(tracks_page(&importer), None);
+        assert_eq!(ids(tracks_page(&importer)), ["t.mod", "t.okayama"]);
+        let other = [
+            section(swofty_core::managed::ID, "mods"),
+            section("t.tracks", "tracks"),
+        ];
+        assert_eq!(tracks_page(&other), Some(1));
+        assert_eq!(ids(tracks_page(&other)), ["t.mod"]);
+        assert_eq!(addons[1].category(), Some(Category::Tracks));
+        assert_eq!(addons[0].category(), None);
+    }
 
     #[test]
     fn a_section_icon_comes_from_the_addon_sections_folder() {

@@ -54,6 +54,16 @@ impl Archive {
             .ok_or_else(|| fail(format!("{name}: not found")))
     }
 
+    // Read for a stock copy only: every slot still the game's, in its place.
+    fn untouched(&self) -> bool {
+        self.slots.len() == self.file.erp.resources.len()
+            && self
+                .slots
+                .iter()
+                .enumerate()
+                .all(|(i, s)| matches!(s, Slot::Stock(j) if *j == i))
+    }
+
     fn owned(&mut self, i: usize) -> Result<&mut Resource> {
         if let Slot::Stock(j) = self.slots[i] {
             self.slots[i] = Slot::Owned(self.file.load(&self.file.erp.resources[j])?);
@@ -623,7 +633,10 @@ impl<'a> ErpBuild<'a> {
     }
 
     pub fn changed(&self) -> impl Iterator<Item = &str> {
-        self.erps.keys().map(String::as_str)
+        self.erps
+            .iter()
+            .filter(|(_, a)| !a.untouched())
+            .map(|(rel, _)| rel.as_str())
     }
 
     pub fn take_mipmaps(&mut self) -> BTreeMap<String, PathBuf> {
@@ -703,7 +716,7 @@ impl<'a> ErpBuild<'a> {
 
     pub fn write(self, out: &Path) -> Result<Vec<String>> {
         let mut written = Vec::new();
-        for (rel, archive) in self.erps {
+        for (rel, archive) in self.erps.into_iter().filter(|(_, a)| !a.untouched()) {
             write_archive(out, &rel, archive)?;
             written.push(rel);
         }

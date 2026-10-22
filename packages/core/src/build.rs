@@ -41,6 +41,7 @@ pub const SAVED_FILE: &str = "built.json";
 const SAVED_VERSION: u32 = 1;
 const PACKED_AGE: std::time::Duration = std::time::Duration::from_secs(30 * 24 * 3600);
 pub const ADDONS_DIR: &str = "addons";
+const LOCK_FILE: &str = "build.lock";
 
 #[derive(Debug, Clone, Default)]
 pub struct Built {
@@ -365,7 +366,33 @@ impl Saved {
     }
 }
 
+/// Held while a build writes a profile's overlay; another build of the
+/// profile, in this process or another, waits until it is dropped.
+pub struct BuildLock {
+    _file: std::fs::File,
+}
+
+pub fn lock(store: &Store, profile: &str) -> Result<BuildLock> {
+    let dir = store.overlays_dir(profile);
+    std::fs::create_dir_all(&dir).map_err(io_err(&dir))?;
+    let path = dir.join(LOCK_FILE);
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&path)
+        .map_err(io_err(&path))?;
+    file.lock().map_err(io_err(&path))?;
+    Ok(BuildLock { _file: file })
+}
+
 pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
+    build_as(store, profile, game, false)
+}
+
+/// A `checking` build gives addon build hooks a host that lists addons but
+/// cannot install, remove, turn on or move them.
+pub(crate) fn build_as(store: &Store, profile: &str, game: &Game, checking: bool) -> Result<Built> {
     let registry = store.registry()?;
     let addons = registry.manifests();
     let p = store.profile(profile)?;
@@ -383,11 +410,13 @@ pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
         profile: profile.into(),
         built_at: crate::conflicts::now(),
         pairs: Vec::new(),
+        order: p.enabled().map(str::to_owned).collect(),
     };
     if p.is_vanilla() {
         built.plan = Plan::vanilla();
         return Ok(built);
     }
+    let _lock = lock(store, profile)?;
     let mut hasher = Sha256::new();
     let packed = store.root.join("cache").join(crate::cache::PACKED_DIR);
     swofty_formats::erp::cache_compressed(Some(packed.clone()));
@@ -471,7 +500,7 @@ pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
             });
         }
         if let Some(entry) = registry.get(id).filter(|e| !e.declared) {
-            let host = Host::new(store, id, &p, Some(game))?;
+            let host = Host::new(store, id, &p, Some(game))?.read_only(checking);
             let options = m.options.iter().map(|o| (o.id.clone(), p.option(m, o))).collect();
             let batch = entry
                 .addon
@@ -593,6 +622,7 @@ pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
     let (lines_at, warnings_at) = (built.lines.len(), built.warnings.len());
     if let Some(saved) = Saved::load(&built.overlay, &built.buildhash).filter(|s| s.usable(store, game)) {
         saved.restore(&mut built);
+        built.report.order = p.enabled().map(str::to_owned).collect();
         crate::write_json(&crate::conflicts::path(store, profile), &built.report)?;
         return Ok(built);
     }
@@ -976,7 +1006,10 @@ pub fn build(store: &Store, profile: &str, game: &Game) -> Result<Built> {
     let (report, within) = crate::conflicts::summarise(profile, &planned.conflicts, &record);
     built.warnings.extend(report.pairs.iter().map(|p| p.line(&name)));
     built.warnings.extend(within);
-    built.report = report;
+    built.report = Report {
+        order: built.report.order.clone(),
+        ..report
+    };
     built.conflicts = planned.conflicts;
     built.waiting = planned.waiting;
     if !built.plan.is_vanilla() {
@@ -1335,7 +1368,18 @@ mod tests {
                         origin,
                     },
                 ],
-                lines: vec![format!("profile {}", cx.cx.profile.name)],
+                lines: vec![
+                    format!("profile {}", cx.cx.profile.name),
+                    match cx
+                        .cx
+                        .addons()
+                        .map(|a| (a.list(), a.set_enabled(cx.cx.addon, true)))
+                    {
+                        Some((Ok(_), Ok(()))) => "turned on".to_owned(),
+                        Some((listed, turned)) => format!("{:?} {:?}", listed.err(), turned.err()),
+                        None => "no addons".to_owned(),
+                    },
+                ],
                 ..AssetBatch::default()
             })
         }
@@ -1476,6 +1520,7 @@ mod tests {
             ("t.a", [0, 9, 2, 3]),
             ("t.b", [0, 1, 2, 8]),
             ("t.c", [0, 7, 2, 3]),
+            ("t.same", [0, 1, 2, 3]),
         ] {
             let src = root.join("src").join(id);
             std::fs::create_dir_all(&src).unwrap();
@@ -1519,6 +1564,16 @@ mod tests {
             .map(|c| c[0])
             .collect();
         assert_eq!(slices, [0, 7, 2, 8]);
+        store
+            .update_profile("default", |p| {
+                ["t.a", "t.b", "t.c"]
+                    .iter()
+                    .try_for_each(|id| p.set_enabled(id, false))
+            })
+            .unwrap();
+        let same = build(&store, "default", &game).unwrap();
+        assert!(!same.plan.data.contains_key(ui), "{:?}", same.plan.data);
+        assert!(!same.overlay.join(ui).exists());
         std::fs::remove_dir_all(&root).ok();
     }
 
@@ -1584,9 +1639,19 @@ mod tests {
             locked: false,
             default_on: true,
         }]);
+        let checked = build_as(&store, "default", &game, true).unwrap();
+        assert!(
+            checked.lines.contains(
+                &"t.hook: None Some(Other(\"addons can't be changed while conflicts are checked\"))"
+                    .to_owned()
+            ),
+            "{:?}",
+            checked.lines
+        );
         let built = build(&store, "default", &game).unwrap();
         assert_eq!(built.order, [CORE_ID, "t.hook"]);
         assert!(built.lines.contains(&"t.hook: profile default".to_owned()));
+        assert!(built.lines.contains(&"t.hook: turned on".to_owned()));
         assert!(built.warnings.contains(&"t.hook: 22 cars".to_owned()));
         assert!(
             built
@@ -2007,7 +2072,18 @@ mod tests {
             all
         };
         let before = listing(&dir);
-        let checked = crate::conflicts::check(&store, "default", &game).unwrap();
+        let held = lock(&store, "default").unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                tx.send(crate::conflicts::check(&store, "default", &game))
+                    .unwrap()
+            });
+            let waited = rx.recv_timeout(std::time::Duration::from_millis(300));
+            assert!(waited.is_err(), "the check ran while another build held the lock");
+            drop(held);
+        });
+        let checked = rx.recv().unwrap().unwrap();
         assert_eq!(listing(&dir), before);
         let built = build(&store, "default", &game).unwrap();
         assert!(
@@ -2030,6 +2106,7 @@ mod tests {
             built.warnings
         );
         let report = crate::conflicts::last(&store, "default").unwrap();
+        assert!(report.is_current(&store.profile("default").unwrap()));
         assert_eq!(report.pairs, checked.pairs);
         assert_eq!(report.pairs, built.report.pairs);
         let pair = &report.pairs[0];

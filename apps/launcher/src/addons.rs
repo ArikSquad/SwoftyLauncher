@@ -164,7 +164,7 @@ pub(crate) struct AddonsPage {
     animating: bool,
     report: Option<Report>,
     read_at: Option<Instant>,
-    checking: bool,
+    pub(crate) checking: bool,
     open_pairs: HashSet<(String, String)>,
     changes: HashMap<String, Changes>,
     _search: Subscription,
@@ -331,7 +331,7 @@ impl Shell {
 
     fn matches_facet(&self, m: &AddonItem, f: Facet) -> bool {
         match f {
-            Facet::Category(c) => m.manifest.category == c,
+            Facet::Category(c) => m.category() == c,
             Facet::Type(t) => m.manifest.kind.iter().any(|k| Type::of(*k) == t),
             Facet::Source(s) => m.source == s,
             Facet::State(State::On) => self.addon_on(m),
@@ -562,8 +562,13 @@ impl Shell {
         }
     }
 
+    fn launching(&self) -> bool {
+        use crate::shell::PlayState::{Launching, Restoring, Running};
+        matches!(self.play_state(), Launching | Restoring | Running)
+    }
+
     fn check_conflicts(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.addons.checking || self.vanilla() {
+        if self.addons.checking || self.vanilla() || self.launching() {
             return;
         }
         self.addons.checking = true;
@@ -1118,7 +1123,7 @@ impl Shell {
                     .text_color(p.text_placeholder),
             )
         });
-        let category = man.category.map_or("Uncategorised", Category::label);
+        let category = m.category().map_or("Uncategorised", Category::label);
         let row = h_flex()
             .id(SharedString::from(format!("addon-{id}")))
             .relative()
@@ -1199,7 +1204,7 @@ impl Shell {
                             .child(
                                 div()
                                     .flex_shrink_0()
-                                    .text_color(if man.category.is_some() {
+                                    .text_color(if m.category().is_some() {
                                         p.text_muted
                                     } else {
                                         p.text_placeholder
@@ -1394,7 +1399,7 @@ impl Shell {
             .when_some(order_line, |d, line| d.child(fact("Load order", line, p)))
             .child(fact(
                 "Category",
-                man.category.map_or("Uncategorised", Category::label),
+                m.category().map_or("Uncategorised", Category::label),
                 p,
             ))
             .child(fact("Source", source, p))
@@ -1552,18 +1557,23 @@ impl Shell {
                 "Check conflicts"
             })
             .loading(self.addons.checking)
-            .disabled(self.vanilla() || self.addons.checking)
+            .disabled(self.vanilla() || self.addons.checking || self.launching())
             .on_click(cx.listener(|this, _, window, cx| this.check_conflicts(window, cx)));
         let note = match report {
             _ if self.vanilla() => format!("{VANILLA} has no addons to conflict"),
             None => "Not checked yet. Checking plans this profile's build without installing it.".to_owned(),
+            Some(r) if !r.is_current(&self.library.profile) => format!(
+                "Checked {}, before addons were turned on, off or moved. Check again to update it.",
+                ago(r.built_at)
+            ),
             Some(r) if self.changed_since(id, r.built_at) => format!(
                 "Checked {}, before this addon last changed. Check again to include it.",
                 ago(r.built_at)
             ),
             Some(r) => format!("Checked {}", ago(r.built_at)),
         };
-        let stale = report.is_some_and(|r| self.changed_since(id, r.built_at));
+        let stale = report
+            .is_some_and(|r| !r.is_current(&self.library.profile) || self.changed_since(id, r.built_at));
         let pairs: Vec<&Pair> = self.pairs_of(id).collect();
         let rows: Vec<AnyElement> = pairs
             .iter()

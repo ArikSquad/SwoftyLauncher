@@ -974,6 +974,7 @@ impl Shell {
 
     pub(crate) fn go(&mut self, page: Page, cx: &mut Context<Self>) {
         let moved = self.page != page;
+        self.db_leaving(page, cx);
         self.page = page;
         if let Page::Section(i) = page {
             self.fetch_views(Some(i), cx);

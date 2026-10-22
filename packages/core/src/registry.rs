@@ -146,6 +146,7 @@ impl Registry {
 pub struct ProfileState {
     store: Store,
     profile: String,
+    read_only: bool,
 }
 
 impl StateStore for ProfileState {
@@ -162,6 +163,15 @@ impl StateStore for ProfileState {
 }
 
 impl ProfileState {
+    fn writable(&self) -> swofty_addon::Result<()> {
+        match self.read_only {
+            true => Err(swofty_addon::Error::Other(
+                "addons can't be changed while conflicts are checked".into(),
+            )),
+            false => Ok(()),
+        }
+    }
+
     fn info(&self, m: &AddonManifest, p: &Profile) -> AddonInfo {
         AddonInfo {
             id: m.id.clone(),
@@ -193,6 +203,7 @@ impl AddonStore for ProfileState {
     }
 
     fn install(&self, path: &Path) -> swofty_addon::Result<AddonInfo> {
+        self.writable()?;
         let m = self.store.install_addon(path).map_err(other)?;
         let p = self.store.profile(&self.profile).map_err(other)?;
         Ok(self.info(&m, &p))
@@ -201,6 +212,7 @@ impl AddonStore for ProfileState {
     // As the Addons page does, except that turning off or removing an addon that
     // keeps data in the saves is refused here, since only that page warns about it.
     fn set_enabled(&self, id: &str, on: bool) -> swofty_addon::Result<()> {
+        self.writable()?;
         let registry = self.store.registry().map_err(other)?;
         let Some(entry) = registry.get(id) else {
             return Err(swofty_addon::Error::Other(format!(
@@ -220,6 +232,7 @@ impl AddonStore for ProfileState {
     }
 
     fn remove(&self, id: &str) -> swofty_addon::Result<()> {
+        self.writable()?;
         if let Some(m) = self.store.addons().map_err(other)?.get(id)
             && SavesWarning::of(m).is_some()
         {
@@ -232,6 +245,7 @@ impl AddonStore for ProfileState {
     }
 
     fn move_addon(&self, id: &str, delta: isize) -> swofty_addon::Result<()> {
+        self.writable()?;
         self.store
             .update_profile(&self.profile, |p| p.move_addon(id, delta))
             .map_err(other)
@@ -345,8 +359,14 @@ impl Host {
             state: ProfileState {
                 store: store.clone(),
                 profile: profile.name.clone(),
+                read_only: false,
             },
         })
+    }
+
+    pub fn read_only(mut self, on: bool) -> Self {
+        self.state.read_only = on;
+        self
     }
 
     pub fn cx(&self) -> Cx<'_> {

@@ -22,6 +22,16 @@ pub struct Report {
     /// Seconds since the Unix epoch.
     pub built_at: f64,
     pub pairs: Vec<Pair>,
+    /// The profile's enabled addons in load order when it was built.
+    #[serde(default)]
+    pub order: Vec<String>,
+}
+
+impl Report {
+    /// Whether the profile still turns on the same addons in the same order.
+    pub fn is_current(&self, profile: &crate::profile::Profile) -> bool {
+        self.order.iter().map(String::as_str).eq(profile.enabled())
+    }
 }
 
 /// `winner` loads after `loser` and replaces what both write.
@@ -173,6 +183,7 @@ pub(crate) fn summarise(
         profile: profile.to_owned(),
         built_at: now(),
         pairs: pairs.into_values().collect(),
+        order: Vec::new(),
     };
     (report, within)
 }
@@ -202,7 +213,7 @@ pub fn last(store: &Store, profile: &str) -> Option<Report> {
 
 /// Plans the profile's build without installing it and returns its conflicts.
 pub fn check(store: &Store, profile: &str, game: &Game) -> Result<Report> {
-    Ok(crate::build::build(store, profile, game)?.report)
+    Ok(crate::build::build_as(store, profile, game, true)?.report)
 }
 
 #[cfg(test)]
@@ -304,6 +315,27 @@ mod tests {
             "412 database values, 3 archive resources, 2 files, 5 text strings, 1 track"
         );
         assert!(Changes::default().is_empty());
+    }
+
+    #[test]
+    fn a_report_goes_stale_when_the_load_order_or_switches_change() {
+        let old: Report = serde_json::from_str(r#"{"profile":"p","built_at":1.0,"pairs":[]}"#).unwrap();
+        let mut p = crate::profile::Profile::new("p");
+        for id in ["t.a", "t.b"] {
+            p.set_enabled(id, true).unwrap();
+        }
+        assert!(!old.is_current(&p));
+        let report = Report {
+            order: p.enabled().map(str::to_owned).collect(),
+            ..old
+        };
+        assert!(report.is_current(&p));
+        p.move_addon("t.b", -1).unwrap();
+        assert!(!report.is_current(&p));
+        p.move_addon("t.b", 1).unwrap();
+        assert!(report.is_current(&p));
+        p.set_enabled("t.a", false).unwrap();
+        assert!(!report.is_current(&p));
     }
 
     #[test]

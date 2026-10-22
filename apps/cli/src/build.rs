@@ -132,7 +132,8 @@ fn conflicts_text(
         for item in &pair.items {
             out.push_str(&format!("  {item}\n"));
         }
-        let more = (pair.database + pair.resources + pair.files).saturating_sub(pair.items.len());
+        let more =
+            (pair.database + pair.resources + pair.files + pair.strings).saturating_sub(pair.items.len());
         if more > 0 && pair.items.len() >= swofty_core::conflicts::MAX_ITEMS {
             out.push_str(&format!("  and {more} more\n"));
         }
@@ -551,7 +552,7 @@ mod tests {
         let mut report = Report {
             profile: "default".into(),
             built_at: 1.0,
-            pairs: Vec::new(),
+            ..Report::default()
         };
         let names = BTreeMap::from([("t.b".to_owned(), "Second".to_owned())]);
         assert_eq!(
@@ -571,5 +572,13 @@ mod tests {
             conflicts_text(&report, &names),
             "Second overrides t.a on 1 database value and 1 file\n  rules.laps\n  x/a.dds\n"
         );
+        let max = swofty_core::conflicts::MAX_ITEMS;
+        report.pairs[0] = Pair {
+            database: max,
+            strings: 2,
+            items: vec!["rules.laps".into(); max],
+            ..report.pairs[0].clone()
+        };
+        assert!(conflicts_text(&report, &names).ends_with("  and 3 more\n"));
     }
 }
