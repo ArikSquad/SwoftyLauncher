@@ -119,7 +119,9 @@ impl Gvdb {
     pub fn parse(data: &[u8]) -> Result<Self> {
         let mut r = Reader::new(data, 0);
         let count = r.u32()? as usize;
-        let mut records = Vec::with_capacity(count);
+        // A record takes at least 14 bytes, so reserve no more than the data can hold:
+        // a foreign file's count is garbage and would otherwise reserve gigabytes.
+        let mut records = Vec::with_capacity(count.min(data.len() / 14));
         let mut stream = 0;
         for _ in 0..count {
             let lo = r.u32()?;
@@ -279,6 +281,13 @@ mod tests {
     fn rejects_trailing_bytes() {
         let mut bytes = sample().to_bytes();
         bytes.push(0);
+        assert!(Gvdb::parse(&bytes).is_err());
+    }
+
+    #[test]
+    fn rejects_a_count_the_data_cannot_hold_without_reserving_it() {
+        let mut bytes = u32::MAX.to_le_bytes().to_vec();
+        bytes.extend_from_slice(&[0; 64]);
         assert!(Gvdb::parse(&bytes).is_err());
     }
 }
