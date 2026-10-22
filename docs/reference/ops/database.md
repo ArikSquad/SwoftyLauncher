@@ -141,6 +141,8 @@ Adding a row also updates the table's `_instancecount_`. The game ignores rows b
 
 `add-row` needs the table's real path, written with row numbers or selectors. A `{hash}` placeholder can be used for `set`, but not for `add-row`.
 
+A mod made for an earlier game version can lower a count and leave stock rows above it. `add-row` writes the new row over those stock keys and the build prints `reuses N stock key(s) of a row above the table's count`. A key another addon wrote at the new row's number still fails the op with `already exists`.
+
 ## Settings
 
 A `db` [option](/reference/addons/manifest#options) changes operations at build time:
