@@ -258,6 +258,7 @@ impl Shell {
         let busy = matches!(
             state,
             PlayState::Running
+                | PlayState::Elsewhere(_)
                 | PlayState::Launching
                 | PlayState::Restoring
                 | PlayState::Detecting
@@ -267,7 +268,10 @@ impl Shell {
     }
 
     fn start_updates(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if matches!(self.play_state(), PlayState::Running | PlayState::Launching) {
+        if matches!(
+            self.play_state(),
+            PlayState::Running | PlayState::Elsewhere(_) | PlayState::Launching
+        ) {
             window.push_notification(Notification::error("Close F1 25 before updating."), cx);
             return;
         }

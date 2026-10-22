@@ -370,15 +370,6 @@ pub fn stop_process(pid: u32) -> std::io::Result<()> {
     Ok(())
 }
 
-pub fn stop_game() -> std::io::Result<()> {
-    if cfg!(windows) {
-        Command::new("taskkill").args(["/IM", GAME_EXE]).status()?;
-    } else {
-        Command::new("pkill").args(["-TERM", "-x", GAME_EXE]).status()?;
-    }
-    Ok(())
-}
-
 /// Ask the running games of the copy in `dir` to close, and return their
 /// pids. A game that cannot be told to be that copy's is left running.
 pub fn stop_game_in(dir: &Path) -> std::io::Result<Vec<u32>> {
