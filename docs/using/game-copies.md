@@ -50,19 +50,20 @@ To turn this off, select the arrow next to **Play** and clear **Start Steam auto
 
 ## The EA app copy on Linux
 
-On Linux, the launcher hands the EA app a launch link through a command you set. Set `ea_launch_command` under `"launch"` in `$DATA/config.json`, with `{url}` where the link goes:
+On Linux, the launcher hands the EA app a launch link through a command you set. Set `ea_launch_command` under `"launch"` in `$DATA/config.json`, with `{url}` where the link goes. This example is for a script whose `run` starts the EA app in its Proton prefix and whose `wine` runs a program in the running EA app's prefix:
 
 ```json
 {
   "launch": {
-    "ea_launch_command": "/path/to/ea-app.sh wine 'C:\\Program Files\\Electronic Arts\\EA Desktop\\EA Desktop\\EALauncher.exe' {url}",
+    "ea_launch_command": "u={url}; L='C:\\Program Files\\Electronic Arts\\EA Desktop\\EA Desktop\\EALauncher.exe'; if [ -z \"$u\" ]; then exec setsid -f /path/to/ea-app.sh run \"$L\"; else exec /path/to/ea-app.sh wine \"$L\" \"$u\"; fi",
     "ea_prefix": "/path/to/EAApp/pfx"
   }
 }
 ```
 
-- `ea_launch_command` runs with `sh -c`. It must reach the EA app that is already running when there is one, in the same Wine prefix.
-- When the EA app is closed, **Play** runs `ea_launch_command` with `{url}` left out to start it, then waits up to 90 seconds for `EADesktop.exe`. When that command exits with an error, the launch link starts the EA app instead.
+- `ea_launch_command` runs with `sh -c`. With a link, it must reach the EA app that is already running, in the same Wine prefix.
+- When the EA app is closed, **Play** runs `ea_launch_command` with `{url}` left out to start it, waits up to 90 seconds for `EADesktop.exe`, then 10 seconds more before it hands over the link. When that command exits with an error, the launch link starts the EA app instead.
+- The EA app must keep running after `swofty` exits. A sandbox that ends with its parent, such as `steam-run`, needs `setsid -f` in front of the command that starts the EA app.
 - `ea_prefix` is the EA app's Wine prefix: the folder with `user.reg`, or the Proton folder that holds `pfx`. The launcher writes the in-game loader's DLL setting there.
 
 Without `ea_launch_command`, **Play** on the EA app copy stops with a message naming the setting.
