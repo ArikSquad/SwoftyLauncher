@@ -74,6 +74,7 @@ pub fn run(store: &Store, profile: &str, args: RunArgs) -> Result<ExitCode> {
     if wrapped {
         return wrapper(store, profile, &args, &g);
     }
+    crate::build::supported(&g)?;
     let game = g.dir.clone();
     if let Some(running) = game_processes().first() {
         if !args.restart {
