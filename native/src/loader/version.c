@@ -234,7 +234,7 @@ static int scan(const char *section, const char *pattern, uintptr_t *out)
 }
 
 static SwoftyApi api = {1, slog, module_base, scan, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
-static const SwoftyApi api_v1 = {1, slog, module_base, scan, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
+static SwoftyApi api_v1 = {1, slog, module_base, scan, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
 static SwoftyCoreInitFn core_init;
 static SwoftyCoreCommitFn core_commit;
 static SwoftyCoreStageFn core_stage;
@@ -288,6 +288,8 @@ static void load_addon(const wchar_t *dir, const wchar_t *name, int core_dir)
         if (ci && cc && attach(&api)) {
             core_init = ci;
             core_commit = cc;
+            /* v1 plugins scan through the core as well, so on a packed build they are refused encrypted code. */
+            api_v1.scan = api.scan;
             core_stage = (SwoftyCoreStageFn)(void *)GetProcAddress(m, "SwoftyCoreStage");
             slog("addon %ls: provides the mixin API v%u%s", name, api.version, core_stage ? ", stage handlers" : "");
         } else {
