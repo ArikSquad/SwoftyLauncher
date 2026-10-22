@@ -35,6 +35,7 @@ You can write the plugin in any language that reads and writes a line of JSON. T
 | [Forms](#forms) | Number, text, slider, select and toggle fields with an Apply button |
 | [Tables](#tables) | Sortable columns, searchable rows and editable cells |
 | [Live pages](#live-pages) | `tick` from the launcher and `invalidate` from the plugin |
+| [Task lists](#task-lists) | A dialog that ticks off items while an event runs |
 | [The build reply](#the-build-reply) | Asset ops returned at build |
 | [Importers and drag-and-drop](#importers-and-drag-and-drop) | Claiming dropped files and folders |
 | [Commands](#commands) | `swofty` subcommands |
@@ -165,7 +166,7 @@ From `hello.params`, you get your addon's id, its two directories, the active pr
 
 `launcher` is missing before 1.0.10. Everything this page marks *1.0.10* needs that launcher: set `"compat": { "launcher": ">=1.0.10" }` in `swofty.json` when you use it. An older launcher fails a view that holds a block it doesn't know.
 
-A launcher that answers the [addon host calls](#managing-addons) also lists them in `host_calls`: `["addons", "install_addon", "set_addon_enabled", "remove_addon"]`. From 1.3.0 the list ends with `"move_addon"`. An older launcher leaves `host_calls` out.
+A launcher that answers the [addon host calls](#managing-addons) also lists them in `host_calls`: `["addons", "install_addon", "set_addon_enabled", "remove_addon"]`. From 1.3.0 `"move_addon"` follows them, and the list always ends with `"tasks"` ([Task lists](#task-lists)), with or without the addon calls. An older launcher that answers no addon host calls leaves `host_calls` out.
 
 - Every profile shares `data_dir`. Use `cache_dir` for anything your plugin caches; it also holds the plugin's `helper.log`.
 - Check `profile.enabled` to see whether your addon is on in the active profile. `profile.vanilla` identifies the untouched profile: it takes no addons and refuses state writes.
@@ -209,11 +210,12 @@ Use the path and arguments in `command` to identify what to run. The path starts
 
 ### Host calls the plugin sends back
 
-While handling a request, you can call back to the launcher. Include an `id` when you expect a reply; send `progress` without an `id`.
+While handling a request, you can call back to the launcher. Include an `id` when you expect a reply; send `progress` and `tasks` without an `id`.
 
 | `method` | `params` | `result` |
 |---|---|---|
 | `progress` *(notification)* | `{ done, text }` | — |
+| `tasks` *(notification, 1.3.0)* | `{ title, subtitle, items }` | — ([Task lists](#task-lists)) |
 | `get_state` | — | the addon's per-profile state, or `null` |
 | `set_state` | the new state value | `null`, or an error on the vanilla profile |
 | `game_build_key` | — | the game build's key, or `null` |
@@ -722,6 +724,41 @@ launcher  {"id":13,"method":"view","params":{"section":"overview"}}
 - With `section`, the launcher asks for that section's view again; without one, for every section of your plugin.
 - It asks only for sections that are open or that it has already loaded, and only once for several invalidations that arrive together. While another call runs, it asks once that call ends.
 - An `invalidate` has no `id` and gets no reply.
+
+## Task lists {#task-lists}
+
+*Launcher 1.3.0.* While an `event` runs, a plugin can show a dialog that ticks off a list of items, such as the mods a first-run migration converts. Send `tasks` only when `hello.params.host_calls` lists it.
+
+```json
+{ "method": "tasks", "params": {
+  "title": "Migrating your mods to Swofty addons",
+  "subtitle": "Each mod in your library becomes an addon.",
+  "items": [
+    { "id": "okayama", "label": "Okayama", "state": "done" },
+    { "id": "liveries-2026", "label": "2026 liveries", "state": "running" },
+    { "id": "old-hud", "label": "Old HUD", "state": "failed", "note": "No archive inside the zip" },
+    { "id": "sounds", "label": "Sounds", "state": "waiting" }
+  ] } }
+```
+
+| Field | Value |
+|---|---|
+| `title` | The dialog's heading. |
+| `subtitle` | A line under the heading. Optional. |
+| `items` | One row each, in order. |
+| `id` | The item's key, unique in the list. |
+| `label` | The row's text. |
+| `state` | `waiting`, `running`, `done`, `failed` or `skipped`. |
+| `note` | Short text under the label, such as why the item failed. Optional. |
+
+- Each `tasks` carries the whole list and replaces the last one.
+- The first `tasks` during an event opens the dialog, and later ones update it. It stays open when the player switches pages.
+- **Close** stays off until the event returns.
+- When the event returns, a `notice` effect or an error shows inside the dialog instead of as a notification.
+- When an item has failed, the dialog also offers **Send Logs to Developers**.
+- The launcher shows lists sent while it handles an `event` and ignores the rest.
+- A `tasks` has no `id` and gets no reply.
+- A Rust helper calls `cx.tasks(&TaskList { … })`, which sends nothing and returns `false` when the launcher doesn't list `tasks`.
 
 ## The build reply {#the-build-reply}
 
