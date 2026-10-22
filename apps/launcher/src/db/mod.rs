@@ -1661,7 +1661,7 @@ impl Shell {
 
     pub(crate) fn career_link() -> LinkSpec {
         LinkSpec {
-            label: "Open Career Editor".into(),
+            label: "Open Career Mode Editor".into(),
             text: String::new(),
             addon: Some(CAREER_EDITOR.into()),
             section: Some("editor".into()),

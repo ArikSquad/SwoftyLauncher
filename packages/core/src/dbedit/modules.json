@@ -511,9 +511,6 @@
      "tab": "drivers",
      "url": "https://f1.swofty.net/using/career-editor"
     }
-   ],
-   "notes": [
-    "Changes apply to careers started afterwards."
    ]
   },
   {
@@ -757,9 +754,6 @@
      "section": "Identity",
      "help": "The id other tables use to find this row."
     }
-   ],
-   "notes": [
-    "Changes apply to careers started afterwards."
    ]
   },
   {
@@ -1482,8 +1476,7 @@
     }
    ],
    "notes": [
-    "A career picks one schedule at its start.",
-    "Changes apply to careers started afterwards."
+    "A career picks one schedule at its start."
    ]
   },
   {
@@ -1681,8 +1674,7 @@
     }
    ],
    "notes": [
-    "A career picks one schedule at its start.",
-    "Changes apply to careers started afterwards."
+    "A career picks one schedule at its start."
    ]
   },
   {
@@ -1919,9 +1911,6 @@
      "tab": "team",
      "url": "https://f1.swofty.net/using/career-editor"
     }
-   ],
-   "notes": [
-    "Changes apply to careers started afterwards."
    ]
   },
   {
@@ -2085,8 +2074,7 @@
     }
    ],
    "notes": [
-    "Grids with no seats of their own read their entrants from the grids they reference.",
-    "Changes apply to careers started afterwards."
+    "Grids with no seats of their own read their entrants from the grids they reference."
    ]
   },
   {
@@ -2305,9 +2293,6 @@
      "section": "Identity",
      "help": "Numeric id the game keys its runtime data on."
     }
-   ],
-   "notes": [
-    "Changes apply to careers started afterwards."
    ]
   },
   {
@@ -2843,8 +2828,7 @@
     }
    ],
    "notes": [
-    "Position 1 gets the first garage.",
-    "Changes apply to careers started afterwards."
+    "Position 1 gets the first garage."
    ]
   },
   {
@@ -3676,8 +3660,7 @@
     }
    ],
    "notes": [
-    "Empty cells fall back to the season's parent dataset, then its parent.",
-    "Changes apply to careers started afterwards."
+    "Empty cells fall back to the season's parent dataset, then its parent."
    ]
   },
   {
@@ -3730,8 +3713,7 @@
     }
    ],
    "notes": [
-    "Lists sorted by date order their events by the weekend dates in Track settings.",
-    "Changes apply to careers started afterwards."
+    "Lists sorted by date order their events by the weekend dates in Track settings."
    ]
   },
   {
@@ -3770,9 +3752,6 @@
      "section": "Identity",
      "help": "The id other tables use to find this row."
     }
-   ],
-   "notes": [
-    "Changes apply to careers started afterwards."
    ]
   },
   {
@@ -3875,9 +3854,6 @@
      "tab": "season",
      "url": "https://f1.swofty.net/using/career-editor"
     }
-   ],
-   "notes": [
-    "Changes apply to careers started afterwards."
    ]
   },
   {
@@ -4206,9 +4182,6 @@
      "tab": "season",
      "url": "https://f1.swofty.net/using/career-editor"
     }
-   ],
-   "notes": [
-    "Changes apply to careers started afterwards."
    ]
   },
   {
@@ -4406,9 +4379,6 @@
      "section": "Identity",
      "help": "Numeric id the game keys its runtime data on."
     }
-   ],
-   "notes": [
-    "Changes apply to careers started afterwards."
    ]
   },
   {
