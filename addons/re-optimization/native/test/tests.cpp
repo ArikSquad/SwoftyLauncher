@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 xanpavle. Ported to a Swofty Launcher addon by Swofty.
 //
-// Host tests for the settings delta, the override table and the upscaler choice
-// (profiletest, tunetest and the upscaler matrix of the original test.bat).
+// Host tests for the settings delta, the override table, the upscaler choice
+// (profiletest, tunetest and the upscaler matrix of the original test.bat) and the
+// enforcement table and modes (enforcetest).
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -10,6 +11,7 @@
 #include <string>
 
 #include "../src/delta.hpp"
+#include "../src/enforce.hpp"
 #include "../src/gpu.hpp"
 #include "../src/overrides.hpp"
 
@@ -258,9 +260,70 @@ static void test_gpu()
     CHECK(score(rtx) > score(amd) && score(amd) > score(arc));
 }
 
+static void test_enforce(const char *globals_path)
+{
+    namespace e = reopt::enforce;
+    CHECK(e::kIntCount == 12);
+    CHECK(e::kBoolCount == 17);
+    int on = 0, off = 0, god = 0;
+    for (const e::BoolSite &b : e::kBoolSites) {
+        (b.tuned ? on : off)++;
+        god += std::strcmp(b.attr, "godRays") == 0;
+    }
+    CHECK(on == 10 && off == 7 && god == 2);
+    struct Want {
+        const char *attr;
+        int32_t value;
+    };
+    const Want ints[] = {{"worldShadowMapSize", 2048}, {"nightShadowMapSize", 2048}, {"skyShadowMapSize", 2048},
+                         {"spotShadowMapSize", 2048},  {"skyShadowCascadeCount", 4}, {"nightShadowSourceCount", 4},
+                         {"spotShadowSampling", 2},    {"sampling", 2},             {"volumetricFogMapWidth", 512},
+                         {"volumetricFogMapHeight", 288}, {"billboardDistance", 2500}, {"sizeInMiB", 2048}};
+    for (const Want &w : ints) {
+        int found = 0;
+        for (const e::IntSite &s : e::kIntSites)
+            found += std::strcmp(s.attr, w.attr) == 0 && s.tuned == w.value;
+        CHECK(found == 1);
+    }
+
+    std::string globals = read_file(globals_path);
+    CHECK(!globals.empty());
+    auto in_kb = [&](const char *binding) { return globals.find(std::string("\t") + binding + "\tcode\t") != std::string::npos; };
+    for (const e::IntSite &s : e::kIntSites)
+        CHECK(in_kb(s.binding));
+    for (const e::BoolSite &b : e::kBoolSites)
+        CHECK(in_kb(b.binding));
+
+    CHECK(e::parse_mode("target") == e::Mode::Target);
+    CHECK(e::parse_mode("Cheaper") == e::Mode::Cheaper);
+    CHECK(e::parse_mode("off") == e::Mode::Off);
+    CHECK(e::parse_mode("") == e::Mode::Cheaper);
+    CHECK(std::strcmp(e::mode_name(e::Mode::Cheaper), "cheaper") == 0);
+
+    CHECK(e::int_value(e::Mode::Target, 4096, 2048) == 2048);
+    CHECK(e::int_value(e::Mode::Target, 1024, 2048) == 2048);
+    CHECK(e::int_value(e::Mode::Cheaper, 4096, 2048) == 2048);
+    CHECK(e::int_value(e::Mode::Cheaper, 1024, 2048) == 1024);
+    CHECK(e::int_value(e::Mode::Cheaper, 0, 512) == 0);
+    CHECK(e::int_value(e::Mode::Off, 4096, 2048) == 4096);
+
+    CHECK(e::bool_pin(e::Mode::Target, true, true) == e::Pin::On);
+    CHECK(e::bool_pin(e::Mode::Target, true, false) == e::Pin::Off);
+    CHECK(e::bool_pin(e::Mode::Cheaper, true, true) == e::Pin::Keep);
+    CHECK(e::bool_pin(e::Mode::Cheaper, true, false) == e::Pin::Off);
+    CHECK(e::bool_pin(e::Mode::Off, true, false) == e::Pin::Keep);
+    CHECK(e::bool_pin(e::Mode::Target, false, true) == e::Pin::Keep);
+    CHECK(e::bool_pin(e::Mode::Target, false, false) == e::Pin::Keep);
+    CHECK(e::compare_result(e::Pin::On, 7) == 0);
+    CHECK(e::compare_result(e::Pin::Off, 0) != 0);
+    CHECK(e::compare_result(e::Pin::Keep, 0) == 0);
+    CHECK(e::compare_result(e::Pin::Keep, -3) == -3);
+}
+
 int main(int argc, char **argv)
 {
     const char *sample_path = argc > 1 ? argv[1] : "sample_settings.xml";
+    const char *globals_path = argc > 2 ? argv[2] : "../../../../re/db/globals.tsv";
     std::string sample = read_file(sample_path);
     CHECK(!sample.empty());
     test_profile(sample);
@@ -270,6 +333,7 @@ int main(int argc, char **argv)
     test_root_detection(sample);
     test_overrides();
     test_gpu();
+    test_enforce(globals_path);
     std::printf("%d passed, %d failed\n", g_pass, g_fail);
     std::printf(g_fail ? "FAIL\n" : "PASS\n");
     return g_fail ? 1 : 0;

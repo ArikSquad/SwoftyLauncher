@@ -15,7 +15,36 @@
       "id": "apply_profile",
       "type": "toggle",
       "label": "Apply the graphics profile",
-      "description": "Lowers some quality settings as the game reads them: volumetric fog, shadow maps, SSR, SSAO, grass distance, particles, hair, god rays and car reflections. Your settings file is not changed. Applies on the next launch.",
+      "description": "Lowers some quality settings as the game reads them: volumetric fog, shadow maps, SSR, SSAO, grass distance, particles, hair, god rays, car reflections, and ray-traced AO and DDGI. Your settings file is not changed. Applies on the next launch.",
+      "default": true,
+      "binds": "native"
+    },
+    {
+      "id": "keep_rt_ao_ddgi",
+      "type": "toggle",
+      "label": "Keep ray-traced AO and DDGI",
+      "description": "Leaves ray-traced ambient occlusion and DDGI as you set them. Off, the graphics profile turns both off. Ray-traced shadows and reflections are never changed. Applies on the next launch.",
+      "default": false,
+      "binds": "native"
+    },
+    {
+      "id": "enforce_mode",
+      "type": "choice",
+      "label": "In-engine enforcement",
+      "description": "Applies the tuned shadow, fog, crowd and texture streaming values where the engine reads them, after the graphics preset. Cheaper uses the lower of your preset's value and the tuned value. Target always uses the tuned value. Off leaves the engine's values. Applies on the next launch.",
+      "values": [
+        { "value": "cheaper", "label": "Cheaper" },
+        { "value": "target", "label": "Target" },
+        { "value": "off", "label": "Off" }
+      ],
+      "default": "cheaper",
+      "binds": "native"
+    },
+    {
+      "id": "pin_effects",
+      "type": "toggle",
+      "label": "Pin effects",
+      "description": "With enforcement on, keeps sky-shadow low LOD, the 32-bit sky shadow map, crowd shadows, god rays, lens streak and motion blur v2 off. In Target mode it also keeps rain, track heat haze, ground cover, grass flattening, volumetric fog and night character shadows on.",
       "default": true,
       "binds": "native"
     },

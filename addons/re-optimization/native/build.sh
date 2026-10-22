@@ -18,7 +18,7 @@ command -v taskset >/dev/null && PIN=(taskset -c 2-7,10,11,14-31 nice -n 10)
 
 "${PIN[@]}" "${ZIG[@]}" c++ -target x86_64-windows-gnu -std=c++23 -O2 -Wall -Wextra -I$SDK -D__USE_MINGW_ANSI_STDIO=1 \
     -shared -s -o re_optimization.dll \
-    src/re_optimization.cpp src/delta.cpp src/overrides.cpp src/gpu.cpp
+    src/re_optimization.cpp src/delta.cpp src/overrides.cpp src/gpu.cpp src/enforce.cpp
 
 rm -f re_optimization.lib re_optimization.pdb
 echo "built $(pwd)/re_optimization.dll"
