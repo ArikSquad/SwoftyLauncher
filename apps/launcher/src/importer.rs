@@ -43,9 +43,9 @@ impl Shell {
         let adding = self.updates.adding;
         let (title, body, button) = if !installed {
             (
-                "Install the Simplified Importer".to_owned(),
+                format!("Install {}", managed::NAME),
                 format!(
-                    "The Simplified Importer is {}, an addon by Team Simplified. It turns mods made for the game \
+                    "{} is an addon by Team Simplified. Its Simplified Importer turns mods made for the game \
                      folder into Swofty addons. The launcher downloads it from GitHub.",
                     managed::NAME
                 ),
@@ -59,12 +59,8 @@ impl Shell {
             )
         } else {
             (
-                "Turn on the Simplified Importer".to_owned(),
-                format!(
-                    "The Simplified Importer is {}, which is off in {}.",
-                    managed::NAME,
-                    self.library.profile.name
-                ),
+                format!("Turn on {}", managed::NAME),
+                format!("{} is off in {}.", managed::NAME, self.library.profile.name),
                 Button::new("importer-on")
                     .primary()
                     .icon(IconName::Power)
