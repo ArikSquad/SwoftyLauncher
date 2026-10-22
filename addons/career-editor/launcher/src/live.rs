@@ -11,6 +11,37 @@ pub enum Bridge {
     Missing,
 }
 
+pub fn written(snap: &Value) -> u64 {
+    snap["written"].as_u64().unwrap_or(0)
+}
+
+pub fn fresh(snap: &Value) -> bool {
+    let written = written(snap);
+    written > 0 && now_ms().saturating_sub(written) < STALE_MS
+}
+
+pub fn says_running(snap: &Value) -> bool {
+    fresh(snap) && snap["status"]["game"] == "running"
+}
+
+pub fn closed_since(was: Option<u64>, running: Option<bool>, saw_running: bool, now: u64) -> Option<u64> {
+    match running {
+        Some(false) => Some(was.unwrap_or(if saw_running { now } else { 0 })),
+        _ => None,
+    }
+}
+
+pub fn bridge_of(running: Option<bool>, snap: &Value, closed_since: Option<u64>) -> Bridge {
+    let plugin_running = says_running(snap) && written(snap) > closed_since.unwrap_or(0);
+    if snap.is_null() {
+        Bridge::Missing
+    } else if fresh(snap) && (running != Some(false) || plugin_running) {
+        Bridge::Live
+    } else {
+        Bridge::Stale
+    }
+}
+
 pub struct Live {
     pub running: Option<bool>,
     pub game_session: Option<String>,
@@ -28,17 +59,10 @@ impl Live {
         snap: &Value,
         mailbox_known: bool,
         snap_error: Option<String>,
+        closed_since: Option<u64>,
     ) -> Live {
         let running = game_status.as_ref().and_then(|g| g["running"].as_bool());
-        let written = snap["written"].as_u64().unwrap_or(0);
-        let fresh = written > 0 && now_ms().saturating_sub(written) < STALE_MS;
-        let bridge = if snap.is_null() {
-            Bridge::Missing
-        } else if fresh && running != Some(false) {
-            Bridge::Live
-        } else {
-            Bridge::Stale
-        };
+        let bridge = bridge_of(running, snap, closed_since);
         Live {
             running,
             game_session: game_status
@@ -54,7 +78,7 @@ impl Live {
     }
 
     pub fn game_running(&self) -> bool {
-        self.running.unwrap_or(self.bridge == Bridge::Live)
+        self.running == Some(true) || self.live()
     }
 
     pub fn live(&self) -> bool {
@@ -155,5 +179,93 @@ impl Live {
         } else {
             self.safe()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::{Value, json};
+
+    use super::{Bridge, Live, STALE_MS, closed_since};
+    use crate::store::now_ms;
+
+    fn snapshot(age_ms: u64) -> Value {
+        json!({
+            "written": now_ms() - age_ms,
+            "pid": 7504,
+            "status": { "game": "running", "career": true, "mode": "my_team", "phase": "team_hq", "safe": true },
+        })
+    }
+
+    fn closed() -> Option<Value> {
+        Some(json!({ "running": false, "pid": null, "since": null, "session": null }))
+    }
+
+    #[test]
+    fn a_fresh_snapshot_outranks_a_launcher_that_says_the_game_is_closed() {
+        let live = Live::new(closed(), &snapshot(500), true, None, None);
+        assert_eq!(live.bridge, Bridge::Live);
+        assert!(live.live() && live.game_running() && live.career() && live.my_team());
+        assert!(live.safe());
+        assert_eq!(
+            live.gate("economy.cash.set").err().as_deref(),
+            Some("Not available in this build.")
+        );
+    }
+
+    #[test]
+    fn an_old_snapshot_stays_stale_and_the_game_reads_as_closed() {
+        let live = Live::new(closed(), &snapshot(STALE_MS + 1_000), true, None, None);
+        assert_eq!(live.bridge, Bridge::Stale);
+        assert!(!live.game_running() && !live.career() && !live.my_team());
+        let live = Live::new(None, &snapshot(STALE_MS + 1_000), true, None, None);
+        assert_eq!(live.bridge, Bridge::Stale);
+        assert!(!live.game_running());
+    }
+
+    #[test]
+    fn the_last_snapshot_of_a_game_that_just_closed_does_not_count() {
+        let snap = snapshot(2_000);
+        let live = Live::new(closed(), &snap, true, None, Some(now_ms() - 1_000));
+        assert_eq!(live.bridge, Bridge::Stale);
+        assert!(!live.game_running());
+        let live = Live::new(closed(), &snap, true, None, Some(now_ms() - 3_000));
+        assert!(live.live() && live.game_running() && live.my_team());
+    }
+
+    #[test]
+    fn a_running_or_silent_launcher_keeps_the_old_rules() {
+        let running = Some(json!({ "running": true, "pid": 7504 }));
+        let live = Live::new(running.clone(), &snapshot(500), true, None, None);
+        assert!(live.live() && live.game_running() && live.my_team());
+        let live = Live::new(running, &snapshot(STALE_MS + 1_000), true, None, None);
+        assert_eq!(live.bridge, Bridge::Stale);
+        assert!(live.game_running() && !live.career());
+        let live = Live::new(None, &snapshot(500), true, None, None);
+        assert!(live.live() && live.game_running());
+        let live = Live::new(closed(), &Value::Null, true, None, None);
+        assert_eq!(live.bridge, Bridge::Missing);
+        assert!(!live.game_running());
+    }
+
+    #[test]
+    fn a_snapshot_that_does_not_say_running_needs_the_launcher() {
+        let mut snap = snapshot(500);
+        snap["status"]["game"] = json!("closing");
+        let live = Live::new(closed(), &snap, true, None, None);
+        assert_eq!(live.bridge, Bridge::Stale);
+        assert!(!live.game_running());
+    }
+
+    #[test]
+    fn the_game_counts_as_closed_from_the_first_false_after_a_true() {
+        assert_eq!(closed_since(None, Some(false), true, 500), Some(500));
+        assert_eq!(closed_since(Some(500), Some(false), true, 900), Some(500));
+        assert_eq!(closed_since(Some(500), Some(true), true, 900), None);
+        assert_eq!(closed_since(Some(500), None, true, 900), None);
+        let never = closed_since(None, Some(false), false, 900);
+        assert_eq!(never, Some(0));
+        let live = Live::new(closed(), &snapshot(4_000), true, None, never);
+        assert!(live.live() && live.game_running() && live.my_team());
     }
 }
