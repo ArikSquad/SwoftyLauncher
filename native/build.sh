@@ -60,26 +60,37 @@ EA_FUNC_RVA = {
     "virtual void game::FEHomeViewModel::onCommandRaised(const neon::NeUIString &, const neon::NeUIPrimitiveType &)": 0x1bae090,
     "DevSessionDataContract.ForceStaggeredStart": 0x600160,
 }
-note = ("EA App build set: string anchors with captured EA function bases resolve at runtime against the "
-        "decrypted code (bulk-decrypted at the window stage). In-function offsets come from the Steam rows and "
-        "are shape-verified before any hook is installed. Rows without a string anchor (pattern-only) stay "
-        "pending until a decrypted-memory dump yields an EA anchor.")
+note = ("EA App build set: captured from a decrypted-memory dump of the shipping build at the window stage "
+        "(bulk decryption). Patterns match the EA code directly and targets were resolved from the dump; the "
+        "loader's same-build checks then verify every site before any hook is installed. Rows whose pattern "
+        "does not appear in the EA code stay pending and are listed as such.")
+try:
+    ea_targets = json.load(open("../re/db/ea-targets.json"))
+except OSError:
+    ea_targets = {}
 out = []
 for b in steam["bindings"]:
-    nb = dict(b); nb["status"] = "pending-dump"; nb["section"] = ".rdata"
-    nb["steam_rva"] = b.get("rva"); nb["steam_pattern"] = b["pattern"]; nb["pattern"] = ""
-    if nb.get("expect") is not None: nb["expect"] = ""
-    nb.pop("rva", None); nb.pop("match", None); nb["build"] = EA["sha256"]
+    nb = dict(b); nb["section"] = ".rdata"
+    nb["steam_rva"] = b.get("rva"); nb["steam_pattern"] = b["pattern"]
+    nb.pop("match", None); nb["build"] = EA["sha256"]
+    target = ea_targets.get(b["id"])
+    if target is not None:
+        nb["rva"] = int(target, 16)
+        nb["status"] = "ea-captured"
+    else:
+        nb["pattern"] = ""
+        if nb.get("expect") is not None: nb["expect"] = ""
+        nb.pop("rva", None)
+        nb["status"] = "pending-dump"
     sa = nb.get("string_anchor")
     if isinstance(sa, dict):
         sa = dict(sa)
         f = EA_FUNC_RVA.get(sa.get("string"))
         if f is not None:
             sa["func_rva"] = f
-            nb["status"] = "ea-anchored"
         nb["string_anchor"] = sa
     out.append(nb)
-json.dump({"schema": 1, "generator": "native/build.sh EA template", "build": EA, "note": note, "bindings": out},
+json.dump({"schema": 1, "generator": "native/build.sh EA set", "build": EA, "note": note, "bindings": out},
           open(sys.argv[2], "w"), indent=1)
 EOF
 
