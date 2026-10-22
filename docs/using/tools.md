@@ -21,7 +21,7 @@ A link under the description, such as **Team Simplified**, opens the maker's pag
 
 | Tool | Made by | What it does | Get |
 |---|---|---|---|
-| Simplified Suite | Team Simplified | Open-source modding tools for F1 25: Simplified Studio makes `.serps` mods, and the suite adds the SERPs Launcher, a track installer, swappers, editors and a database merger. The [Mod Importer](/using/mods) turns mods made with them into Swofty addons. | [GitHub](https://github.com/TeamSimplified/simplified-suite) |
+| Simplified Suite | Team Simplified | Open-source modding tools for F1 25: Simplified Studio makes `.serps` mods, and the suite adds the SERPs Launcher, a track installer, swappers, editors and a database merger. The [Simplified Importer](/using/mods) turns mods made with them into Swofty addons. | [GitHub](https://github.com/TeamSimplified/simplified-suite) |
 | EGO GameDatabases Editor | PavelGames | A standalone editor for the F1 games' databases: drivers, teams, line-ups, tracks, the calendar, points and weather, and a key editor for any value. | [Overtake](https://www.overtake.gg/downloads/ego-gamedatabases-editor.84903/) |
 
 The EGO GameDatabases Editor picture is PavelGames' screenshot from its Overtake page.

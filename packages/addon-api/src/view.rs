@@ -79,7 +79,7 @@ pub enum Block {
     DropZone(DropZone),
 }
 
-/// A large drop target with one main call to action, such as the Mod Importer's
+/// A large drop target with one main call to action, such as the Simplified Importer's
 /// Import a mod: an icon, a title, a line of text and a big button, centred in a
 /// tall area. Files dropped on the window still go to the addon that claims them.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -233,7 +233,7 @@ pub struct Card {
     #[serde(default)]
     pub blocks: Vec<Block>,
     /// Draw the card with a dashed outline, for a placeholder or drop target
-    /// such as the Mod Importer's list of imported mods.
+    /// such as the Simplified Importer's list of imported mods.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub dashed: bool,
 }
@@ -817,7 +817,7 @@ impl Button {
 }
 
 /// How prominently a button is drawn. `Large` is for a page's main call to
-/// action, such as the Mod Importer's Choose a mod button.
+/// action, such as the Simplified Importer's Choose a mod button.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ButtonSize {

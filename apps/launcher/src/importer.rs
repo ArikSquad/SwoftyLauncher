@@ -1,4 +1,4 @@
-//! The Mod Importer: the managed Simplified for Swofty addon's section, shown
+//! The Simplified Importer: the managed Simplified for Swofty addon's section, shown
 //! as a big section of its own.
 
 use std::time::{Duration, Instant};
@@ -18,12 +18,12 @@ use crate::theme::Palette;
 const FETCH_TIMEOUT: Duration = Duration::from_secs(20);
 
 impl Shell {
-    /// The index of the Mod Importer's section, when its addon is on.
+    /// The index of the Simplified Importer's section, when its addon is on.
     pub(crate) fn importer_section(&self) -> Option<usize> {
         self.library.sections.iter().position(|s| s.addon == managed::ID)
     }
 
-    /// The section the current page shows: an addon page or the Mod Importer.
+    /// The section the current page shows: an addon page or the Simplified Importer.
     pub(crate) fn open_section(&self) -> Option<usize> {
         match self.page {
             Page::Section(i) => Some(i),
@@ -43,9 +43,9 @@ impl Shell {
         let adding = self.updates.adding;
         let (title, body, button) = if !installed {
             (
-                "Install the Mod Importer".to_owned(),
+                "Install the Simplified Importer".to_owned(),
                 format!(
-                    "The Mod Importer is {}, an addon by Team Simplified. It turns mods made for the game \
+                    "The Simplified Importer is {}, an addon by Team Simplified. It turns mods made for the game \
                      folder into Swofty addons. The launcher downloads it from GitHub.",
                     managed::NAME
                 ),
@@ -59,9 +59,9 @@ impl Shell {
             )
         } else {
             (
-                "Turn on the Mod Importer".to_owned(),
+                "Turn on the Simplified Importer".to_owned(),
                 format!(
-                    "The Mod Importer is {}, which is off in {}.",
+                    "The Simplified Importer is {}, which is off in {}.",
                     managed::NAME,
                     self.library.profile.name
                 ),

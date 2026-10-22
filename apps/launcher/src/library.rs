@@ -46,7 +46,7 @@ impl Source {
         match self {
             Self::Builtin => "Built in",
             Self::DbEditor => "DB Editor",
-            Self::Importer => "Mod Importer",
+            Self::Importer => "Simplified Importer",
             Self::Installed => "Installed",
         }
     }
@@ -178,7 +178,7 @@ pub struct SectionItem {
 }
 
 impl SectionItem {
-    /// The Mod Importer's old Tracks page, which the sidebar leaves out.
+    /// The Simplified Importer's old Tracks page, which the sidebar leaves out.
     pub fn is_importer_tracks(&self) -> bool {
         self.addon == swofty_core::managed::ID && self.spec.id == TRACKS_SECTION
     }

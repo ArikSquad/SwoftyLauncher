@@ -949,7 +949,7 @@ impl Shell {
             if short {
                 "Mods convert into addons"
             } else {
-                "Mods convert into Swofty addons in the Mod Importer."
+                "Mods convert into Swofty addons using the Simplified Importer."
             },
         )
         .border_color(p.border_variant)
@@ -958,9 +958,9 @@ impl Shell {
                 .outline()
                 .small()
                 .label(if roomy {
-                    "Go to Mod Importer"
+                    "Go to Simplified Importer"
                 } else {
-                    "Mod Importer"
+                    "Simplified Importer"
                 })
                 .on_click(cx.listener(|this, _, _, cx| this.open_page(Page::Importer, cx))),
         );
@@ -1716,7 +1716,7 @@ impl Shell {
                     .outline()
                     .small()
                     .icon(IconName::FolderInput)
-                    .label("Open in Mod Importer")
+                    .label("Open in Simplified Importer")
                     .on_click(cx.listener(|this, _, _, cx| this.open_page(Page::Importer, cx)))
                     .into_any_element(),
             );

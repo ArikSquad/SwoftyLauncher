@@ -47,7 +47,7 @@ impl Page {
         match self {
             Self::News => "News",
             Self::Addons => "Addons",
-            Self::Importer => "Mod Importer",
+            Self::Importer => "Simplified Importer",
             Self::Tools => "Tools",
             Self::Profiles => "Profiles",
             Self::Database => "DB Editor",
@@ -1108,7 +1108,7 @@ impl Shell {
     }
 
     /// The addon panels the sidebar lists: the DB Editor, then every addon
-    /// page except the Mod Importer's own pages.
+    /// page except the Simplified Importer's own pages.
     fn panels(&self, p: Palette, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let importer = self.importer_section();
         let db = Page::Database;

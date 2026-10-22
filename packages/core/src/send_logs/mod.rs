@@ -840,7 +840,7 @@ fn helper_logs(store: &Store) -> Vec<(String, PathBuf)> {
 }
 
 /// The newest `.log` files addons keep in `addon-data/<id>/logs/`, such as
-/// the Mod Importer's converter logs.
+/// the Simplified Importer's converter logs.
 fn addon_logs(store: &Store) -> Vec<(String, PathBuf)> {
     let mut out = Vec::new();
     for e in std::fs::read_dir(store.root.join("addon-data"))
