@@ -10,9 +10,10 @@ ITEMS=
 grep -qa '\[items\] ownership check hooked' ../dist/swofty/addons/core/swofty_core.dll && ITEMS=1
 export ZIG_GLOBAL_CACHE_DIR=$PWD/../build/zig-cache ZIG_LOCAL_CACHE_DIR=$PWD/../build/zig-cache
 PIN=(taskset -c 2-7,10,11,14-31 nice -n 10)
-rm -rf "$OUT/game" "$OUT/stages"
-mkdir -p "$OUT/game" "$OUT/stages"
+rm -rf "$OUT/game" "$OUT/stages" "$OUT/packed"
+mkdir -p "$OUT/game" "$OUT/stages" "$OUT/packed"
 "${PIN[@]}" zig cc -target x86_64-windows-gnu -O2 -o "$OUT/game/F1_25.exe" fake_game.c -lversion -luser32 &
+"${PIN[@]}" zig cc -target x86_64-windows-gnu -O2 -DPACKED_TEST -o "$OUT/packed/F1_25.exe" fake_game.c -lversion -luser32 &
 cp -r ../dist/. "$OUT/game/"
 mkdir -p "$OUT/game/swofty/mods/core"
 mv "$OUT/game/swofty/addons/core/swofty_gamelog.dll" "$OUT/game/swofty/addons/core/log_channels.tsv" "$OUT/game/swofty/mods/core/"
@@ -21,6 +22,7 @@ for m in addons/t_*.cpp; do
     case $name in
     t_chain_b) dest=$OUT/game/swofty/mods ;;
     t_stage_*) dest=$OUT/stages ;;
+    t_packed*) dest=$OUT/packed ;;
     t_ntpage | t_int3hook) dest=$OUT ;;
     *) dest=$OUT/game/swofty/addons ;;
     esac
@@ -76,6 +78,13 @@ json.dump(doc, open(core + 'bindings.wine-test.json', 'w'), indent=1)
 json.dump({'schema': 1, 'profile': 'wine-test', 'addons': [], 'early_plugins': ['t_stage_early.dll']},
           open(root + '/settings.json', 'w'))
 EOF
+PK=$OUT/packed/game PP=$OUT/packed/plain
+for d in "$PK" "$PP"; do
+    cp -r "$OUT/game" "$d"
+    rm "$d"/swofty/addons/t_*.dll "$d"/swofty/mods/t_*.dll "$d/F1_25.exe"
+    cp "$OUT"/packed/t_packed*.dll "$d/swofty/addons/"
+done
+python3 packed_game.py make "$OUT/packed/F1_25.exe" "$PK" "$PP"
 export WINEPREFIX="$OUT/prefix" WINEDLLOVERRIDES="version=n,b;mscoree,mshtml=;winemenubuilder.exe,winedbg.exe=d" WINEDEBUG=-all
 status=0
 LOG=$OUT/game/swofty/loader.log
@@ -569,4 +578,75 @@ SWOFTY_EARLY_STAGE=1 "${PIN[@]}" xvfb-run -a wine "$SG/F1_25.exe" stages || stat
 once "stages: an exe of another size than the KB build never uses the KB addresses" '\[core\] binding resolution: the exe is [0-9]+ bytes and the KB build [0-9]+; the KB addresses are not used, every pattern is scanned'
 count "stages: with another size, nothing binds at a KB address" 0 'via pattern at the KB address|does not match at the KB address'
 once "stages: with another size, the early site is found by a scan" '\[core\] bind wine-test:site_Stage_Entry -> 0x[0-9a-f]+ \(base\+0x[0-9a-f]+\), site experimental via pattern[[:space:]]*$'
+# The packed runs share one game folder, so packed_never starts with the scan cache that packed saved.
+for mode in packed packed_never packed_plain; do
+    echo "==== $mode"
+    dir=$PK
+    [[ $mode == packed_plain ]] && dir=$PP
+    LOG=$dir/swofty/loader.log
+    SWOFTY_EARLY_STAGE=1 timeout 120 "${PIN[@]}" xvfb-run -a wine "$dir/F1_25.exe" $mode || status=1
+    echo "---- $LOG ($mode)"
+    grep -E '\[bind\] summary|\[core\] (build|bindings|.* pass:|.* waits:|.*setting it up now|.*fails closed|scan .*refused|addon .*(dropped|runs again|ran again))|\[crash\] Ne_Report|stage: window|trigger: KERNEL32' "$LOG" || true
+    python3 packed_game.py check $mode "$LOG" "$dir/F1_25.exe" || status=1
+    once "$mode: the set is selected by the exe's PE timestamp" '\[core\] bindings: 3 set\(s\) present, selected bindings\.packed-test\.json by PE timestamp [0-9]+'
+    check "$mode: the core loads at the early trigger" "trigger: KERNEL32!CreateMutexW from .* \(\.text\) name 'Codemasters F1 25' .*loading addons now \(early stage\)"
+    case $mode in
+    packed | packed_never)
+        once "$mode: the set marks the build packed and .xtls reads encrypted at init" '\[core\] build ea: packed \(the set says so\); code section \.xtls entropy 7\.[5-9][0-9], reads encrypted'
+        once "$mode: a binding in .xtls is deferred at init" '\[bind\] id=FeHome_Handle_Command build=ea pass=init result=deferred method=- matches=- rva=- match=- verified=- reason="code section \.xtls reads encrypted \(entropy 7\.[5-9][0-9]\)" site_bytes=""[[:space:]]*$'
+        once "$mode: a hinted binding in .xtls is deferred at init" '\[bind\] id=wine-test:Fake_Stage_Wrap build=ea pass=init result=deferred method=- matches=- rva=- match=- verified=- reason="code section \.xtls reads encrypted'
+        once "$mode: the runtime setup waits for the code to decrypt" '\[core\] runtime setup \(assets, .*\) waits: \.xtls reads encrypted \(entropy 7\.[5-9][0-9]\) on this packed build'
+        once "$mode: the crash heap-error hook waits for the code to decrypt" '\[core\] crash: Ne_ReportMemoryError hook waits: \.xtls reads encrypted'
+        once "$mode: the popup hook waits for the code to decrypt" '\[core\] popup: message system hook waits: \.xtls reads encrypted'
+        check "$mode: an early addon's own scan of encrypted code is refused" '\[core\] scan \.xtls \[48 B8 53 57 46 54 50 4C 41 4E B8 05 00 00 00 C3\] for t_packed_scan\.dll refused: \.xtls reads encrypted \(entropy 7\.[5-9][0-9]\) on this packed build; nothing resolves in encrypted code'
+        once "$mode: that addon is called again once the code decrypts" '\[core\] addon t_packed_scan\.dll: its init needs code that still reads encrypted \(a binding or a scan\); SwoftyAddonInit runs again once that code decrypts'
+        once "$mode: the window stage runs the core's pass" 'stage: window \(USER32!RegisterClassExW .*\), addons were loaded at the early stage'
+        ;;
+    esac
+    case $mode in
+    packed)
+        once "packed: the window pass reports every binding" '\[bind\] summary build=ea pass=window resolved=[1-9][0-9]* deferred=0 unresolved=[0-9]+ total=[0-9]+ pe_timestamp=[0-9]+ size=[0-9]+ sha256=[0-9a-f]{64}[[:space:]]*$'
+        once "packed: a binding found by a scan at the window pass" '\[bind\] id=FeHome_Handle_Command build=ea pass=window result=resolved method=scan matches=1 rva=0x[0-9a-f]+ match=0x[0-9a-f]+ verified=yes reason="" site_bytes=""[[:space:]]*$'
+        once "packed: a binding found by its hint at the window pass" '\[bind\] id=wine-test:Fake_Stage_Wrap build=ea pass=window result=resolved method=hint matches=1 rva=0x[0-9a-f]+ match=0x[0-9a-f]+ verified=yes reason="" site_bytes=""[[:space:]]*$'
+        once "packed: t_packed's wrap installs at the window pass" '\[core\] wrap wine-test:Fake_Stage_Wrap at 0x[0-9a-f]+ \(base\+0x[0-9a-f]+\) installed: t_packed\.dll\(0\)'
+        once "packed: the early addon's scan is refused only while the code reads encrypted" 'refused: \.xtls reads encrypted'
+        once "packed: t_packed_scan's second init succeeds" 'addon t_packed_scan\.dll: SwoftyAddonInit ran again now that its code decrypted and returned 1'
+        once "packed: the runtime setup runs at the window pass" '\[core\] runtime setup \(assets, .*\): \.xtls reads decrypted \(entropy [0-6]\.[0-9]+\) at the window pass; setting it up now'
+        once "packed: the database reader set up at the window pass still gets the window stage" '\[dbread\] window stage: '
+        once "packed: the crash heap-error hook installs at the window pass" '\[crash\] Ne_ReportMemoryError at base\+0x[0-9a-f]+ hooked \(found by its prologue\)'
+        count "packed: nothing fails closed once the code decrypts" 0 'fails closed'
+        awk '/stage: window \(/ && !w {w = NR} /\[lang\] override: / && !l {l = NR} END {exit !(w && l > w)}' "$LOG" &&
+            echo "ok  : packed: a lang call at the early stage leaves the string override setup to the decrypted code" ||
+            { echo "FAIL: packed: a lang call at the early stage leaves the string override setup to the decrypted code"; status=1; }
+        count "packed: no binding waits past the window pass" 0 'pass=stage:'
+        ;;
+    packed_never)
+        once "packed_never: the window pass still defers" '\[bind\] summary build=ea pass=window resolved=[0-9]+ deferred=[1-9][0-9]* unresolved=[0-9]+ total=[0-9]+'
+        once "packed_never: the retries start" '\[core\] bindings: [1-9][0-9]* binding\(s\) and [1-9] setup\(s\) still wait for their code to decrypt; retrying every 1000 ms, 8 time\(s\), then they fail closed'
+        once "packed_never: the last retry reports nothing deferred" '\[bind\] summary build=ea pass=stage:8 resolved=[0-9]+ deferred=0 unresolved=[0-9]+ total=[0-9]+'
+        once "packed_never: a scanned binding fails closed with its reason" '\[bind\] id=FeHome_Handle_Command build=ea pass=stage:8 result=unresolved method=- matches=- rva=- match=- verified=- reason="code section \.xtls reads encrypted \(entropy 7\.[5-9][0-9]\); still so at the last retry, so it fails closed" site=- site_bytes=""[[:space:]]*$'
+        once "packed_never: a hinted binding fails closed with 32 bytes at its hint" '\[bind\] id=wine-test:Fake_Stage_Wrap build=ea pass=stage:8 result=unresolved method=- matches=- rva=- match=- verified=- reason="code section \.xtls reads encrypted \(entropy 7\.[5-9][0-9]\); still so at the last retry, so it fails closed" site=0x[0-9a-f]+ site_bytes="[0-9A-F]{2}( [0-9A-F]{2}){31}"'
+        once "packed_never: the runtime setup fails closed" '\[core\] runtime setup \(assets, .*\): not set up; \.xtls still reads encrypted \(entropy 7\.[5-9][0-9]\) at the last retry, so it fails closed'
+        once "packed_never: the crash heap-error hook fails closed" '\[core\] crash: Ne_ReportMemoryError hook: not set up; \.xtls still reads encrypted'
+        once "packed_never: the popup hook fails closed" '\[core\] popup: message system hook: not set up; \.xtls still reads encrypted'
+        count "packed_never: the heap-error hook is never installed" 0 '\[crash\] Ne_ReportMemoryError at'
+        count "packed_never: the database reader is never set up" 0 '\[dbread\] window stage: '
+        once "packed_never: the addon whose wrap never decrypts is dropped" '\[core\] addon t_packed\.dll dropped: needs wine-test:Fake_Stage_Wrap, which does not resolve on this build'
+        once "packed_never: the addon whose scan never decrypts is dropped" '\[core\] addon t_packed_scan\.dll dropped: SwoftyAddonInit returned 0 once its code still read encrypted at the last retry'
+        count "packed_never: nothing installs" 0 '\[core\] [a-z]+ .* installed: '
+        ;;
+    packed_plain)
+        once "packed_plain: the set says the build is not packed" '\[core\] build steam: not packed \(the set says so\); code section \.xtls entropy [0-6]\.[0-9]+, reads decrypted'
+        count "packed_plain: nothing is deferred" 0 'result=deferred'
+        count "packed_plain: no setup waits" 0 '\[core\] [a-z]+.* waits: \.xtls'
+        count "packed_plain: no scan is refused" 0 'refused: .* on this packed build'
+        count "packed_plain: there is no window resolution pass" 0 '\[bind\] summary build=steam pass=window'
+        once "packed_plain: the init pass reports every binding" '\[bind\] summary build=steam pass=init resolved=[1-9][0-9]* deferred=0 unresolved=[0-9]+ total=[0-9]+'
+        once "packed_plain: a hinted binding resolves at init" '\[bind\] id=wine-test:Fake_Stage_Wrap build=steam pass=init result=resolved method=hint matches=1'
+        once "packed_plain: the database reader gets the window stage" '\[dbread\] window stage: '
+        once "packed_plain: the crash heap-error hook installs at attach" '\[crash\] Ne_ReportMemoryError at base\+0x[0-9a-f]+ hooked \(found by its prologue\)'
+        once "packed_plain: t_packed's wrap installs at the early commit" '\[core\] wrap wine-test:Fake_Stage_Wrap at 0x[0-9a-f]+ \(base\+0x[0-9a-f]+\) installed: t_packed\.dll\(0\)'
+        ;;
+    esac
+done
 exit $status
