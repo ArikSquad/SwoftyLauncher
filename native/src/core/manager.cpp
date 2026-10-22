@@ -171,6 +171,7 @@ struct SectionRead {
 std::unordered_map<std::string, SectionRead> section_reads;
 std::recursive_mutex commit_lock;
 volatile LONG retries_started;
+bool unreported;
 
 std::vector<safetyhook::InlineHook> inline_hooks;
 std::vector<std::string> inline_names;
@@ -857,6 +858,7 @@ std::string site_bytes(long long site)
 
 void report(const char *pass)
 {
+    unreported = false;
     size_t done = 0, waiting = 0, failed = 0;
     for (auto &b : bindings) {
         const Trace &t = b.tr;
@@ -1090,8 +1092,11 @@ uintptr_t api_resolve(const char *id)
             api->log("[core] no binding %s in %s", name, bindings_file.c_str());
         return 0;
     }
-    if (!b->resolved)
+    if (!b->resolved) {
+        bool was = b->deferred;
         attempt(*b, false);
+        unreported |= was && !b->deferred;
+    }
     if (b->deferred) {
         if (current) {
             current->hit_deferred = true;
@@ -1594,8 +1599,11 @@ void late_pass(const char *pass, bool final)
     std::lock_guard<std::recursive_mutex> c(commit_lock);
     std::lock_guard<std::recursive_mutex> r(resolve_lock);
     size_t before = deferred_count();
-    if (!before && !waits(false))
+    if (!before && !waits(false)) {
+        if (unreported)
+            report(pass);
         return;
+    }
     section_reads.clear();
     std::vector<std::string> seen;
     std::string sampled;

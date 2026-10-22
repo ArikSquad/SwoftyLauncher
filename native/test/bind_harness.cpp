@@ -337,6 +337,11 @@ static int init_c(const SwoftyApi *a)
     return a->register_mixins(m, 1);
 }
 
+static int init_d(const SwoftyApi *a)
+{
+    return a->resolve("pk:Site_Entry") != 0;
+}
+
 static int call(uint32_t at)
 {
     return reinterpret_cast<int (*)()>(img + at)();
@@ -407,6 +412,8 @@ static int image_mode(const std::string &root, const char *mode)
     expect(logged(measured ? "(measured at init)" : "(the set says so)"), "init: the packed state comes from the expected source");
     crypt(CODE, CODE_SIZE, 0xC0DE);
     expect(call(F_HINT) == 7, "decrypted: the target runs unhooked before the window stage");
+    expect(core_init(L"t_pk_d.dll", init_d) == 1 && commit() >= 0,
+           "decrypted: an addon loaded with the window resolves a deferred binding on demand");
     expect(stage && stage(SWOFTY_STAGE_WINDOW) >= 1, "window: the core runs its stage handlers");
     expect(init_b_calls == 2, "window: the waiting addon's init runs again");
     expect(call(F_HINT) == 107, "window: the wrap on the hinted binding installed");
