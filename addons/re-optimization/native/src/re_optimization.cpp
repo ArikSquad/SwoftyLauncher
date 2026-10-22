@@ -20,7 +20,7 @@
 // In-engine enforcement (upstream 0.2.x): the hardware-settings readers parse each
 // attribute with Ne_Parse_Long (strtol) or Ne_Compare_StringNoCase(value, "true").
 // The strtol wrap swaps the result when its return address is one of the 12 integer
-// call sites; the 17 boolean call sites are redirected one by one.
+// call sites; the 16 boolean call sites are redirected one by one.
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>

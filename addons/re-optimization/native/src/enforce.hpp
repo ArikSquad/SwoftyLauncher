@@ -3,7 +3,8 @@
 //
 // The in-engine enforcement table of src/enforce.cpp (F1-25-RE-Optimization 0.2.5)
 // and the per-mode decisions. Pure code: the plugin resolves each binding, the
-// tests check the table and the decisions.
+// tests check the table and the decisions. Upstream's first godRays site (call
+// RVA 0x2c8d638) is left out: it sits in the god-rays setter, not in a reader.
 #pragma once
 #include <cstddef>
 #include <cstdint>
@@ -47,7 +48,6 @@ inline constexpr BoolSite kBoolSites[] = {
     {"site_Ne_HwBool_SkyShadowLowLod", "skyShadowLowLod", false},
     {"site_Ne_HwBool_SkyShadowMap32Bits", "skyShadowMap32Bits", false},
     {"site_Ne_HwBool_CrowdInShadows", "crowdInShadows", false},
-    {"site_Ne_HwBool_GodRays", "godRays", false},
     {"site_Ne_HwBool_GodRaysPost", "godRays", false},
     {"site_Ne_HwBool_LensStreak", "lensStreak", false},
     {"site_Ne_HwBool_MotionBlurV2", "motionBlurV2", false},

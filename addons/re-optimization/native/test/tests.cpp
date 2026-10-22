@@ -264,13 +264,13 @@ static void test_enforce(const char *globals_path)
 {
     namespace e = reopt::enforce;
     CHECK(e::kIntCount == 12);
-    CHECK(e::kBoolCount == 17);
+    CHECK(e::kBoolCount == 16);
     int on = 0, off = 0, god = 0;
     for (const e::BoolSite &b : e::kBoolSites) {
         (b.tuned ? on : off)++;
         god += std::strcmp(b.attr, "godRays") == 0;
     }
-    CHECK(on == 10 && off == 7 && god == 2);
+    CHECK(on == 10 && off == 6 && god == 1);
     struct Want {
         const char *attr;
         int32_t value;

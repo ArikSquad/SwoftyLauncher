@@ -200,7 +200,7 @@ int main(int argc, char **argv)
     CHECK(g_log.find("nightShadowMapSize (site_Ne_HwInt_NightShadowMapSize) does not resolve") != std::string::npos);
     CHECK(g_log.find("crowdInShadows (site_Ne_HwBool_CrowdInShadows) does not call the resolved parser") !=
           std::string::npos);
-    CHECK(g_log.find("11/12 integer and 16/17 boolean sites resolve") != std::string::npos);
+    CHECK(g_log.find("11/12 integer and 15/16 boolean sites resolve") != std::string::npos);
 
     auto int_at = [&](size_t i, const char *v) { return reinterpret_cast<IntSiteFn>(ints[i])(v, nullptr, 0); };
     auto bool_at = [&](size_t i, const char *v) { return reinterpret_cast<BoolSiteFn>(bools[i])(v, "true"); };

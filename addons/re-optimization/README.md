@@ -12,7 +12,7 @@ Offline, single-player only. It ships with the launcher and stays off until you 
 |---|---|---|
 | Loading | proxy `dinput8.dll` | engine plugin `native/re_optimization.dll`, loaded by the launcher's `version.dll` loader at the early stage (inside the game's `CreateMutexW("Codemasters F1 25")` call) |
 | Graphics profile | rewrites `hardware_settings_config.xml` on disk before the engine reads it, keeps a `.untuned` backup | hands the engine's XML parser a tuned copy of the text in memory; the file on disk is never written by the addon, and when the engine saves the file itself, every attribute that still holds a tuned value is written back with your own value |
-| In-engine enforcement | detours the integer parser at RVA `0x534dcd8` keyed on the caller's return address, and rewrites 17 `call` instructions to the bool check at RVA `0x534d918` into `mov eax, imm32` | a wrap on the binding `Ne_Parse_Long` keyed on the return addresses of 12 call-site bindings, and a redirect on each of the 17 boolean call-site bindings, all found by signature |
+| In-engine enforcement | detours the integer parser at RVA `0x534dcd8` keyed on the caller's return address, and rewrites 17 `call` instructions to the bool check at RVA `0x534d918` into `mov eax, imm32` | a wrap on the binding `Ne_Parse_Long` keyed on the return addresses of 12 call-site bindings, and a redirect on 16 of the 17 boolean call sites, as call-site bindings found by signature |
 | Preset guard | hooks `hardwareSettings::Options::apply` and `applyNode` and writes the delta back to the file after a menu change | not ported (see [Not ported](#not-ported)) |
 | Engine overrides | detours the getters at RVA `0x03a43b90` (bool) and `0x03a43240` (32-bit), runs the original, then overrides the names in `[override]` | the same semantics through the mixin system, on the bindings `Ne_Get_SettingBool` and `Ne_Get_SettingU32`, found by signature |
 | Upscaler | GPU detection and `[upscaler] mode` | the same detection and choice, as the Upscaler option |
@@ -45,10 +45,12 @@ Enforcement substitutes the tuned value where the engine's settings readers pars
 | Target | the tuned value | the off pins and the on pins |
 | Off | the engine's value | none |
 
-- Off pins: sky-shadow low LOD, 32-bit sky shadow map, crowd in shadows, god rays (both reads), lens streak and motion blur v2.
+- Off pins: sky-shadow low LOD, 32-bit sky shadow map, crowd in shadows, god rays, lens streak and motion blur v2.
 - On pins: rain splashes, rain beads, high rain, rain sheets, track heat haze, ground cover, grass flattening, ground-cover meshes, volumetric fog and night character shadows.
 - Cheaper never turns an effect on; upstream 0.2.5 applies the on pins in Cheaper mode as well.
 - Pin effects off leaves every boolean attribute to the engine, like upstream's `[enforce] bools = 0`.
+- Upstream's first `godRays` site (call RVA `0x2c8d638`) is not pinned: it sits in the god-rays setter, which compares the attribute with the requested state and rewrites and saves it only when they differ, so a pin there blocks turning god rays off and saves on every request to turn them on.
+- The god-rays reader that stores the value (`site_Ne_HwBool_GodRaysPost`) is pinned.
 
 ### Upscaler
 
@@ -114,7 +116,7 @@ native/test/run.sh   # host tests: the delta, its reverse, the override table, G
 ### 0.2.5 (upstream 0.2.5)
 
 - Upscaler: FSR 3 is written as `fsr3="1"` with `cas="1"`, and the other choices write `fsr3="0"`; `fsr3="true"` parsed as 0, so FSR 3 never engaged before.
-- In-engine enforcement of 12 integer attributes and 17 boolean reads, with the Cheaper, Target and Off modes and the Pin effects option.
+- In-engine enforcement of 12 integer attributes and 16 boolean reads, with the Cheaper, Target and Off modes and the Pin effects option.
 - The graphics profile turns off `rt_ao` and `rt_ddgi`, with the Keep ray-traced AO and DDGI option.
 - An addon icon.
 
