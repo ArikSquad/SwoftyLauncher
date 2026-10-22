@@ -29,17 +29,12 @@ pub fn supported(g: &Game) -> Result<()> {
     Ok(())
 }
 
-/// `--game`, else the folder picked with Locate F1 25 in the launcher, else Steam's copy.
+/// `--game`, else the active copy (`swofty game use`, the launcher's game
+/// switcher), else Steam's.
 fn game_dir(store: &Store, explicit: Option<PathBuf>) -> Result<PathBuf> {
     explicit
-        .or_else(|| {
-            store
-                .config()
-                .game_dir
-                .filter(|d| d.join(swofty_core::GAME_EXE).is_file())
-        })
-        .or_else(|| steam::find_game().map(|g| g.dir))
-        .context("F1 25 not found; pass --game or run swofty doctor")
+        .or_else(|| swofty_core::copies::find_active(&store.config()).map(|c| c.dir))
+        .context("F1 25 not found; pass --game, add the folder with swofty game add, or run swofty doctor")
 }
 
 pub fn build(store: &Store, profile: &str, game: Option<PathBuf>) -> Result<ExitCode> {

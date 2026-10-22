@@ -1,6 +1,7 @@
 mod build;
 mod db;
 mod doctor;
+mod ea;
 mod offline;
 mod recover;
 mod run;
@@ -41,7 +42,7 @@ struct Cli {
     command: Command,
 }
 
-const GAME_HELP: &str = "Game folder (default: the one the launcher located, else Steam's)";
+const GAME_HELP: &str = "Game folder (default: the active copy, see swofty game list)";
 
 #[derive(Subcommand)]
 enum Command {
@@ -113,6 +114,11 @@ enum Command {
     #[command(about = "Report what was discovered: Steam, the game, Proton, the launch option and the store")]
     Doctor,
     #[command(
+        subcommand,
+        about = "List the copies of F1 25 (Steam, EA app, added folders) and pick the one to play"
+    )]
+    Game(GameCommand),
+    #[command(
         about = "Show whether Steam is running and signed in; --start starts it and waits, as Play does"
     )]
     Steam {
@@ -135,6 +141,16 @@ enum LogsCommand {
         about = "Send the launcher and game logs to the developers on Discord, with your username and what went wrong"
     )]
     Send(send_logs::SendArgs),
+}
+
+#[derive(Subcommand)]
+enum GameCommand {
+    #[command(about = "List every copy of F1 25 found: store, version, folder, and the active one")]
+    List,
+    #[command(about = "Play this copy: steam, ea, or a game folder")]
+    Use { copy: String },
+    #[command(about = "Add a game folder (with F1_25.exe) and play it")]
+    Add { path: PathBuf },
 }
 
 #[derive(Subcommand)]
@@ -416,9 +432,59 @@ fn dispatch(store: &Store, cli: Cli) -> Result<ExitCode> {
         } => send_logs::send(&store, args),
         Command::Logs { dir, exe, .. } => run::logs(&store, dir, exe),
         Command::Doctor => doctor::doctor(&store),
+        Command::Game(cmd) => game(&store, cmd).map(|_| ExitCode::SUCCESS),
         Command::Steam { start } => run::steam_check(&store, start),
         Command::Update { check } => update::update(check),
     }
+}
+
+fn game(store: &Store, cmd: GameCommand) -> Result<()> {
+    use swofty_core::copies::{self, Choice};
+    let mut config = store.config();
+    match cmd {
+        GameCommand::List => {
+            let found = copies::discover(&config);
+            let active = copies::active(&found, &config).map(|c| c.dir.clone());
+            if found.is_empty() {
+                println!("no copy of F1 25 found; add one with swofty game add <folder>");
+            }
+            for c in &found {
+                let mark = if active.as_ref() == Some(&c.dir) { "*" } else { " " };
+                let version = c.version().unwrap_or_else(|| "unknown".into());
+                println!(
+                    "{mark} {:7} {:14} {}",
+                    copies::store_name(c.source),
+                    version,
+                    c.dir.display()
+                );
+            }
+        }
+        GameCommand::Use { copy } => {
+            let found = copies::discover(&config);
+            let c = Choice::parse(&copy)
+                .pick(&found)
+                .with_context(|| format!("no copy of F1 25 matches {copy}; see swofty game list"))?;
+            let dir = c.dir.clone();
+            copies::set_active(&mut config, &dir);
+            store.save_config(&config)?;
+            println!(
+                "playing the {} copy in {}",
+                copies::store_name(c.source),
+                dir.display()
+            );
+        }
+        GameCommand::Add { path } => {
+            let dir = std::path::absolute(&path)?;
+            copies::add(&mut config, &dir).map_err(anyhow::Error::msg)?;
+            store.save_config(&config)?;
+            println!(
+                "added {} ({}); it is now the active copy",
+                dir.display(),
+                copies::store_name(swofty_core::install::Source::detect(&dir))
+            );
+        }
+    }
+    Ok(())
 }
 
 fn addons(store: &Store, profile: &str, cmd: AddonsCommand) -> Result<()> {

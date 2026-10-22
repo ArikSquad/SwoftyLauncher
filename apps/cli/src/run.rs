@@ -7,7 +7,7 @@ use std::time::{Duration, Instant, SystemTime};
 use anyhow::{Context, Result, bail};
 use clap::Args;
 use swofty_core::crash::{Event, LogScan, Symbols, fatal_name};
-use swofty_core::install::{Game, Installer, PROXY};
+use swofty_core::install::{Game, Installer, PROXY, Source};
 use swofty_core::launch;
 use swofty_core::process::{
     descends_from, game_processes, game_running, steamvr_running, stop_game, stop_process,
@@ -36,9 +36,12 @@ pub struct RunArgs {
     direct: bool,
     #[arg(
         long,
-        help = "Don't start Steam when it's closed (the launch.start_steam setting does the same)"
+        alias = "no-start-steam",
+        help = "Don't start Steam or the EA app when it's closed (the launch.start_store setting does the same)"
     )]
-    no_start_steam: bool,
+    no_start_store: bool,
+    #[arg(long, hide = true)]
+    via_ea: bool,
     #[arg(
         long,
         help = "Start F1 25 in VR, like Steam's VR launch option (passes -vr; on Linux, starts SteamVR first)"
@@ -96,7 +99,10 @@ pub fn run(store: &Store, profile: &str, args: RunArgs) -> Result<ExitCode> {
     // Modded sessions run without EA AntiCheat: the terms are accepted once,
     // and declining means the game is not launched.
     crate::offline::gate(store, std::io::stdin().is_terminal())?;
-    ensure_steam(store, &game, args.no_start_steam)?;
+    match crate::ea::store_start(Source::detect(&game), args.direct) {
+        crate::ea::StoreStart::EaApp => crate::ea::ensure(store, args.no_start_store)?,
+        crate::ea::StoreStart::Steam => ensure_steam(store, &game, args.no_start_store)?,
+    }
     let id = format!("{:x}{:x}", std::process::id(), (now_secs() * 1e6) as u64);
     let request = LaunchRequest {
         id: id.clone(),
@@ -690,7 +696,9 @@ fn play(
     // AntiCheat launcher) creates the game suspended and patches the launch
     // guard before the game's first instruction: the check runs before any
     // window exists, so the in-process hook is too late to act on it.
-    let target = if game.join("EAAntiCheat.GameServiceLauncher.exe.bak").is_file() {
+    let target = if args.via_ea {
+        GAME_EXE
+    } else if game.join("EAAntiCheat.GameServiceLauncher.exe.bak").is_file() {
         say("info", "offline play: launching via the session launcher");
         "EAAntiCheat.GameServiceLauncher.exe"
     } else {
@@ -708,21 +716,34 @@ fn play(
             loader_missed(store, game);
         }
     };
-    let status = wait_game(&mut spawn(target, "game_stdout.log")?, || {
+    let ea = match args.via_ea {
+        true => Some(crate::ea::start(store, game, &extra, &dir, &copies_before)?),
+        false => None,
+    };
+    if ea.is_some() {
+        watch = placed_loader.then(|| AttachWatch::new(loader.clone(), before.clone(), Instant::now()));
+    }
+    let tick = || {
         if let Some(w) = watch.as_mut()
             && w.state() == Attach::Waiting
             && w.poll(Instant::now()) == Attach::Missed
         {
             missed();
         }
-    })?;
+    };
+    let code = if let Some(started) = ea {
+        crate::ea::wait(&copies_before, started, tick)
+    } else {
+        wait_game(&mut spawn(target, "game_stdout.log")?, tick)?
+            .code()
+            .unwrap_or(-1)
+    };
     if let Some(w) = watch.as_mut()
         && w.state() == Attach::Waiting
         && w.ended(Instant::now()) == Attach::Missed
     {
         missed();
     }
-    let code = status.code().unwrap_or(-1);
     wait_relaunched(&copies_before, code, launched.elapsed().unwrap_or_default());
     if let Some(usage) = usage {
         usage.end(code);
@@ -1071,10 +1092,10 @@ fn steam_policy(on: bool, game: &Path, steam_session: bool) -> SteamPolicy {
 
 /// The launcher's status line while the launch waits on Steam; gone once
 /// the wait ends.
-struct StageFile(PathBuf);
+pub(crate) struct StageFile(pub(crate) PathBuf);
 
 impl StageFile {
-    fn set(&self, text: &str) {
+    pub(crate) fn set(&self, text: &str) {
         if let Some(dir) = self.0.parent() {
             std::fs::create_dir_all(dir).ok();
         }
@@ -1107,7 +1128,7 @@ fn steam_command(args: &[String]) -> Command {
 /// A Steam copy of the game needs the Steam client up and signed in; start
 /// it when it is closed, as Steam's own Play button would.
 fn ensure_steam(store: &Store, game: &Path, opted_out: bool) -> Result<()> {
-    let on = store.config().launch.start_steam && !opted_out;
+    let on = store.config().launch.start_store && !opted_out;
     match steam_policy(on, game, steam_client::steam_session()) {
         SteamPolicy::NotSteam => say(
             "steam",
@@ -1120,7 +1141,7 @@ fn ensure_steam(store: &Store, game: &Path, opted_out: bool) -> Result<()> {
             if !status.state.usable() {
                 say(
                     "steam",
-                    "starting Steam is turned off (launch.start_steam or --no-start-steam); \
+                    "starting Steam is turned off (launch.start_store or --no-start-store); \
                      open Steam if F1 25 doesn't start",
                 );
             }
@@ -1208,12 +1229,39 @@ fn launch(store: &Store, game: &Path, direct: bool, mode: LaunchMode) -> Result<
     let install = steam::find_game();
     let wrapped = install
         .as_ref()
+        .filter(|g| swofty_core::copies::same_dir(&g.dir, game))
         .map(|g| {
             steam::launch_options(&g.steam_root)
                 .iter()
                 .any(|(_, o)| steam::wrapper_installed(o))
         })
         .unwrap_or(false);
+    if crate::ea::store_start(Source::detect(game), direct) == crate::ea::StoreStart::EaApp {
+        let mut c = Command::new(std::env::current_exe()?);
+        c.arg("--data-dir")
+            .arg(&store.root)
+            .arg("run")
+            .arg("--game")
+            .arg(game)
+            .arg("--via-ea")
+            .args(wrapper_command(None, game, mode));
+        #[cfg(unix)]
+        std::os::unix::process::CommandExt::process_group(&mut c, 0);
+        let log = store.root.join(WRAPPER_LOG);
+        let child = spawn_logged(c.current_dir(game), &log)?;
+        say(
+            "info",
+            &format!(
+                "launching F1 25 through the EA app; waiting for the wrapper, output in {}",
+                log.display()
+            ),
+        );
+        return Ok(Wrapper {
+            child: Some(child),
+            log,
+            timeout: DIRECT_START_TIMEOUT,
+        });
+    }
     if cfg!(windows) || direct || !wrapped {
         let me = std::env::current_exe()?;
         let mut c = Command::new(&me);
@@ -1520,7 +1568,7 @@ fn symbols(game: &Path, exe: Option<&Path>) -> Symbols {
     s
 }
 
-fn say(kind: &str, text: &str) {
+pub(crate) fn say(kind: &str, text: &str) {
     let colour = match kind {
         "loader" => "36",
         "core" => "32",
@@ -1588,7 +1636,7 @@ fn end_on_signals() {
 
 static ENDING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-fn ending() -> bool {
+pub(crate) fn ending() -> bool {
     ENDING.load(std::sync::atomic::Ordering::Relaxed)
 }
 
@@ -1858,8 +1906,9 @@ mod tests {
             #[command(flatten)]
             run: RunArgs,
         }
-        assert!(!Cli::parse_from(["swofty"]).run.no_start_steam);
-        assert!(Cli::parse_from(["swofty", "--no-start-steam"]).run.no_start_steam);
+        assert!(!Cli::parse_from(["swofty"]).run.no_start_store);
+        assert!(Cli::parse_from(["swofty", "--no-start-steam"]).run.no_start_store);
+        assert!(Cli::parse_from(["swofty", "--no-start-store"]).run.no_start_store);
     }
 
     #[test]
