@@ -110,7 +110,8 @@ uintptr_t binding(const std::string &id)
     if (it != bound.end())
         return it->second;
     uintptr_t a = swofty::api->resolve(id.c_str());
-    bound[id] = a;
+    if (a || runtime::code_ready())
+        bound[id] = a;
     return a;
 }
 

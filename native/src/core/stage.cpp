@@ -22,8 +22,9 @@ std::once_flag config_once;
 json::Value config_doc;
 std::string config_from = "none";
 std::wstring game_dir, swofty_dir;
-std::vector<void (*)(int)> stage_fns;
+std::vector<void (*)(int)> stage_fns, late_fns;
 std::mutex stage_lock;
+bool window_seen;
 
 std::wstring module_dir(HMODULE m)
 {
@@ -327,6 +328,21 @@ void on_stage(void (*fn)(int))
 {
     std::lock_guard<std::mutex> g(stage_lock);
     stage_fns.push_back(fn);
+    if (window_seen)
+        late_fns.push_back(fn);
+}
+
+/* A setup deferred on a packed build until its code decrypts registers its handlers after the window stage;
+   they get that stage once the setup is done. */
+void stage_catch_up()
+{
+    std::vector<void (*)(int)> fns;
+    {
+        std::lock_guard<std::mutex> g(stage_lock);
+        fns.swap(late_fns);
+    }
+    for (auto fn : fns)
+        fn(STAGE_WINDOW);
 }
 
 }
@@ -337,6 +353,7 @@ extern "C" __declspec(dllexport) int SwoftyCoreStage(int stage)
     {
         std::lock_guard<std::mutex> g(runtime::stage_lock);
         fns = runtime::stage_fns;
+        runtime::window_seen |= stage == runtime::STAGE_WINDOW;
     }
     swofty::log("[assets] stage %s: %zu handler(s); addons were loaded at the %s stage",
                 stage == runtime::STAGE_WINDOW ? "window" : "?", fns.size(), runtime::load_stage().c_str());

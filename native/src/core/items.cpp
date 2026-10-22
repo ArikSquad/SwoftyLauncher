@@ -132,7 +132,13 @@ uintptr_t find(const Target &t)
 
 }
 
-SWOFTY_ON_LOAD
+namespace runtime {
+void when_code_ready(const char *what, void (*fn)());
+}
+
+namespace {
+
+void items_load()
 {
     base = swofty::api->module_base();
     if (!load_config()) {
@@ -156,4 +162,11 @@ SWOFTY_ON_LOAD
     h_owned = std::move(*r);
     swofty::log("[items] ownership check hooked at base+0x%llx; every other key goes to the game",
                 (unsigned long long)(at - base));
+}
+
+}
+
+SWOFTY_ON_LOAD
+{
+    runtime::when_code_ready("items: ownership check hook", items_load);
 }
