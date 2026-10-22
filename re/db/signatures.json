@@ -8350,6 +8350,847 @@
    "used_by": [
     "addons/f1-1990/native/src/career_wizard.cpp"
    ]
+  },
+  {
+   "id": "core.hw_int_world_shadow_map_size",
+   "section": ".xtls",
+   "pattern": "45 31 C0 E8 ?? ?? ?? ?? 89 86 E4 1E 00 00",
+   "match": "0x143dc3c73",
+   "anchor": "0x3",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x143dc3c76",
+   "kind": "mid",
+   "expect": "E8",
+   "names": [
+    "site_Ne_HwInt_WorldShadowMapSize"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-22",
+     "by": "reopt-025",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "addons/re-optimization/native/src/re_optimization.cpp (xanpavle.re-optimization)"
+   ]
+  },
+  {
+   "id": "core.hw_int_night_shadow_map_size",
+   "section": ".data1",
+   "pattern": "49 8B 4C 24 50 31 D2 45 31 C0 E8 ?? ?? ?? ?? 66",
+   "match": "0x15271344c",
+   "anchor": "0xa",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x152713456",
+   "kind": "mid",
+   "expect": "E8",
+   "names": [
+    "site_Ne_HwInt_NightShadowMapSize"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-22",
+     "by": "reopt-025",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "addons/re-optimization/native/src/re_optimization.cpp (xanpavle.re-optimization)"
+   ],
+   "data1_reason": "return-address key only, never patched: xanpavle.re-optimization wraps Ne_Parse_Long in .xtls and compares its return address with this call; the attribute is read only inside this .data1 body"
+  },
+  {
+   "id": "core.hw_int_spot_shadow_sampling",
+   "section": ".xtls",
+   "pattern": "E8 ?? ?? ?? ?? EB 02 31 C0 44 8B 8E E0 1E 00 00",
+   "match": "0x143dc3d56",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x143dc3d56",
+   "kind": "mid",
+   "expect": "E8",
+   "names": [
+    "site_Ne_HwInt_SpotShadowSampling"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-22",
+     "by": "reopt-025",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "addons/re-optimization/native/src/re_optimization.cpp (xanpavle.re-optimization)"
+   ]
+  },
+  {
+   "id": "core.hw_int_vol_fog_map_width",
+   "section": ".xtls",
+   "pattern": "31 D2 45 31 C0 E8 ?? ?? ?? ?? 89 C7 E9",
+   "match": "0x143ca5083",
+   "anchor": "0x5",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x143ca5088",
+   "kind": "mid",
+   "expect": "E8",
+   "names": [
+    "site_Ne_HwInt_VolFogMapWidth"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-22",
+     "by": "reopt-025",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "addons/re-optimization/native/src/re_optimization.cpp (xanpavle.re-optimization)"
+   ]
+  },
+  {
+   "id": "core.hw_int_vol_fog_map_height",
+   "section": ".xtls",
+   "pattern": "45 31 C0 E8 ?? ?? ?? ?? 89 C3 48 8B 0D",
+   "match": "0x143ca5197",
+   "anchor": "0x3",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x143ca519a",
+   "kind": "mid",
+   "expect": "E8",
+   "names": [
+    "site_Ne_HwInt_VolFogMapHeight"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-22",
+     "by": "reopt-025",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "addons/re-optimization/native/src/re_optimization.cpp (xanpavle.re-optimization)"
+   ]
+  },
+  {
+   "id": "core.hw_int_crowd_billboard_distance",
+   "section": ".xtls",
+   "pattern": "45 31 C0 E8 ?? ?? ?? ?? C5 FA 2A C0",
+   "match": "0x143c60133",
+   "anchor": "0x3",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x143c60136",
+   "kind": "mid",
+   "expect": "E8",
+   "names": [
+    "site_Ne_HwInt_CrowdBillboardDistance"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-22",
+     "by": "reopt-025",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "addons/re-optimization/native/src/re_optimization.cpp (xanpavle.re-optimization)"
+   ]
+  },
+  {
+   "id": "core.hw_int_sky_shadow_map_size",
+   "section": ".xtls",
+   "pattern": "45 31 C0 E8 ?? ?? ?? ?? 89 86 E0 1E 00 00",
+   "match": "0x143dc3ab3",
+   "anchor": "0x3",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x143dc3ab6",
+   "kind": "mid",
+   "expect": "E8",
+   "names": [
+    "site_Ne_HwInt_SkyShadowMapSize"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-22",
+     "by": "reopt-025",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "addons/re-optimization/native/src/re_optimization.cpp (xanpavle.re-optimization)"
+   ]
+  },
+  {
+   "id": "core.hw_int_sky_shadow_cascade_count",
+   "section": ".xtls",
+   "pattern": "45 31 C0 E8 ?? ?? ?? ?? 89 86 E8 1E 00 00",
+   "match": "0x143dc3b93",
+   "anchor": "0x3",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x143dc3b96",
+   "kind": "mid",
+   "expect": "E8",
+   "names": [
+    "site_Ne_HwInt_SkyShadowCascadeCount"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-22",
+     "by": "reopt-025",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "addons/re-optimization/native/src/re_optimization.cpp (xanpavle.re-optimization)"
+   ]
+  },
+  {
+   "id": "core.hw_int_spot_shadow_map_size",
+   "section": ".xtls",
+   "pattern": "45 31 C0 E8 ?? ?? ?? ?? 89 86 EC 1E 00 00",
+   "match": "0x143dc3ce3",
+   "anchor": "0x3",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x143dc3ce6",
+   "kind": "mid",
+   "expect": "E8",
+   "names": [
+    "site_Ne_HwInt_SpotShadowMapSize"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-22",
+     "by": "reopt-025",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "addons/re-optimization/native/src/re_optimization.cpp (xanpavle.re-optimization)"
+   ]
+  },
+  {
+   "id": "core.hw_int_night_shadow_source_count",
+   "section": ".data1",
+   "pattern": "45 31 C0 E8 ?? ?? ?? ?? 89 86 AC 05 00 00",
+   "match": "0x1527134d3",
+   "anchor": "0x3",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x1527134d6",
+   "kind": "mid",
+   "expect": "E8",
+   "names": [
+    "site_Ne_HwInt_NightShadowSourceCount"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-22",
+     "by": "reopt-025",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "addons/re-optimization/native/src/re_optimization.cpp (xanpavle.re-optimization)"
+   ],
+   "data1_reason": "return-address key only, never patched: xanpavle.re-optimization wraps Ne_Parse_Long in .xtls and compares its return address with this call; the attribute is read only inside this .data1 body"
+  },
+  {
+   "id": "core.hw_int_shadow_sampling",
+   "section": ".data1",
+   "pattern": "31 FF 31 D2 45 31 C0 E8 ?? ?? ?? ?? 66",
+   "match": "0x1527d0ab1",
+   "anchor": "0x7",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x1527d0ab8",
+   "kind": "mid",
+   "expect": "E8",
+   "names": [
+    "site_Ne_HwInt_ShadowSampling"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-22",
+     "by": "reopt-025",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "addons/re-optimization/native/src/re_optimization.cpp (xanpavle.re-optimization)"
+   ],
+   "data1_reason": "return-address key only, never patched: xanpavle.re-optimization wraps Ne_Parse_Long in .xtls and compares its return address with this call; the attribute is read only inside this .data1 body"
+  },
+  {
+   "id": "core.hw_int_tex_stream_size_in_mi_b",
+   "section": ".data1",
+   "pattern": "E8 ?? ?? ?? ?? EB 02 31 C0 48 8B B6 98 00 00 00",
+   "match": "0x1471f8556",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x1471f8556",
+   "kind": "mid",
+   "expect": "E8",
+   "names": [
+    "site_Ne_HwInt_TexStreamSizeInMiB"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-22",
+     "by": "reopt-025",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "addons/re-optimization/native/src/re_optimization.cpp (xanpavle.re-optimization)"
+   ],
+   "data1_reason": "return-address key only, never patched: xanpavle.re-optimization wraps Ne_Parse_Long in .xtls and compares its return address with this call; the attribute is read only inside this .data1 body"
+  },
+  {
+   "id": "core.hw_bool_sky_shadow_low_lod",
+   "section": ".xtls",
+   "pattern": "E8 ?? ?? ?? ?? 85 C0 0F 94 86 F0 1E 00 00",
+   "match": "0x143dc3c08",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x143dc3c08",
+   "kind": "mid",
+   "expect": "E8",
+   "names": [
+    "site_Ne_HwBool_SkyShadowLowLod"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-22",
+     "by": "reopt-025",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "addons/re-optimization/native/src/re_optimization.cpp (xanpavle.re-optimization)"
+   ]
+  },
+  {
+   "id": "core.hw_bool_sky_shadow_map32_bits",
+   "section": ".xtls",
+   "pattern": "E8 ?? ?? ?? ?? 85 C0 0F 94 86 F1 1E 00 00",
+   "match": "0x143dc3b28",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x143dc3b28",
+   "kind": "mid",
+   "expect": "E8",
+   "names": [
+    "site_Ne_HwBool_SkyShadowMap32Bits"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-22",
+     "by": "reopt-025",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "addons/re-optimization/native/src/re_optimization.cpp (xanpavle.re-optimization)"
+   ]
+  },
+  {
+   "id": "core.hw_bool_crowd_in_shadows",
+   "section": ".data1",
+   "pattern": "49 8B 4C 24 50 48 8D 15 ?? ?? ?? ?? E8 ?? ?? ?? ?? 66",
+   "match": "0x14874a9fc",
+   "anchor": "0xc",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x14874aa08",
+   "kind": "mid",
+   "expect": "E8",
+   "names": [
+    "site_Ne_HwBool_CrowdInShadows"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-22",
+     "by": "reopt-025",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "addons/re-optimization/native/src/re_optimization.cpp (xanpavle.re-optimization)"
+   ],
+   "data1_reason": "redirected: the attribute is read only inside this .data1 body and the only .xtls route is wrapping Ne_Compare_StringNoCase, which has 1553 rel32 callers"
+  },
+  {
+   "id": "core.hw_bool_god_rays",
+   "section": ".xtls",
+   "pattern": "49 8B 4C 24 50 48 8D 15 ?? ?? ?? ?? E8 ?? ?? ?? ?? 85 C0 0F 94 C0 EB 02 31 C0 85 F6",
+   "match": "0x142c8d62c",
+   "anchor": "0xc",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x142c8d638",
+   "kind": "mid",
+   "expect": "E8",
+   "names": [
+    "site_Ne_HwBool_GodRays"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-22",
+     "by": "reopt-025",
+     "how": "static"
+    }
+   ],
+   "used_by": []
+  },
+  {
+   "id": "core.hw_bool_god_rays_post",
+   "section": ".xtls",
+   "pattern": "E8 ?? ?? ?? ?? 85 C0 0F 94 46 22 4C 8B 77 58",
+   "match": "0x142f811a8",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x142f811a8",
+   "kind": "mid",
+   "expect": "E8",
+   "names": [
+    "site_Ne_HwBool_GodRaysPost"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-22",
+     "by": "reopt-025",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "addons/re-optimization/native/src/re_optimization.cpp (xanpavle.re-optimization)"
+   ]
+  },
+  {
+   "id": "core.hw_bool_lens_streak",
+   "section": ".xtls",
+   "pattern": "E8 ?? ?? ?? ?? 85 C0 0F 94 46 24 4C 8B 77 58",
+   "match": "0x142f81288",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x142f81288",
+   "kind": "mid",
+   "expect": "E8",
+   "names": [
+    "site_Ne_HwBool_LensStreak"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-22",
+     "by": "reopt-025",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "addons/re-optimization/native/src/re_optimization.cpp (xanpavle.re-optimization)"
+   ]
+  },
+  {
+   "id": "core.hw_bool_motion_blur_v2",
+   "section": ".xtls",
+   "pattern": "E8 ?? ?? ?? ?? 85 C0 0F 94 46 27 48 8B 0D",
+   "match": "0x142f813d8",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x142f813d8",
+   "kind": "mid",
+   "expect": "E8",
+   "names": [
+    "site_Ne_HwBool_MotionBlurV2"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-22",
+     "by": "reopt-025",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "addons/re-optimization/native/src/re_optimization.cpp (xanpavle.re-optimization)"
+   ]
+  },
+  {
+   "id": "core.hw_bool_night_shadow_char_cast",
+   "section": ".data1",
+   "pattern": "E8 ?? ?? ?? ?? 40 8A 3D ?? ?? ?? ?? 31 3D",
+   "match": "0x14728dd18",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x14728dd18",
+   "kind": "mid",
+   "expect": "E8",
+   "names": [
+    "site_Ne_HwBool_NightShadowCharCast"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-22",
+     "by": "reopt-025",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "addons/re-optimization/native/src/re_optimization.cpp (xanpavle.re-optimization)"
+   ],
+   "data1_reason": "redirected: the attribute is read only inside this .data1 body and the only .xtls route is wrapping Ne_Compare_StringNoCase, which has 1553 rel32 callers"
+  },
+  {
+   "id": "core.hw_bool_rain_splashes",
+   "section": ".xtls",
+   "pattern": "E8 ?? ?? ?? ?? 85 C0 0F 94 C3 80 3D ?? ?? ?? ?? 01 75 71 B9 E9 00 00 00 48 8D 15 ?? ?? ?? ?? 0F 1F 44 00 00 44 8B 04 8A 45 85 C0 74 57 41 81 F8 BD 01 D3 06 74 32 83 C1 12 4C 69 C1 43 43 66 5F 49 C1 E8 20 41 89 C9 45 29 C1 41 D1 E9 45 01 C1 41 C1 E9 08 45 69 C1 75 01 00 00 44 29 C1 81 F9 E9 00 00 00 75 BE EB 1C 45 31 C0 85 C0 41 0F 94 C0 48 8D 0D ?? ?? ?? ?? 48 8D 15 ?? ?? ?? ?? E8 ?? ?? ?? ?? 88 9E 45 0B 00 00",
+   "match": "0x14015abec",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x14015abec",
+   "kind": "mid",
+   "names": [
+    "site_Ne_HwBool_RainSplashes"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-22",
+     "by": "reopt-025",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "addons/re-optimization/native/src/re_optimization.cpp (xanpavle.re-optimization)"
+   ],
+   "expect": "E8"
+  },
+  {
+   "id": "core.hw_bool_rain_beads",
+   "section": ".xtls",
+   "pattern": "E8 ?? ?? ?? ?? 85 C0 0F 94 C3 80 3D ?? ?? ?? ?? 01 0F 85",
+   "match": "0x14015aadc",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x14015aadc",
+   "kind": "mid",
+   "expect": "E8",
+   "names": [
+    "site_Ne_HwBool_RainBeads"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-22",
+     "by": "reopt-025",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "addons/re-optimization/native/src/re_optimization.cpp (xanpavle.re-optimization)"
+   ]
+  },
+  {
+   "id": "core.hw_bool_rain_high",
+   "section": ".xtls",
+   "pattern": "E8 ?? ?? ?? ?? 85 C0 0F 94 C3 80 3D ?? ?? ?? ?? 01 75 71 B9 E9 00 00 00 48 8D 15 ?? ?? ?? ?? 0F 1F 44 00 00 44 8B 04 8A 45 85 C0 74 57 41 81 F8 BD 01 D3 06 74 32 83 C1 12 4C 69 C1 43 43 66 5F 49 C1 E8 20 41 89 C9 45 29 C1 41 D1 E9 45 01 C1 41 C1 E9 08 45 69 C1 75 01 00 00 44 29 C1 81 F9 E9 00 00 00 75 BE EB 1C 45 31 C0 85 C0 41 0F 94 C0 48 8D 0D ?? ?? ?? ?? 48 8D 15 ?? ?? ?? ?? E8 ?? ?? ?? ?? 88 1D",
+   "match": "0x14015acdc",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x14015acdc",
+   "kind": "mid",
+   "names": [
+    "site_Ne_HwBool_RainHigh"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-22",
+     "by": "reopt-025",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "addons/re-optimization/native/src/re_optimization.cpp (xanpavle.re-optimization)"
+   ],
+   "expect": "E8"
+  },
+  {
+   "id": "core.hw_bool_track_heat_haze",
+   "section": ".xtls",
+   "pattern": "E8 ?? ?? ?? ?? 85 C0 0F 94 C3 80 3D ?? ?? ?? ?? 01 75 71 B9 E9 00 00 00 48 8D 15 ?? ?? ?? ?? 0F 1F 44 00 00 44 8B 04 8A 45 85 C0 74 57 41 81 F8 BD 01 D3 06 74 32 83 C1 12 4C 69 C1 43 43 66 5F 49 C1 E8 20 41 89 C9 45 29 C1 41 D1 E9 45 01 C1 41 C1 E9 08 45 69 C1 75 01 00 00 44 29 C1 81 F9 E9 00 00 00 75 BE EB 1C 45 31 C0 85 C0 41 0F 94 C0 48 8D 0D ?? ?? ?? ?? 48 8D 15 ?? ?? ?? ?? E8 ?? ?? ?? ?? 88 9E 46 0B 00 00",
+   "match": "0x14015adcc",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x14015adcc",
+   "kind": "mid",
+   "names": [
+    "site_Ne_HwBool_TrackHeatHaze"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-22",
+     "by": "reopt-025",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "addons/re-optimization/native/src/re_optimization.cpp (xanpavle.re-optimization)"
+   ],
+   "expect": "E8"
+  },
+  {
+   "id": "core.hw_bool_rain_sheets",
+   "section": ".data1",
+   "pattern": "E8 ?? ?? ?? ?? 85 C0 0F 94 D3 80 3D ?? ?? ?? ?? 01 0F 85",
+   "match": "0x15275b6ab",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x15275b6ab",
+   "kind": "mid",
+   "expect": "E8",
+   "names": [
+    "site_Ne_HwBool_RainSheets"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-22",
+     "by": "reopt-025",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "addons/re-optimization/native/src/re_optimization.cpp (xanpavle.re-optimization)"
+   ],
+   "data1_reason": "redirected: the attribute is read only inside this .data1 body and the only .xtls route is wrapping Ne_Compare_StringNoCase, which has 1553 rel32 callers"
+  },
+  {
+   "id": "core.hw_bool_ground_cover_enabled",
+   "section": ".xtls",
+   "pattern": "E8 ?? ?? ?? ?? 85 C0 0F 94 C0 38 86 50 0C 00 00",
+   "match": "0x143ce4288",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x143ce4288",
+   "kind": "mid",
+   "expect": "E8",
+   "names": [
+    "site_Ne_HwBool_GroundCoverEnabled"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-22",
+     "by": "reopt-025",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "addons/re-optimization/native/src/re_optimization.cpp (xanpavle.re-optimization)"
+   ]
+  },
+  {
+   "id": "core.hw_bool_grass_flattening",
+   "section": ".xtls",
+   "pattern": "E8 ?? ?? ?? ?? 85 C0 0F 94 C0 38 86 52 0C 00 00",
+   "match": "0x143ce4308",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x143ce4308",
+   "kind": "mid",
+   "expect": "E8",
+   "names": [
+    "site_Ne_HwBool_GrassFlattening"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-22",
+     "by": "reopt-025",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "addons/re-optimization/native/src/re_optimization.cpp (xanpavle.re-optimization)"
+   ]
+  },
+  {
+   "id": "core.hw_bool_ground_cover_meshes",
+   "section": ".xtls",
+   "pattern": "E8 ?? ?? ?? ?? 85 C0 0F 94 C1 38 0D",
+   "match": "0x143ce438c",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x143ce438c",
+   "kind": "mid",
+   "expect": "E8",
+   "names": [
+    "site_Ne_HwBool_GroundCoverMeshes"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-22",
+     "by": "reopt-025",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "addons/re-optimization/native/src/re_optimization.cpp (xanpavle.re-optimization)"
+   ]
+  },
+  {
+   "id": "core.hw_bool_volumetric_fog",
+   "section": ".xtls",
+   "pattern": "E8 ?? ?? ?? ?? 85 C0 0F 94 05 ?? ?? ?? ?? 4C 8B 66 58",
+   "match": "0x143ca4f38",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x143ca4f38",
+   "kind": "mid",
+   "expect": "E8",
+   "names": [
+    "site_Ne_HwBool_VolumetricFog"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-22",
+     "by": "reopt-025",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "addons/re-optimization/native/src/re_optimization.cpp (xanpavle.re-optimization)"
+   ]
+  },
+  {
+   "id": "core.compare_string_no_case",
+   "section": ".xtls",
+   "pattern": "48 83 EC 28 83 3D ?? ?? ?? ?? 00 75 2D 48 85 C9 75 1A E8 ?? ?? ?? ?? C7 00 16 00 00 00 E8 ?? ?? ?? ?? B8 FF FF FF 7F 48 83 C4 28 C3 48 85 D2 74 E1 48 83 C4 28 E9 ?? ?? ?? ?? 45 33 C0 48 83 C4 28 E9 ?? ?? ?? ?? CC CC 48 89 5C 24 08 57 48 83 EC 40",
+   "match": "0x14534d918",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x14534d918",
+   "kind": "func_start",
+   "names": [
+    "Ne_Compare_StringNoCase"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-22",
+     "by": "reopt-025",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "addons/re-optimization/native/src/re_optimization.cpp (xanpavle.re-optimization)"
+   ]
+  },
+  {
+   "id": "core.parse_long",
+   "section": ".xtls",
+   "pattern": "45 31 C0 E8 ?? ?? ?? ?? 89 86 E4 1E 00 00",
+   "match": "0x143dc3c73",
+   "anchor": "0x4",
+   "resolve": {
+    "kind": "rel32",
+    "insn": "0x3"
+   },
+   "target": "0x14534dcd8",
+   "kind": "call",
+   "names": [
+    "Ne_Parse_Long"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-22",
+     "by": "reopt-025",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "addons/re-optimization/native/src/re_optimization.cpp (xanpavle.re-optimization)"
+   ]
   }
  ]
 }

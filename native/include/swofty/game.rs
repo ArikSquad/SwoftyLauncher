@@ -1554,8 +1554,30 @@ pub type FeTile_Build_List_t = unsafe extern "C" fn(
     sub_kind: u8,
     a7: u32,
 );
+pub type FeTile_CareerDlcItem_Populate_t =
+    unsafe extern "C" fn(item: *mut HomeItem, node: *mut c_void, a7: u32);
+pub type FeTile_Construct_CareerItem_t =
+    unsafe extern "C" fn(item: *mut HomeItem, alloc: *mut NeAllocator, id: *const c_char) -> *mut HomeItem;
 pub type FeTile_ItemBase_Populate_t = unsafe extern "C" fn(item: *mut HomeItem, node: *mut c_void, a7: u32);
+pub type FeTile_Route_CareerItem_t =
+    unsafe extern "C" fn(item: *mut HomeItem, out: *mut Action) -> *mut Action;
+pub type Game_CareerWizard_PushNextStep_t = unsafe extern "C" fn(wizard: *mut c_void);
+pub type Game_CareerWizard_StartsInF1_t = unsafe extern "C" fn(
+    entrants: *mut c_void,
+    wizard_data: *mut c_void,
+    entrant_list: *const c_char,
+) -> bool;
+pub type Game_Career_IsDriverCareerMode_t = unsafe extern "C" fn(championship: *const c_void) -> bool;
+pub type Game_DriverSelectHeader_SetTabState_t =
+    unsafe extern "C" fn(header: *mut c_void, tab: u64, content_visible: u8, enabled: u8);
+pub type Game_EntrantsUi_BuildCharacterRef_t =
+    unsafe extern "C" fn(out: *mut c_void, character: *const u8, node: *mut c_void) -> *mut c_void;
+pub type Game_EntrantsUi_OnCharacterListLoaded_t =
+    unsafe extern "C" fn(ctx: *mut c_void, message: *const c_void) -> i64;
+pub type Game_SpeechSystem_PostLine_t =
+    unsafe extern "C" fn(speech: *mut c_void, line: *mut c_void, retrigger: u8);
 pub type Gdb_Lookup_Key_t = unsafe extern "C" fn(path: *const c_char) -> *mut *mut c_void;
+pub type Ne_Compare_StringNoCase_t = unsafe extern "C" fn(a: *const c_char, b: *const c_char) -> i32;
 pub type Ne_Detach_ChildNode_t = unsafe extern "C" fn(parent: *mut c_void, child: *mut c_void) -> c_int;
 pub type Ne_Format_String_t = unsafe extern "C" fn(out: *mut *mut NeStr, fmt: *const c_char, ...) -> i64;
 pub type Ne_Get_SettingBool_t =
@@ -1565,6 +1587,7 @@ pub type Ne_Get_SettingU32_t =
 pub type Ne_Log_Thunk_t = unsafe extern "C" fn(channel: *const c_char, fmt: *const c_char, ...);
 pub type Ne_Make_StrFromCStr_t =
     unsafe extern "C" fn(out: *mut *mut NeStr, s: *const c_char, flags: u32, len: usize) -> u32;
+pub type Ne_Parse_Long_t = unsafe extern "C" fn(text: *const c_char, end: *mut *mut c_char, base: i32) -> i32;
 pub type Ne_Post_BusMessage_t = unsafe extern "C" fn(bus: *mut c_void, msg: *mut c_void) -> u64;
 pub type Sess_GameWeatherSystem_SetupSession_t =
     unsafe extern "C" fn(ws: *mut c_void, settings: *mut c_void, config: *mut c_void);
@@ -1770,13 +1793,68 @@ pub mod bindings {
         kind: "func",
         status: Status::Stable,
     };
+    pub const FeTile_CareerDlcItem_Populate: Binding = Binding {
+        id: "FeTile_CareerDlcItem_Populate",
+        kind: "func",
+        status: Status::Experimental,
+    };
+    pub const FeTile_Construct_CareerItem: Binding = Binding {
+        id: "FeTile_Construct_CareerItem",
+        kind: "func",
+        status: Status::Experimental,
+    };
     pub const FeTile_ItemBase_Populate: Binding = Binding {
         id: "FeTile_ItemBase_Populate",
         kind: "func",
         status: Status::Stable,
     };
+    pub const FeTile_Route_CareerItem: Binding = Binding {
+        id: "FeTile_Route_CareerItem",
+        kind: "func",
+        status: Status::Experimental,
+    };
+    pub const Game_CareerWizard_PushNextStep: Binding = Binding {
+        id: "Game_CareerWizard_PushNextStep",
+        kind: "func",
+        status: Status::Experimental,
+    };
+    pub const Game_CareerWizard_StartsInF1: Binding = Binding {
+        id: "Game_CareerWizard_StartsInF1",
+        kind: "func",
+        status: Status::Experimental,
+    };
+    pub const Game_Career_IsDriverCareerMode: Binding = Binding {
+        id: "Game_Career_IsDriverCareerMode",
+        kind: "func",
+        status: Status::Experimental,
+    };
+    pub const Game_DriverSelectHeader_SetTabState: Binding = Binding {
+        id: "Game_DriverSelectHeader_SetTabState",
+        kind: "func",
+        status: Status::Experimental,
+    };
+    pub const Game_EntrantsUi_BuildCharacterRef: Binding = Binding {
+        id: "Game_EntrantsUi_BuildCharacterRef",
+        kind: "func",
+        status: Status::Experimental,
+    };
+    pub const Game_EntrantsUi_OnCharacterListLoaded: Binding = Binding {
+        id: "Game_EntrantsUi_OnCharacterListLoaded",
+        kind: "func",
+        status: Status::Experimental,
+    };
+    pub const Game_SpeechSystem_PostLine: Binding = Binding {
+        id: "Game_SpeechSystem_PostLine",
+        kind: "func",
+        status: Status::Experimental,
+    };
     pub const Gdb_Lookup_Key: Binding = Binding {
         id: "Gdb_Lookup_Key",
+        kind: "func",
+        status: Status::Experimental,
+    };
+    pub const Ne_Compare_StringNoCase: Binding = Binding {
+        id: "Ne_Compare_StringNoCase",
         kind: "func",
         status: Status::Experimental,
     };
@@ -1809,6 +1887,11 @@ pub mod bindings {
         id: "Ne_Make_StrFromCStr",
         kind: "func",
         status: Status::Stable,
+    };
+    pub const Ne_Parse_Long: Binding = Binding {
+        id: "Ne_Parse_Long",
+        kind: "func",
+        status: Status::Experimental,
     };
     pub const Ne_Post_BusMessage: Binding = Binding {
         id: "Ne_Post_BusMessage",
@@ -1857,6 +1940,16 @@ pub mod bindings {
     };
     pub const g_Career_UpgradeLifecycle: Binding = Binding {
         id: "g_Career_UpgradeLifecycle",
+        kind: "data",
+        status: Status::Experimental,
+    };
+    pub const g_FeTile_CustomisationSystem: Binding = Binding {
+        id: "g_FeTile_CustomisationSystem",
+        kind: "data",
+        status: Status::Experimental,
+    };
+    pub const g_FeTile_SelectedCareerContent: Binding = Binding {
+        id: "g_FeTile_SelectedCareerContent",
         kind: "data",
         status: Status::Experimental,
     };
@@ -2775,6 +2868,21 @@ pub mod bindings {
         kind: "site",
         status: Status::Stable,
     };
+    pub const site_FeTile_CareerContentEnd: Binding = Binding {
+        id: "site_FeTile_CareerContentEnd",
+        kind: "site",
+        status: Status::Experimental,
+    };
+    pub const site_Game_CareerWizardConfirm_NextRoute: Binding = Binding {
+        id: "site_Game_CareerWizardConfirm_NextRoute",
+        kind: "site",
+        status: Status::Experimental,
+    };
+    pub const site_Game_DriverSelectHeader_BuildTabs: Binding = Binding {
+        id: "site_Game_DriverSelectHeader_BuildTabs",
+        kind: "call",
+        status: Status::Experimental,
+    };
     pub const site_Gdb_DeptCountStore: Binding = Binding {
         id: "site_Gdb_DeptCountStore",
         kind: "site",
@@ -2785,8 +2893,148 @@ pub mod bindings {
         kind: "site",
         status: Status::Experimental,
     };
+    pub const site_Ne_HwBool_CrowdInShadows: Binding = Binding {
+        id: "site_Ne_HwBool_CrowdInShadows",
+        kind: "call",
+        status: Status::Experimental,
+    };
+    pub const site_Ne_HwBool_GodRaysPost: Binding = Binding {
+        id: "site_Ne_HwBool_GodRaysPost",
+        kind: "call",
+        status: Status::Experimental,
+    };
+    pub const site_Ne_HwBool_GrassFlattening: Binding = Binding {
+        id: "site_Ne_HwBool_GrassFlattening",
+        kind: "call",
+        status: Status::Experimental,
+    };
+    pub const site_Ne_HwBool_GroundCoverEnabled: Binding = Binding {
+        id: "site_Ne_HwBool_GroundCoverEnabled",
+        kind: "call",
+        status: Status::Experimental,
+    };
+    pub const site_Ne_HwBool_GroundCoverMeshes: Binding = Binding {
+        id: "site_Ne_HwBool_GroundCoverMeshes",
+        kind: "call",
+        status: Status::Experimental,
+    };
+    pub const site_Ne_HwBool_LensStreak: Binding = Binding {
+        id: "site_Ne_HwBool_LensStreak",
+        kind: "call",
+        status: Status::Experimental,
+    };
+    pub const site_Ne_HwBool_MotionBlurV2: Binding = Binding {
+        id: "site_Ne_HwBool_MotionBlurV2",
+        kind: "call",
+        status: Status::Experimental,
+    };
+    pub const site_Ne_HwBool_NightShadowCharCast: Binding = Binding {
+        id: "site_Ne_HwBool_NightShadowCharCast",
+        kind: "call",
+        status: Status::Experimental,
+    };
+    pub const site_Ne_HwBool_RainBeads: Binding = Binding {
+        id: "site_Ne_HwBool_RainBeads",
+        kind: "call",
+        status: Status::Experimental,
+    };
+    pub const site_Ne_HwBool_RainHigh: Binding = Binding {
+        id: "site_Ne_HwBool_RainHigh",
+        kind: "call",
+        status: Status::Experimental,
+    };
+    pub const site_Ne_HwBool_RainSheets: Binding = Binding {
+        id: "site_Ne_HwBool_RainSheets",
+        kind: "call",
+        status: Status::Experimental,
+    };
+    pub const site_Ne_HwBool_RainSplashes: Binding = Binding {
+        id: "site_Ne_HwBool_RainSplashes",
+        kind: "call",
+        status: Status::Experimental,
+    };
+    pub const site_Ne_HwBool_SkyShadowLowLod: Binding = Binding {
+        id: "site_Ne_HwBool_SkyShadowLowLod",
+        kind: "call",
+        status: Status::Experimental,
+    };
+    pub const site_Ne_HwBool_SkyShadowMap32Bits: Binding = Binding {
+        id: "site_Ne_HwBool_SkyShadowMap32Bits",
+        kind: "call",
+        status: Status::Experimental,
+    };
+    pub const site_Ne_HwBool_TrackHeatHaze: Binding = Binding {
+        id: "site_Ne_HwBool_TrackHeatHaze",
+        kind: "call",
+        status: Status::Experimental,
+    };
+    pub const site_Ne_HwBool_VolumetricFog: Binding = Binding {
+        id: "site_Ne_HwBool_VolumetricFog",
+        kind: "call",
+        status: Status::Experimental,
+    };
     pub const site_Ne_HwConfigParseCall: Binding = Binding {
         id: "site_Ne_HwConfigParseCall",
+        kind: "call",
+        status: Status::Experimental,
+    };
+    pub const site_Ne_HwInt_CrowdBillboardDistance: Binding = Binding {
+        id: "site_Ne_HwInt_CrowdBillboardDistance",
+        kind: "call",
+        status: Status::Experimental,
+    };
+    pub const site_Ne_HwInt_NightShadowMapSize: Binding = Binding {
+        id: "site_Ne_HwInt_NightShadowMapSize",
+        kind: "call",
+        status: Status::Experimental,
+    };
+    pub const site_Ne_HwInt_NightShadowSourceCount: Binding = Binding {
+        id: "site_Ne_HwInt_NightShadowSourceCount",
+        kind: "call",
+        status: Status::Experimental,
+    };
+    pub const site_Ne_HwInt_ShadowSampling: Binding = Binding {
+        id: "site_Ne_HwInt_ShadowSampling",
+        kind: "call",
+        status: Status::Experimental,
+    };
+    pub const site_Ne_HwInt_SkyShadowCascadeCount: Binding = Binding {
+        id: "site_Ne_HwInt_SkyShadowCascadeCount",
+        kind: "call",
+        status: Status::Experimental,
+    };
+    pub const site_Ne_HwInt_SkyShadowMapSize: Binding = Binding {
+        id: "site_Ne_HwInt_SkyShadowMapSize",
+        kind: "call",
+        status: Status::Experimental,
+    };
+    pub const site_Ne_HwInt_SpotShadowMapSize: Binding = Binding {
+        id: "site_Ne_HwInt_SpotShadowMapSize",
+        kind: "call",
+        status: Status::Experimental,
+    };
+    pub const site_Ne_HwInt_SpotShadowSampling: Binding = Binding {
+        id: "site_Ne_HwInt_SpotShadowSampling",
+        kind: "call",
+        status: Status::Experimental,
+    };
+    pub const site_Ne_HwInt_TexStreamSizeInMiB: Binding = Binding {
+        id: "site_Ne_HwInt_TexStreamSizeInMiB",
+        kind: "call",
+        status: Status::Experimental,
+    };
+    pub const site_Ne_HwInt_VolFogMapHeight: Binding = Binding {
+        id: "site_Ne_HwInt_VolFogMapHeight",
+        kind: "call",
+        status: Status::Experimental,
+    };
+    pub const site_Ne_HwInt_VolFogMapWidth: Binding = Binding {
+        id: "site_Ne_HwInt_VolFogMapWidth",
+        kind: "call",
+        status: Status::Experimental,
+    };
+    pub const site_Ne_HwInt_WorldShadowMapSize: Binding = Binding {
+        id: "site_Ne_HwInt_WorldShadowMapSize",
         kind: "call",
         status: Status::Experimental,
     };
@@ -2862,6 +3110,11 @@ pub mod bindings {
     };
     pub const vt_Career_Weekend: Binding = Binding {
         id: "vt_Career_Weekend",
+        kind: "vtable",
+        status: Status::Experimental,
+    };
+    pub const vt_Game_DriverCareerSlotPredicate: Binding = Binding {
+        id: "vt_Game_DriverCareerSlotPredicate",
         kind: "vtable",
         status: Status::Experimental,
     };

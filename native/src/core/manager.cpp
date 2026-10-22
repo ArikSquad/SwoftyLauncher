@@ -460,7 +460,7 @@ uintptr_t apply_match(const Binding &b, uintptr_t match, const char **why)
         return 0;
     }
     bool code = b.kind == "func" || b.kind == "site" || b.kind == "call";
-    bool data1_site = b.kind == "site" && b.section == ".data1" && is_data1_code(target);
+    bool data1_site = (b.kind == "site" || b.kind == "call") && b.section == ".data1" && is_data1_code(target);
     if (code ? !is_code(target) && !data1_site : !section_of(target)) {
         *why = code ? "target is not in read-only code" : "target is outside the exe";
         return 0;

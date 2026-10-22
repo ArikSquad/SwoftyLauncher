@@ -64,7 +64,7 @@ attribution requirement applies to this work and to every work based on it:
 
 ## F1 25 RE-Optimization
 
-The bundled addon `addons/re-optimization` (`xanpavle.re-optimization`) is a port of F1 25 RE-Optimization by xanpavle, <https://github.com/xanpavle/F1-25-RE-Optimization>, with his permission. Its settings delta, engine override names and values, GPU detection and upscaler choice are ported from `src/profile.cpp`, `src/tune.cpp`, `src/gpu.cpp` and `f125_tune.ini` of version 0.1.0. The proxy `dinput8.dll` and the inline-detour engine are not used; the addon loads as an engine plugin and hooks through the mixin system. The addon folder keeps the licence as `addons/re-optimization/LICENSE`.
+The bundled addon `addons/re-optimization` (`xanpavle.re-optimization`) is a port of F1 25 RE-Optimization by xanpavle, <https://github.com/xanpavle/F1-25-RE-Optimization>, with his permission. Its settings delta, engine override names and values, in-engine enforcement table and modes, GPU detection and upscaler choice are ported from `src/profile.cpp`, `src/tune.cpp`, `src/enforce.cpp`, `src/gpu.cpp` and `f125_tune.ini` of version 0.2.5. The proxy `dinput8.dll`, the inline-detour engine and the signature scanner are not used; the addon loads as an engine plugin and hooks through the mixin system. The addon folder keeps the licence as `addons/re-optimization/LICENSE`.
 
 ```
 MIT License

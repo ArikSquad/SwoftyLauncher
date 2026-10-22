@@ -21,7 +21,7 @@ A launcher update that carries a newer version of a bundled addon updates the in
 
 ## F1 25 RE-Optimization
 
-F1 25 RE-Optimization is [xanpavle's renderer optimisation for F1 25](https://github.com/xanpavle/F1-25-RE-Optimization), released under the MIT licence. Swofty ported it to a launcher addon with his permission. It makes the renderer do less work: it lowers a set of quality settings that cost a lot of GPU time, overrides a few engine-level renderer limits, and picks the upscaler your GPU supports.
+F1 25 RE-Optimization is [xanpavle's renderer optimisation for F1 25](https://github.com/xanpavle/F1-25-RE-Optimization), released under the MIT licence. Swofty ported it to a launcher addon with his permission. It makes the renderer do less work: it lowers a set of quality settings that cost a lot of GPU time, holds the expensive shadow, fog and crowd values down inside the engine, overrides a few engine-level renderer limits, and picks the upscaler your GPU supports. The bundled version tracks upstream 0.2.5.
 
 - It is off until you turn it on.
 - It works offline and in single-player only, like every modded session.
@@ -51,8 +51,26 @@ The graphics profile lowers these on top of whatever preset you pick:
 | Skid mark parallax | on | off |
 | Texture streaming texel density bias | | 0.25 |
 | GPU culling (`cs_culling`) | off | on |
+| Ray-traced ambient occlusion and DDGI | on | off |
 
-It leaves resolution, your preset, mirrors, ray tracing, rain, the upscaler quality level (Quality, Balanced, Performance) and frame generation alone.
+It leaves resolution, your preset, mirrors, ray-traced shadows and reflections, rain, the upscaler quality level (Quality, Balanced, Performance) and frame generation alone.
+
+### What it holds in the engine
+
+The game clamps shadow, fog and crowd settings to your graphics preset after it reads the settings file. In-engine enforcement sets these where the engine reads them, after that clamp:
+
+| Setting | Tuned value |
+|---|---|
+| World, night, sky and spot shadow maps | 2048 |
+| Sky shadow cascades, night shadow sources | 4 |
+| Shadow and spot shadow sampling | 2 |
+| Volumetric fog map | 512 × 288 |
+| Crowd billboard distance | 2500 |
+| Texture streaming budget | 2048 MiB |
+
+- **Cheaper** (the default) uses the lower of your preset's value and the tuned value, and turns off sky-shadow low LOD, the 32-bit sky shadow map, crowd shadows, god rays, lens streak and motion blur v2. It never turns an effect on.
+- **Target** always uses the tuned value, turns the same effects off, and keeps rain, track heat haze, ground cover, grass flattening, volumetric fog and night character shadows on.
+- **Off** leaves the engine's values.
 
 ### Settings
 
@@ -61,13 +79,16 @@ You'll find these in the addon's row on the **Addons** page and under **ADDON SE
 | Setting | Id | Default | Does |
 |---|---|---|---|
 | Apply the graphics profile | `apply_profile` | on | Lowers the settings in [What it lowers](#what-it-lowers) |
+| Keep ray-traced AO and DDGI | `keep_rt_ao_ddgi` | off | Leaves ray-traced ambient occlusion and DDGI as you set them |
+| In-engine enforcement | `enforce_mode` | `cheaper` | `cheaper`, `target` or `off`, as in [What it holds in the engine](#what-it-holds-in-the-engine) |
+| Pin effects | `pin_effects` | on | Turns the effects in [What it holds in the engine](#what-it-holds-in-the-engine) off (and, in Target mode, on); off leaves them to your preset |
 | Upscaler | `upscaler` | `auto` | Picks the upscaler: `auto`, `dlss`, `fsr3`, `xess`, `taa`, `off` (no anti-aliasing) or `keep` (your in-game choice) |
 | VRS and async compute | `override_vrs_async` | on | Turns on variable rate shading (`Renderer.Gfx.enableVRS`) and async compute (`Renderer.Gfx.enableAsyncCompute`) |
 | Grass and ground cover caps | `override_ground_cover` | on | Caps ground-cover instances: `groundCoverMaxInstances` 40000, `groundCover2MaxInstances` 80000, `groundCover2MaxMeshInstances` 4000, and turns off `groundCoverForceUltraQuality` |
 | Static instance caps | `override_instance_caps` | on | Sets `Renderer.maxStaticInstances` and `Renderer.maxPVSRenderInstances` to 20000. Distant props can pop in |
 | Log setting reads | `log_reads` | off | Writes every engine setting the game reads, and each change, to `swofty/loader.log` |
 
-The graphics profile and the upscaler apply when the game reads its settings file at launch, so a change to either applies on the next launch. The upscaler applies with the profile on or off.
+The graphics profile, the upscaler and the enforcement mode apply when the game reads its settings at launch, so a change to any of them applies on the next launch. The upscaler applies with the profile on or off. FSR 3 is written the way the game reads it (`fsr3="1"` with `cas="1"`); before 0.2.5 a forced or automatic FSR 3 did not engage.
 
 With `upscaler` set to `auto`, the addon picks by GPU:
 
