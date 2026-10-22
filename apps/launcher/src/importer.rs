@@ -37,6 +37,9 @@ impl Shell {
             return self.section_page(i, p, cx).into_any_element();
         }
         let installed = self.library.addons.iter().any(|a| a.manifest.id == managed::ID);
+        if installed && self.vanilla() {
+            return self.importer_in_vanilla(p, cx);
+        }
         let adding = self.updates.adding;
         let (title, body, button) = if !installed {
             (
@@ -53,16 +56,6 @@ impl Shell {
                     .loading(adding)
                     .disabled(adding)
                     .on_click(cx.listener(|this, _, window, cx| this.install_importer(window, cx))),
-            )
-        } else if self.vanilla() {
-            (
-                format!("The Mod Importer is off in {VANILLA}"),
-                format!("{VANILLA} plays the game without addons. Switch to another profile to import mods."),
-                Button::new("importer-profiles")
-                    .outline()
-                    .icon(IconName::Layers)
-                    .label("Profiles")
-                    .on_click(cx.listener(|this, _, _, cx| this.go(Page::Profiles, cx))),
             )
         } else {
             (
@@ -85,6 +78,47 @@ impl Shell {
             .size_full()
             .child(self.header(Page::Importer.label(), "Team Simplified".to_owned(), div(), p))
             .child(self.empty(IconName::FolderInput, title, body, button, p))
+            .into_any_element()
+    }
+
+    fn importer_in_vanilla(&mut self, p: Palette, cx: &mut Context<Self>) -> AnyElement {
+        let modded = self
+            .library
+            .profiles
+            .iter()
+            .find(|p| !p.vanilla())
+            .map(|p| p.name.clone());
+        let button = match modded {
+            Some(name) => Button::new("importer-use-profile")
+                .primary()
+                .icon(IconName::Layers)
+                .label(format!("Use {name}"))
+                .on_click(cx.listener(move |this, _, window, cx| this.switch_profile(&name, window, cx))),
+            None => Button::new("importer-profiles")
+                .outline()
+                .icon(IconName::Layers)
+                .label("Profiles")
+                .on_click(cx.listener(|this, _, _, cx| this.go(Page::Profiles, cx))),
+        };
+        let action = v_flex().items_center().gap(px(12.)).child(button).child(
+            div()
+                .text_size(px(12.))
+                .text_color(p.text_placeholder)
+                .child("Imported mods are listed here once a modded profile is active."),
+        );
+        v_flex()
+            .size_full()
+            .child(self.header(Page::Importer.label(), "Team Simplified".to_owned(), div(), p))
+            .child(self.empty(
+                IconName::ShieldCheck,
+                "Vanilla stays stock",
+                format!(
+                    "The {VANILLA} profile plays F1 25 as it shipped, without addons, so mods aren't \
+                     imported or turned on here."
+                ),
+                action,
+                p,
+            ))
             .into_any_element()
     }
 
