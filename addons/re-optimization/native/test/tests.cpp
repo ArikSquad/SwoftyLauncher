@@ -52,7 +52,7 @@ static bool has(const std::string &line, const char *attr_eq_value)
 static void test_profile(const std::string &sample)
 {
     reopt::Record rec;
-    std::string out = reopt::transform(sample, reopt::Upscaler::Keep, true, &rec);
+    std::string out = reopt::transform(sample, reopt::Upscaler::Keep, {}, &rec);
     CHECK(has(line_of(out, "lighting"), "volumetricFogMapWidth=\"512\""));
     CHECK(has(line_of(out, "lighting"), "volumetricFogMapHeight=\"288\""));
     CHECK(has(line_of(out, "shadows"), "worldShadowMapSize=\"2048\""));
@@ -69,10 +69,21 @@ static void test_profile(const std::string &sample)
     CHECK(has(line_of(out, "ground_cover"), "drawDistance=\"80.0\""));
     CHECK(has(line_of(out, "hair"), "enabled=\"false\""));
     CHECK(has(line_of(out, "cs_culling"), "enabled=\"true\""));
+    CHECK(has(line_of(out, "rt_ao"), "enabled=\"false\""));
+    CHECK(has(line_of(out, "rt_ddgi"), "enabled=\"false\""));
+    CHECK(line_of(out, "rt_shadows") == line_of(sample, "rt_shadows"));
+    CHECK(line_of(out, "rt_reflections") == line_of(sample, "rt_reflections"));
     CHECK(line_of(out, "antialiasing") == line_of(sample, "antialiasing"));
     CHECK(line_of(out, "aa_quality") == line_of(sample, "aa_quality"));
     CHECK(out.size() > 0 && out.find("<hardware_settings_config applyOOTB=\"false\">") != std::string::npos);
-    CHECK(rec.changes.size() == 18);
+    CHECK(rec.changes.size() == 20);
+
+    reopt::Record keep_rt;
+    std::string kept = reopt::transform(sample, reopt::Upscaler::Keep, {true, false}, &keep_rt);
+    CHECK(line_of(kept, "rt_ao") == line_of(sample, "rt_ao"));
+    CHECK(line_of(kept, "rt_ddgi") == line_of(sample, "rt_ddgi"));
+    CHECK(keep_rt.changes.size() == 18);
+    CHECK(reopt::untransform(kept, keep_rt) == sample);
 
     size_t restored = 0;
     CHECK(reopt::untransform(out, rec, &restored) == sample);
@@ -88,7 +99,7 @@ static void test_profile(const std::string &sample)
     CHECK(restored == rec.changes.size() - 1);
 
     reopt::Record none;
-    CHECK(reopt::transform(sample, reopt::Upscaler::Keep, false, &none) == sample);
+    CHECK(reopt::transform(sample, reopt::Upscaler::Keep, {false, true}, &none) == sample);
     CHECK(none.empty());
     CHECK(reopt::untransform(sample, none) == sample);
 }
@@ -101,15 +112,15 @@ static void test_upscaler_matrix(const std::string &sample)
     };
     const Row rows[] = {
         {reopt::Upscaler::Keep, "<antialiasing taa=\"false\" cas=\"1\" dlss=\"false\" fsr3=\"1\" xess=\"false\" />"},
-        {reopt::Upscaler::Dlss, "<antialiasing taa=\"false\" cas=\"1\" dlss=\"true\" fsr3=\"false\" xess=\"false\" />"},
-        {reopt::Upscaler::Fsr3, "<antialiasing taa=\"false\" cas=\"1\" dlss=\"false\" fsr3=\"true\" xess=\"false\" />"},
-        {reopt::Upscaler::Xess, "<antialiasing taa=\"false\" cas=\"1\" dlss=\"false\" fsr3=\"false\" xess=\"true\" />"},
-        {reopt::Upscaler::Taa, "<antialiasing taa=\"true\" cas=\"1\" dlss=\"false\" fsr3=\"false\" xess=\"false\" />"},
-        {reopt::Upscaler::Off, "<antialiasing taa=\"false\" cas=\"1\" dlss=\"false\" fsr3=\"false\" xess=\"false\" />"},
+        {reopt::Upscaler::Dlss, "<antialiasing taa=\"false\" cas=\"1\" dlss=\"true\" fsr3=\"0\" xess=\"false\" />"},
+        {reopt::Upscaler::Fsr3, "<antialiasing taa=\"false\" cas=\"1\" dlss=\"false\" fsr3=\"1\" xess=\"false\" />"},
+        {reopt::Upscaler::Xess, "<antialiasing taa=\"false\" cas=\"1\" dlss=\"false\" fsr3=\"0\" xess=\"true\" />"},
+        {reopt::Upscaler::Taa, "<antialiasing taa=\"true\" cas=\"1\" dlss=\"false\" fsr3=\"0\" xess=\"false\" />"},
+        {reopt::Upscaler::Off, "<antialiasing taa=\"false\" cas=\"1\" dlss=\"false\" fsr3=\"0\" xess=\"false\" />"},
     };
     for (const Row &r : rows) {
         reopt::Record rec;
-        std::string out = reopt::transform(sample, r.up, true, &rec);
+        std::string out = reopt::transform(sample, r.up, {}, &rec);
         std::string aa = line_of(out, "antialiasing");
         while (!aa.empty() && (aa.back() == '\r' || aa.back() == '\n'))
             aa.pop_back();
@@ -119,9 +130,27 @@ static void test_upscaler_matrix(const std::string &sample)
         std::printf("  %-18s %s\n", reopt::upscaler_name(r.up), aa.c_str());
     }
     reopt::Record only;
-    std::string up_only = reopt::transform(sample, reopt::Upscaler::Dlss, false, &only);
+    std::string up_only = reopt::transform(sample, reopt::Upscaler::Dlss, {false, true}, &only);
     CHECK(has(line_of(up_only, "antialiasing"), "dlss=\"true\""));
     CHECK(has(line_of(up_only, "lighting"), "volumetricFogMapWidth=\"1920\""));
+    CHECK(line_of(up_only, "rt_ao") == line_of(sample, "rt_ao"));
+
+    const std::string taa = "<hardware_settings_config>\n<antialiasing taa=\"true\" cas=\"0\" dlss=\"false\" fsr3=\"0\" "
+                            "xess=\"false\" />\n</hardware_settings_config>\n";
+    reopt::Record fr;
+    std::string fsr = reopt::transform(taa, reopt::Upscaler::Fsr3, {}, &fr);
+    CHECK(line_of(fsr, "antialiasing") ==
+          "<antialiasing taa=\"false\" cas=\"1\" dlss=\"false\" fsr3=\"1\" xess=\"false\" />");
+    CHECK(fr.changes.size() == 3);
+    CHECK(reopt::untransform(fsr, fr) == taa);
+    std::string dlss = reopt::transform(taa, reopt::Upscaler::Dlss, {});
+    CHECK(line_of(dlss, "antialiasing") ==
+          "<antialiasing taa=\"false\" cas=\"0\" dlss=\"true\" fsr3=\"0\" xess=\"false\" />");
+    for (reopt::Upscaler up : {reopt::Upscaler::Taa, reopt::Upscaler::Dlss, reopt::Upscaler::Fsr3, reopt::Upscaler::Xess,
+                               reopt::Upscaler::Off}) {
+        std::string aa = line_of(reopt::transform(taa, up, {}), "antialiasing");
+        CHECK(!has(aa, "fsr3=\"true\"") && !has(aa, "fsr3=\"false\""));
+    }
 }
 
 static void test_layouts(const std::string &sample)
@@ -131,8 +160,8 @@ static void test_layouts(const std::string &sample)
         if (c != '\n' && c != '\r' && c != '\t')
             flat += c;
     reopt::Record rec;
-    std::string tuned = reopt::transform(flat, reopt::Upscaler::Dlss, true, &rec);
-    CHECK(rec.changes.size() == 20);
+    std::string tuned = reopt::transform(flat, reopt::Upscaler::Dlss, {}, &rec);
+    CHECK(rec.changes.size() == 22);
     CHECK(tuned.find("volumetricFogMapWidth=\"512\"") != std::string::npos);
     CHECK(tuned.find("dlss=\"true\"") != std::string::npos);
     CHECK(tuned.find("<aa_quality value=\"0\" />") != std::string::npos);
@@ -141,7 +170,7 @@ static void test_layouts(const std::string &sample)
     std::string wrapped = "<?xml version=\"1.0\"?>\n<hardware_settings_config>\n\t<shadows\n\t\tworldShadowMapSize=\"4096\"\n"
                           "\t\tsampling=\"3\" />\n\t<!-- <shadows worldShadowMapSize=\"4096\" /> -->\n</hardware_settings_config>\n";
     reopt::Record wrec;
-    std::string wt = reopt::transform(wrapped, reopt::Upscaler::Keep, true, &wrec);
+    std::string wt = reopt::transform(wrapped, reopt::Upscaler::Keep, {}, &wrec);
     CHECK(wt.find("worldShadowMapSize=\"2048\"\n") != std::string::npos);
     CHECK(wt.find("sampling=\"2\"") != std::string::npos);
     CHECK(wt.find("<!-- <shadows worldShadowMapSize=\"4096\" /> -->") != std::string::npos);

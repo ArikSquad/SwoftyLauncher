@@ -35,6 +35,7 @@
 #define REOPT_VERSION "0.1.0"
 
 SWOFTY_SETTING(bool, apply_profile, true);
+SWOFTY_SETTING(bool, keep_rt_ao_ddgi, false);
 SWOFTY_SETTING(std::string_view, upscaler, "auto");
 SWOFTY_SETTING(bool, override_vrs_async, true);
 SWOFTY_SETTING(bool, override_ground_cover, true);
@@ -201,7 +202,8 @@ int parse_tuned(ParseFn orig, const char *site, void *doc, Reader *reader, uint8
         !reopt::is_hardware_settings_config(ms->data, ms->size))
         return orig(doc, reader, a, b);
 
-    const bool profile = apply_profile;
+    const reopt::Tuning tuning{apply_profile, !keep_rt_ao_ddgi};
+    const bool profile = tuning.profile;
     const reopt::Upscaler up = pick_upscaler();
     if (!profile && up == reopt::Upscaler::Keep) {
         swofty::log("[re-opt] %s: hardware_settings_config read; profile off and upscaler keep, left as read", site);
@@ -209,7 +211,7 @@ int parse_tuned(ParseFn orig, const char *site, void *doc, Reader *reader, uint8
     }
 
     reopt::Record rec;
-    std::string tuned = reopt::transform(std::string_view(ms->data, ms->size), up, profile, &rec);
+    std::string tuned = reopt::transform(std::string_view(ms->data, ms->size), up, tuning, &rec);
     char *saved_data = ms->data;
     size_t saved_size = ms->size;
     ms->data = tuned.data();

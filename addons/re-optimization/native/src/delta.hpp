@@ -29,9 +29,14 @@ struct Record {
     bool empty() const { return changes.empty(); }
 };
 
+struct Tuning {
+    bool profile = true;
+    bool rt_passes_off = true;
+};
+
 bool is_hardware_settings_config(const char *text, size_t n);
 
-std::string transform(std::string_view in, Upscaler up, bool profile, Record *record = nullptr);
+std::string transform(std::string_view in, Upscaler up, const Tuning &tuning, Record *record = nullptr);
 
 std::string untransform(std::string_view in, const Record &record, size_t *restored = nullptr);
 
