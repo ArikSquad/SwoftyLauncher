@@ -239,7 +239,7 @@ EOF
         count "gamelog: gated warning logged 100 times, then the repeat cap" 100 '\[game\] TEST_WARN \(warn\): fake gate message from site_a[[:space:]]*$'
         once "gamelog: repeat cap note for the warning" '\[game\] \(format "fake gate message from %s" logged 100 times; further repeats are suppressed\)'
         count "gamelog: info on a UI channel from five threads, intact lines, capped at 100" 100 '\[game\] UI_FLOW: fake ui info from site_c[[:space:]]*$'
-        count "gamelog: closed channel never reaches the log" 0 'TEST_VERBOSE|site_b'
+        count "gamelog: closed channel never reaches the log" 0 'TEST_VERBOSE|site_b([^a-z_]|$)'
         once "gamelog: route error from Ne_Format_String" '\[game\] UI_ROUTE \(error\): Screen swofty_settings failed to open because of 3[[:space:]]*$'
         once "gamelog: Solution-style error from Ne_Format_String" '\[game\] UI_ROUTE \(error\): Failed to find screen swofty_settings\. Solution: Make sure the the screen is loaded into the runtime[[:space:]]*$'
         once "gamelog: later route error" '\[game\] UI_ROUTE \(error\): No screen called late_screen exists[[:space:]]*$'
@@ -536,19 +536,25 @@ for id in Fake_Stage_Site Fake_Stage_Wrap; do
         "$SG/swofty/addons/core/bindings.wine-test.json" "wine-test:$id" || true)
     addr=$(grep -oE "\[core\] bind wine-test:$id -> 0x[0-9a-f]+ \(base\+$rva\)" "$LOG" | grep -oE '0x[0-9a-f]+' | head -n1 || true)
     once "stages: wine-test:$id binds at its KB rva $rva" "\[core\] bind wine-test:$id -> 0x[0-9a-f]+ \(base\+$rva\), func experimental via pattern"
-    once "stages: wine-test:$id matches the bytes under the early hook at its KB address" \
-        "\[core\] binding wine-test:$id: its bytes carry an installed hook; the pattern matches the bytes under it at the KB address ${addr:-none}[[:space:]]*\$"
+    once "stages: wine-test:$id binds at its KB address ${addr:-none} at attach" \
+        "\[core\] bind wine-test:$id -> ${addr:-none} \(base\+$rva\), func experimental via pattern at the KB address"
 done
-awk '/site wine-test:site_Stage_Entry at .* installed/ && !a {a = NR} /stage: window/ && !b {b = NR} /its bytes carry an installed hook/ && !c {c = NR}
-     END {exit !(a && a < b && b < c)}' "$LOG" && echo "ok  : stages: the fallback runs at the window stage, after the early hooks installed" ||
-    { echo "FAIL: stages: the fallback runs at the window stage, after the early hooks installed"; status=1; }
+awk '/bind wine-test:Fake_Stage_Site -> / && !a {a = NR} /bind wine-test:Fake_Stage_Wrap -> / && !b {b = NR} /site wine-test:site_Stage_Entry at .* installed/ && !c {c = NR}
+     END {exit !(a && b && a < c && b < c)}' "$LOG" && echo "ok  : stages: every binding resolves at attach, before the early hooks install over its bytes" ||
+    { echo "FAIL: stages: every binding resolves at attach, before the early hooks install over its bytes"; status=1; }
+once "stages: the init report covers every binding of the set" '\[bind\] summary build=unknown pass=init resolved=[0-9]+ deferred=0 unresolved=[0-9]+ total=[0-9]+ pe_timestamp=[0-9]+ size=[0-9]+ sha256=[0-9a-f]{64}[[:space:]]*$'
+once "stages: the report line of a binding found by its KB address" '\[bind\] id=wine-test:Fake_Stage_Site build=unknown pass=init result=resolved method=hint matches=1 rva=0x[0-9a-f]+ match=0x[0-9a-f]+ verified=yes reason="" site_bytes=""[[:space:]]*$'
+once "stages: the report line of a binding found by a scan" '\[bind\] id=wine-test:Fake_Stage_Plain build=unknown pass=init result=resolved method=scan matches=1 rva=0x[0-9a-f]+ match=0x[0-9a-f]+ verified=yes'
+once "stages: the report line of an ambiguous pattern" '\[bind\] id=wine-test:Fake_Stage_Ambiguous build=unknown pass=init result=unresolved method=- matches=([2-9]|[1-9][0-9]+) rva=- match=- verified=- reason="signature did not match exactly once" site=- site_bytes=""[[:space:]]*$'
+once "stages: a hint whose bytes differ is reported with 32 bytes at the hint" '\[bind\] id=wine-test:Fake_Stage_Wrong build=unknown pass=init result=unresolved method=- matches=0 rva=- match=0x[0-9a-f]+ verified=no reason="signature did not match exactly once" site=0x[0-9a-f]+ site_bytes="[0-9A-F]{2}( [0-9A-F]{2}){31}"[[:space:]]*$'
+count "stages: a build that is not packed has no window resolution pass" 0 '\[bind\] summary build=unknown pass=window' 
 once "stages: the window-stage plugin that binds both hooked functions initialises" 'addon t_stage_late\.dll: SwoftyAddonInit returned 1 \(ok\)'
 for id in Fake_Stage_Wrong Fake_Stage_Site_Wrong Fake_Stage_Ambiguous; do
     once "stages: wine-test:$id is refused" "\[core\] binding wine-test:$id: signature did not match exactly once"
     once "stages: t_stage_refused needs wine-test:$id" "\[core\] addon t_stage_refused\.dll needs wine-test:$id, which does not resolve on this build"
 done
 check "stages: the ambiguous pattern hits more than once" 'scan \.xtls \[48 B8 53 57 46 54\] -> ([2-9]|[1-9][0-9]+) hits'
-count "stages: only the two bindings under early hooks take the fallback" 2 'its bytes carry an installed hook'
+count "stages: no binding needs the under-hook fallback once all resolve at attach" 0 'its bytes carry an installed hook'
 once "stages: the plugin with wrong or ambiguous patterns fails its init" 'addon t_stage_refused\.dll: SwoftyAddonInit returned 0 \(FAILED\)'
 once "stages: the exe matches the KB build's timestamp and size, so the KB addresses are used" '\[core\] binding resolution: [0-9]+ of [0-9]+ pattern\(s\) carry their KB address'
 echo "==== stages, exe size differs from the KB build"
