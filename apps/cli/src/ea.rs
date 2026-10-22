@@ -247,9 +247,6 @@ pub fn launch_installed(store: &Store, g: &Game, vr: bool, opted_out: bool) -> R
     if let Some(line) = command_line(pid) {
         say("ea app", &format!("command line: {line}"));
     }
-    if let Some(mut c) = child {
-        std::thread::spawn(move || c.wait().ok());
-    }
     Ok(())
 }
 
