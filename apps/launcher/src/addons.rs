@@ -164,7 +164,7 @@ pub(crate) struct AddonsPage {
     animating: bool,
     report: Option<Report>,
     read_at: Option<Instant>,
-    checking: bool,
+    pub(crate) checking: bool,
     open_pairs: HashSet<(String, String)>,
     changes: HashMap<String, Changes>,
     _search: Subscription,
@@ -562,8 +562,13 @@ impl Shell {
         }
     }
 
+    fn launching(&self) -> bool {
+        use crate::shell::PlayState::{Launching, Restoring, Running};
+        matches!(self.play_state(), Launching | Restoring | Running)
+    }
+
     fn check_conflicts(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.addons.checking || self.vanilla() {
+        if self.addons.checking || self.vanilla() || self.launching() {
             return;
         }
         self.addons.checking = true;
@@ -1552,7 +1557,7 @@ impl Shell {
                 "Check conflicts"
             })
             .loading(self.addons.checking)
-            .disabled(self.vanilla() || self.addons.checking)
+            .disabled(self.vanilla() || self.addons.checking || self.launching())
             .on_click(cx.listener(|this, _, window, cx| this.check_conflicts(window, cx)));
         let note = match report {
             _ if self.vanilla() => format!("{VANILLA} has no addons to conflict"),

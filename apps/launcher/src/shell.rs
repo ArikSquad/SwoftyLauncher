@@ -73,6 +73,7 @@ pub enum PlayState {
     Launching,
     Restoring,
     Running,
+    Checking,
     Crashed(SessionRecord),
 }
 
@@ -567,6 +568,9 @@ impl Shell {
         if self.install.is_none() {
             return PlayState::NotInstalled;
         }
+        if self.addons.checking {
+            return PlayState::Checking;
+        }
         match &self.session {
             Some(s)
                 if s.crashed()
@@ -583,6 +587,10 @@ impl Shell {
         let Some(install) = self.install.clone() else {
             return;
         };
+        if self.addons.checking {
+            window.push_notification(Notification::info("Play when the conflict check finishes."), cx);
+            return;
+        }
         if !swofty_core::offline::is_accepted(&self.store.root) {
             self.confirm_offline_play(window, cx);
             return;

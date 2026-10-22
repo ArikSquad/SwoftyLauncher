@@ -202,6 +202,7 @@ impl Shell {
                     .child("Install it with Steam or locate its folder"),
             ),
             PlayState::Detecting => row.text_color(p.text_muted).child("Detecting F1 25…"),
+            PlayState::Checking => row.text_color(p.text_muted).child("Checking conflicts…"),
             PlayState::Ready => {
                 if rebuild {
                     return row.text_color(p.text_muted).child(dot(p.warning)).child(
@@ -364,7 +365,9 @@ impl Shell {
             PlayState::Restoring => (IconName::LoaderCircle, "Restoring…", p.elevated, p.accent, false),
             PlayState::Running => (IconName::Square, "Stop", p.elevated, p.error, true),
             PlayState::NotInstalled => (IconName::FolderSearch, "Locate game", p.elevated, p.text, true),
-            PlayState::Detecting => (IconName::LoaderCircle, "Play", p.elevated, p.text_muted, false),
+            PlayState::Detecting | PlayState::Checking => {
+                (IconName::LoaderCircle, "Play", p.elevated, p.text_muted, false)
+            }
         };
         let ready = matches!(state, PlayState::Ready | PlayState::Crashed(_));
         let missing = matches!(state, PlayState::NotInstalled);
