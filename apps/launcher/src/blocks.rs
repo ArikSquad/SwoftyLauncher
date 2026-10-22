@@ -16,8 +16,8 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use serde_json::{Map, Value};
 use swofty_core::view::{
-    Align, Block, Body, Card, Cell, Choice, Field, Fit, Form, Grid, Hero, Image as ImageBlock, Meter, Pill,
-    Search, SelectField, Table, Tabs, Tile, Tone, View,
+    Align, Block, Body, Card, Cell, Choice, DropZone, Field, Fit, Form, Grid, Hero, Image as ImageBlock,
+    Meter, Pill, Search, SelectField, Table, Tabs, Tile, Tone, View,
 };
 
 use crate::pages::label;
@@ -961,9 +961,61 @@ impl Shell {
             Block::Form(f) => self.form(at, f, p, cx),
             Block::Tabs(t) => self.tabs(at, t, p, cx),
             Block::Image(i) => self.image(at, i, p),
+            Block::DropZone(d) => self.drop_zone(at, d, p, cx),
             Block::Table(t) if !t.is_plain() => self.table(at, t, p, cx),
             _ => return None,
         })
+    }
+
+    fn drop_zone(&self, at: At, d: &DropZone, p: Palette, cx: &mut Context<Self>) -> AnyElement {
+        v_flex()
+            .w_full()
+            .when(at.fill, |x| x.flex_1())
+            .min_h(px(280.))
+            .items_center()
+            .justify_center()
+            .gap(px(12.))
+            .px(px(32.))
+            .py(px(36.))
+            .rounded(px(10.))
+            .border_1()
+            .border_color(p.border)
+            .bg(p.surface)
+            .when_some(d.icon, |x, i| {
+                x.child(
+                    div()
+                        .size(px(64.))
+                        .rounded_full()
+                        .bg(p.elevated)
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(Icon::new(icon(i)).size(px(30.)).text_color(p.accent)),
+                )
+            })
+            .child(
+                div()
+                    .text_size(px(20.))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(p.text)
+                    .child(d.title.clone()),
+            )
+            .when(!d.text.is_empty(), |x| {
+                x.child(
+                    div()
+                        .max_w(px(440.))
+                        .text_center()
+                        .text_size(px(13.))
+                        .text_color(p.text_muted)
+                        .child(d.text.clone()),
+                )
+            })
+            .child(
+                div()
+                    .pt(px(8.))
+                    .child(self.button(at.addon, at.section, &d.button, false, cx)),
+            )
+            .into_any_element()
     }
 
     fn tabs(&self, at: At, t: &Tabs, p: Palette, cx: &mut Context<Self>) -> AnyElement {
@@ -1259,6 +1311,9 @@ impl Shell {
             .map(|b| self.button(at.addon, at.section, b, true, cx))
             .collect();
         surface(p)
+            .when(c.dashed, |d| {
+                d.border_2().border_dashed().border_color(p.text_muted)
+            })
             .when(at.fill, |d| d.flex_1())
             .p(px(16.))
             .gap(px(14.))

@@ -1093,9 +1093,11 @@ impl Shell {
             Style::Ghost => button.ghost(),
             Style::Danger => button.danger().ghost(),
         };
-        if small {
-            button = button.small();
-        }
+        button = match b.size {
+            view::ButtonSize::Large => button.large().h(px(52.)).px(px(32.)).text_size(px(16.)),
+            view::ButtonSize::Normal if small => button.small(),
+            view::ButtonSize::Normal => button,
+        };
         if let Some(i) = b.icon {
             button = button.icon(icon(i));
         }

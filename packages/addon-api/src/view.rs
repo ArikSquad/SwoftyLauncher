@@ -76,6 +76,20 @@ pub enum Block {
     Form(Form),
     Tabs(Tabs),
     Image(Image),
+    DropZone(DropZone),
+}
+
+/// A large drop target with one main call to action, such as the Mod Importer's
+/// Import a mod: an icon, a title, a line of text and a big button, centred in a
+/// tall area. Files dropped on the window still go to the addon that claims them.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DropZone {
+    pub title: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub text: String,
+    pub button: Button,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<Icon>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -218,6 +232,10 @@ pub struct Card {
     pub buttons: Vec<Button>,
     #[serde(default)]
     pub blocks: Vec<Block>,
+    /// Draw the card with a dashed outline, for a placeholder or drop target
+    /// such as the Mod Importer's list of imported mods.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub dashed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -781,6 +799,8 @@ pub struct Button {
     pub style: Style,
     #[serde(default)]
     pub kind: ButtonKind,
+    #[serde(default)]
+    pub size: ButtonSize,
 }
 
 impl Button {
@@ -791,8 +811,19 @@ impl Button {
             icon: None,
             style: Style::default(),
             kind: ButtonKind::default(),
+            size: ButtonSize::default(),
         }
     }
+}
+
+/// How prominently a button is drawn. `Large` is for a page's main call to
+/// action, such as the Mod Importer's Choose a mod button.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ButtonSize {
+    #[default]
+    Normal,
+    Large,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
