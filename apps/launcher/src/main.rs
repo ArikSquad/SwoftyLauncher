@@ -7,6 +7,7 @@ mod db;
 mod discord;
 mod ea_app;
 mod game;
+mod game_edited;
 mod importer;
 mod library;
 mod news;

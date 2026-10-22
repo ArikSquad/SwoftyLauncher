@@ -26,6 +26,7 @@ use swofty_core::store::Store;
 use swofty_core::view::View;
 
 use crate::game::{self, Install, Launch, Probe};
+use crate::game_edited::Edited;
 use crate::library::{AddonIcon, Library};
 use crate::pages::{addon_icon, label};
 use crate::theme::{Palette, palette};
@@ -93,9 +94,11 @@ pub struct Shell {
     pub(crate) launch: Option<Launch>,
     pub(crate) notice: Option<String>,
     pub(crate) blocked: Option<Blocked>,
+    pub(crate) game_edited: Option<Edited>,
     pub(crate) recovered_seen: f64,
     pub(crate) mods_blocked_seen: f64,
     pub(crate) not_stock_seen: f64,
+    pub(crate) blocked_seen: f64,
     pub(crate) launch_failed_seen: f64,
     pub(crate) restoring: bool,
     pub(crate) sliders: HashMap<String, SliderSlot>,
@@ -217,20 +220,6 @@ fn show_launch_failed(f: &launch::Failure, window: &mut Window, cx: &mut App) {
     });
 }
 
-/// Game files that aren't Steam's copy stopped the launch before anything
-/// was built; the launcher can't continue until the player verifies the game
-/// files in Steam.
-fn show_not_stock(r: &stock::Report, window: &mut Window, cx: &mut App) {
-    let (title, text) = (r.title(), r.text());
-    window.open_alert_dialog(cx, move |alert, _, _| {
-        alert
-            .width(px(560.))
-            .title(title)
-            .description(text.clone())
-            .ok_text("OK")
-    });
-}
-
 fn offline_terms(p: Palette) -> impl IntoElement {
     v_flex()
         .gap(px(14.))
@@ -271,6 +260,7 @@ impl Shell {
         let recovered_seen = Notice::read(&store.root).map_or(0.0, |n| n.at);
         let mods_blocked_seen = quarantine::Report::read(&store.root).map_or(0.0, |r| r.at);
         let not_stock_seen = stock::Report::read(&store.root).map_or(0.0, |r| r.at);
+        let blocked_seen = game::blocked_at(&store.root).unwrap_or(0.0);
         let launch_failed_seen = launch::Failure::read(&store.root).map_or(0.0, |f| f.at);
         let stale = store.clone();
         cx.background_executor()
@@ -348,9 +338,11 @@ impl Shell {
             launch: None,
             notice: None,
             blocked: None,
+            game_edited: None,
             recovered_seen,
             mods_blocked_seen,
             not_stock_seen,
+            blocked_seen,
             launch_failed_seen,
             restoring: false,
             sliders: HashMap::new(),
@@ -455,7 +447,18 @@ impl Shell {
         }
         if let Some(r) = probe.not_stock.as_ref().filter(|r| r.at > self.not_stock_seen) {
             self.not_stock_seen = r.at;
-            show_not_stock(r, window, cx);
+            self.game_edited = Some(Edited::NotStock(r.clone()));
+            self.show_game_edited(window, cx);
+        }
+        if let Some(b) = probe
+            .blocked
+            .as_ref()
+            .filter(|_| probe.blocked_at.is_some_and(|at| at > self.blocked_seen))
+        {
+            self.blocked_seen = probe.blocked_at.expect("blocked file timestamp");
+            self.blocked = Some(b.clone());
+            self.game_edited = Some(Edited::Leftovers(b.clone()));
+            self.show_game_edited(window, cx);
         }
         if let Some(f) = probe
             .launch_failed
@@ -608,7 +611,9 @@ impl Shell {
         }
         self.notice = None;
         self.blocked = None;
+        self.game_edited = None;
         Blocked::clear(&self.store.root).ok();
+        self.blocked_seen = game::blocked_at(&self.store.root).unwrap_or(0.0);
         self.dismissed = self.session.as_ref().map(|s| s.dir.clone());
         match Launch::start(
             &self.store,
@@ -675,56 +680,6 @@ impl Shell {
         });
     }
 
-    pub(crate) fn confirm_restore(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(blocked) = self.blocked.clone() else {
-            return;
-        };
-        let shell = cx.entity().downgrade();
-        let explain = blocked.explain(&self.store.root);
-        let files: Vec<String> = blocked.files.iter().map(|f| f.path.clone()).collect();
-        let p = palette(cx);
-        window.open_alert_dialog(cx, move |alert, _, _| {
-            let shell = shell.clone();
-            let shown = files.len().min(6);
-            let list = v_flex()
-                .gap(px(2.))
-                .p(px(10.))
-                .rounded(px(6.))
-                .bg(p.elevated)
-                .border_1()
-                .border_color(p.border)
-                .text_size(px(12.))
-                .children(files[..shown].iter().map(|f| div().child(f.clone())))
-                .when(files.len() > shown, |d| {
-                    d.child(
-                        div()
-                            .text_color(p.text_muted)
-                            .child(format!("and {} more", files.len() - shown)),
-                    )
-                });
-            alert
-                .width(px(600.))
-                .title("Restore the game folder?")
-                .child(
-                    v_flex()
-                        .gap(px(12.))
-                        .child(div().text_size(px(13.)).child(
-                            "F1 25 did not start because these files are where the profile puts its \
-                             own, and Swofty did not put them there. They may be mods copied in by \
-                             hand, so they were left untouched.",
-                        ))
-                        .child(list)
-                        .child(div().text_size(px(13.)).child(format!("{explain}."))),
-                )
-                .ok_text("Restore game folder")
-                .show_cancel(true)
-                .on_ok(move |_, window, cx| {
-                    shell.update(cx, |s, cx| s.restore_game_folder(window, cx)).ok();
-                    true
-                })
-        });
-    }
-
     pub(crate) fn restore_game_folder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(install) = self.install.clone() else {
             return;
@@ -732,6 +687,7 @@ impl Shell {
         let store = self.store.clone();
         self.notice = None;
         self.blocked = None;
+        self.game_edited = None;
         self.restoring = true;
         cx.spawn_in(window, async move |this, cx| {
             let result = cx

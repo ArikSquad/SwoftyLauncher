@@ -101,19 +101,25 @@ impl Shell {
     fn status(&self, state: &PlayState, p: Palette, cx: &mut Context<Self>) -> impl IntoElement {
         let dot = |c: Hsla| div().size(px(7.)).rounded_full().bg(c).flex_shrink_0();
         let row = status_row();
-        if let Some(notice) = &self.notice {
-            return launch_failed(row, notice, p)
-                .when(self.blocked.is_some(), |d| {
-                    d.child(
-                        link("restore-folder", "Restore game folder", p)
-                            .on_click(cx.listener(|this, _, window, cx| this.confirm_restore(window, cx))),
-                    )
-                })
+        if self.game_edited.is_some() {
+            return row
+                .text_color(p.warning)
+                .child(Icon::new(IconName::TriangleAlert).size(px(16.)))
+                .child(div().min_w_0().truncate().child("Your game files were edited"))
+                .child(
+                    link("game-edited-what", "What to do", p)
+                        .on_click(cx.listener(|this, _, window, cx| this.show_game_edited(window, cx))),
+                )
                 .when_some(self.launch_log(), |d, log| {
                     d.child(
                         link("launch-log", "View log", p).on_click(move |_, _, cx| cx.open_with_system(&log)),
                     )
                 });
+        }
+        if let Some(notice) = &self.notice {
+            return launch_failed(row, notice, p).when_some(self.launch_log(), |d, log| {
+                d.child(link("launch-log", "View log", p).on_click(move |_, _, cx| cx.open_with_system(&log)))
+            });
         }
         if let Some(row) = self.update_status(self.update_gate(state), status_row(), p, cx) {
             return row;

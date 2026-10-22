@@ -9,7 +9,7 @@ use swofty_core::install::{Game, Source};
 use swofty_core::launch;
 use swofty_core::process::{GameProcess, game_processes};
 use swofty_core::quarantine;
-use swofty_core::recovery::{self, Notice, Scope, SessionLock};
+use swofty_core::recovery::{self, Blocked, Notice, Scope, SessionLock};
 use swofty_core::session::{LaunchMode, SessionRecord};
 use swofty_core::stock;
 use swofty_core::store::Store;
@@ -38,6 +38,8 @@ pub struct Probe {
     pub launch_stage: Option<String>,
     pub mods_blocked: Option<quarantine::Report>,
     pub not_stock: Option<stock::Report>,
+    pub blocked: Option<Blocked>,
+    pub blocked_at: Option<f64>,
     pub launch_failed: Option<launch::Failure>,
 }
 
@@ -53,12 +55,23 @@ pub fn probe(store: &Store, rediscover: bool, seen: Option<SystemTime>) -> Probe
         recovered: Notice::read(&store.root),
         mods_blocked: quarantine::Report::read(&store.root),
         not_stock: stock::Report::read(&store.root),
+        blocked: Blocked::read(&store.root),
+        blocked_at: blocked_at(&store.root),
         launch_failed: launch::Failure::read(&store.root),
         launch_stage: std::fs::read_to_string(store.root.join(steam_client::STAGE_FILE))
             .ok()
             .map(|s| s.trim().to_owned())
             .filter(|s| !s.is_empty()),
     }
+}
+
+pub fn blocked_at(data: &Path) -> Option<f64> {
+    std::fs::metadata(Blocked::path(data))
+        .and_then(|m| m.modified())
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_secs_f64())
 }
 
 /// At launcher start: put back what an unfinished `swofty run` session left
