@@ -108,6 +108,7 @@ pub struct Shell {
     pub(crate) busy: HashSet<String>,
     pub(crate) open_row: Option<String>,
     pub(crate) progress: Option<(f32, String)>,
+    pub(crate) tasks: Option<crate::tasks::TaskDialog>,
     pub(crate) dropping: bool,
     pub(crate) vr_profiles: BTreeSet<String>,
     pub(crate) start_steam: bool,
@@ -361,6 +362,7 @@ impl Shell {
             busy: HashSet::new(),
             open_row: None,
             progress: None,
+            tasks: None,
             dropping: false,
             vr_profiles,
             start_steam,
@@ -1287,6 +1289,7 @@ impl Render for Shell {
             .children(self.update_bar(p))
             .child(self.play_bar(p, wide, cx))
             .children(self.progress_card(p))
+            .children(self.task_dialog(p, window, cx))
             .when(self.dropping, |d| d.child(self.drop_overlay(p)))
     }
 }

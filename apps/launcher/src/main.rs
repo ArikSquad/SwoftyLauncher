@@ -15,6 +15,7 @@ mod play_bar;
 mod sections;
 mod send_logs;
 mod shell;
+mod tasks;
 mod theme;
 mod tools;
 mod update;
