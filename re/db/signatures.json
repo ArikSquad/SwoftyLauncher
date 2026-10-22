@@ -8381,9 +8381,9 @@
   {
    "id": "core.hw_int_night_shadow_map_size",
    "section": ".data1",
-   "pattern": "E8 ?? ?? ?? ?? 66 8B 0D 7D 8D 17 FD",
-   "match": "0x152713456",
-   "anchor": "0x0",
+   "pattern": "49 8B 4C 24 50 31 D2 45 31 C0 E8 ?? ?? ?? ?? 66",
+   "match": "0x15271344c",
+   "anchor": "0xa",
    "resolve": {
     "kind": "addr"
    },
@@ -8626,9 +8626,9 @@
   {
    "id": "core.hw_int_shadow_sampling",
    "section": ".data1",
-   "pattern": "E8 ?? ?? ?? ?? 66 03 0D C6 D2 E4 F9",
-   "match": "0x1527d0ab8",
-   "anchor": "0x0",
+   "pattern": "31 FF 31 D2 45 31 C0 E8 ?? ?? ?? ?? 66",
+   "match": "0x1527d0ab1",
+   "anchor": "0x7",
    "resolve": {
     "kind": "addr"
    },
@@ -8736,9 +8736,9 @@
   {
    "id": "core.hw_bool_crowd_in_shadows",
    "section": ".data1",
-   "pattern": "E8 ?? ?? ?? ?? 66 8B 0D 07 6C 48 10",
-   "match": "0x14874aa08",
-   "anchor": "0x0",
+   "pattern": "49 8B 4C 24 50 48 8D 15 ?? ?? ?? ?? E8 ?? ?? ?? ?? 66",
+   "match": "0x14874a9fc",
+   "anchor": "0xc",
    "resolve": {
     "kind": "addr"
    },
@@ -8784,9 +8784,7 @@
      "how": "static"
     }
    ],
-   "used_by": [
-    "addons/re-optimization/native/src/re_optimization.cpp (xanpavle.re-optimization)"
-   ]
+   "used_by": []
   },
   {
    "id": "core.hw_bool_god_rays_post",
