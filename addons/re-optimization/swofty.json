@@ -7,6 +7,7 @@
   "description": "xanpavle's renderer optimisation: a tuned graphics delta, engine renderer overrides and a GPU-aware upscaler. Offline single-player only.",
   "license": "MIT",
   "homepage": "https://github.com/xanpavle/F1-25-RE-Optimization",
+  "icon": "icons/re-optimization.png",
   "kind": ["native"],
   "compat": { "game": "f1_25", "game_builds": ["=25251167"], "seasons": [] },
   "requires": [{ "id": "swofty.core", "version": ">=0.1.0" }],
