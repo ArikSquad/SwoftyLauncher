@@ -502,10 +502,12 @@ impl Store {
     }
 
     pub fn config(&self) -> Config {
-        match crate::load_json(&self.config_path()) {
+        let mut config = match crate::load_json(&self.config_path()) {
             Ok(crate::Loaded::Found(c)) => c,
             _ => Config::default(),
-        }
+        };
+        config.migrate_games();
+        config
     }
 
     pub fn save_config(&self, config: &Config) -> Result<()> {

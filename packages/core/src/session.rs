@@ -71,8 +71,12 @@ pub struct Config {
     pub launch: LaunchConfig,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_profile: Option<String>,
+    /// The folder Locate F1 25 saved before 1.3.0; [`Config::migrate_games`]
+    /// moves it into `games`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub game_dir: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Games::is_empty")]
+    pub games: Games,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub console: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -95,7 +99,35 @@ pub struct Config {
     pub news_seen: BTreeSet<String>,
 }
 
+/// The copies of F1 25 the player added by folder, and the one Play uses.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct Games {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub added: Vec<PathBuf>,
+}
+
+impl Games {
+    pub fn is_empty(&self) -> bool {
+        self.active.is_none() && self.added.is_empty()
+    }
+
+    pub fn add(&mut self, dir: PathBuf) {
+        if !self.added.contains(&dir) {
+            self.added.push(dir);
+        }
+    }
+}
+
 impl Config {
+    pub fn migrate_games(&mut self) {
+        if let Some(dir) = self.game_dir.take() {
+            self.games.active.get_or_insert_with(|| dir.clone());
+            self.games.add(dir);
+        }
+    }
+
     pub fn launch_mode(&self, profile: &str) -> LaunchMode {
         if self.vr_profiles.contains(profile) {
             LaunchMode::Vr
@@ -165,9 +197,18 @@ pub struct LaunchConfig {
     pub env: BTreeMap<String, String>,
     #[serde(default = "default_winedebug")]
     pub winedebug: String,
-    /// Start Steam when Play finds it closed (a Steam copy of the game).
-    #[serde(default = "yes", skip_serializing_if = "is_yes")]
-    pub start_steam: bool,
+    /// Start the store the active copy came from (Steam or the EA app) when
+    /// Play finds it closed.
+    #[serde(default = "yes", skip_serializing_if = "is_yes", alias = "start_steam")]
+    pub start_store: bool,
+    /// The command that hands an EA app launch link to the EA app, with
+    /// `{url}` where the link goes. Needed on Linux, optional on Windows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ea_launch_command: Option<String>,
+    /// The Wine prefix the EA app runs in on Linux (the folder with
+    /// `user.reg`, or the Proton compatdata folder holding `pfx`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ea_prefix: Option<PathBuf>,
 }
 
 impl Default for LaunchConfig {
@@ -176,7 +217,9 @@ impl Default for LaunchConfig {
             cpu_affinity: None,
             env: BTreeMap::new(),
             winedebug: default_winedebug(),
-            start_steam: true,
+            start_store: true,
+            ea_launch_command: None,
+            ea_prefix: None,
         }
     }
 }
@@ -524,16 +567,40 @@ mod tests {
     }
 
     #[test]
-    fn starting_steam_is_on_unless_turned_off() {
-        assert!(Config::default().launch.start_steam);
+    fn starting_the_store_is_on_unless_turned_off() {
+        assert!(Config::default().launch.start_store);
         let old: Config = serde_json::from_str(r#"{ "launch": { "winedebug": "-all" } }"#).unwrap();
-        assert!(old.launch.start_steam);
-        assert!(!serde_json::to_string(&old).unwrap().contains("start_steam"));
+        assert!(old.launch.start_store);
+        assert!(!serde_json::to_string(&old).unwrap().contains("start_"));
         let off: Config = serde_json::from_str(r#"{ "launch": { "start_steam": false } }"#).unwrap();
-        assert!(!off.launch.start_steam);
+        assert!(!off.launch.start_store);
         let json = serde_json::to_string(&off).unwrap();
-        assert!(json.contains(r#""start_steam":false"#), "{json}");
-        assert!(!serde_json::from_str::<Config>(&json).unwrap().launch.start_steam);
+        assert!(json.contains(r#""start_store":false"#), "{json}");
+        assert!(!serde_json::from_str::<Config>(&json).unwrap().launch.start_store);
+    }
+
+    #[test]
+    fn a_located_folder_becomes_the_active_added_copy() {
+        let mut old: Config = serde_json::from_str(r#"{ "game_dir": "/games/F1 25" }"#).unwrap();
+        old.migrate_games();
+        assert_eq!(old.games.active.as_deref(), Some(Path::new("/games/F1 25")));
+        assert_eq!(old.games.added, [PathBuf::from("/games/F1 25")]);
+        let json = serde_json::to_string(&old).unwrap();
+        assert!(!json.contains("game_dir"), "{json}");
+        let mut back: Config = serde_json::from_str(&json).unwrap();
+        back.migrate_games();
+        assert_eq!(back, old);
+        let mut both: Config =
+            serde_json::from_str(r#"{ "game_dir": "/b", "games": { "active": "/a", "added": ["/a"] } }"#)
+                .unwrap();
+        both.migrate_games();
+        assert_eq!(both.games.active.as_deref(), Some(Path::new("/a")));
+        assert_eq!(both.games.added, [PathBuf::from("/a"), PathBuf::from("/b")]);
+        assert!(
+            !serde_json::to_string(&Config::default())
+                .unwrap()
+                .contains("games")
+        );
     }
 
     #[test]

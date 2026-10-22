@@ -23,14 +23,25 @@ pub struct Game {
 
 impl Game {
     /// The game in `dir`, with the Proton prefix's user.reg when Steam
-    /// installed it there.
+    /// installed it there, or the EA app's prefix from `launch.ea_prefix`.
     pub fn locate(data: &Path, dir: PathBuf) -> Result<Self> {
         let found = crate::steam::find_game().filter(|g| g.dir == dir);
         let user_reg = found
             .as_ref()
             .and_then(|g| g.prefix())
             .map(|p| p.join("user.reg"))
-            .filter(|p| p.is_file());
+            .filter(|p| p.is_file())
+            .or_else(|| {
+                (found.is_none() && !cfg!(windows) && Source::detect(&dir) == Source::EaApp)
+                    .then(|| {
+                        crate::store::Store::new(data.to_path_buf())
+                            .config()
+                            .launch
+                            .ea_prefix
+                    })
+                    .flatten()
+                    .and_then(|p| crate::ea_app::prefix_user_reg(&p))
+            });
         let identity = Identity::detect_cached(data, &dir, found.and_then(|g| g.build_id))?;
         Ok(Self {
             dir,
