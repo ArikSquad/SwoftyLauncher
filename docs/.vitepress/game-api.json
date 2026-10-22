@@ -2,14 +2,1820 @@
   "build": "d873a1c8d2044cef2fd76c99c9d5a97649c5b815d055540995105f46619865ae",
   "subsystems": [
     {
+      "name": "car",
+      "link": "/reference/game/car",
+      "entries": [
+        {
+          "name": "Car_Reset_LastFittedUpgrade",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/car#Car_Reset_LastFittedUpgrade"
+        }
+      ]
+    },
+    {
+      "name": "career",
+      "link": "/reference/game/career",
+      "entries": [
+        {
+          "name": "BankAccount",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#BankAccount"
+        },
+        {
+          "name": "BankSubAccount",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#BankSubAccount"
+        },
+        {
+          "name": "BankTransaction",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#BankTransaction"
+        },
+        {
+          "name": "BankTransactionMessage",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#BankTransactionMessage"
+        },
+        {
+          "name": "CareerBankComponent",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#CareerBankComponent"
+        },
+        {
+          "name": "CareerDriverContractRenewalComponent",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#CareerDriverContractRenewalComponent"
+        },
+        {
+          "name": "CareerEntity",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#CareerEntity"
+        },
+        {
+          "name": "CareerSponsorsComponent",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#CareerSponsorsComponent"
+        },
+        {
+          "name": "CareerTimeComponent",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#CareerTimeComponent"
+        },
+        {
+          "name": "Championship",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#Championship"
+        },
+        {
+          "name": "ChampionshipSeasonEntry",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#ChampionshipSeasonEntry"
+        },
+        {
+          "name": "ContextStatSet",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#ContextStatSet"
+        },
+        {
+          "name": "ContractRecord",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#ContractRecord"
+        },
+        {
+          "name": "CostCapComponent",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#CostCapComponent"
+        },
+        {
+          "name": "CostCapSeason",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#CostCapSeason"
+        },
+        {
+          "name": "CostCapTeam",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#CostCapTeam"
+        },
+        {
+          "name": "CurvePoint",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#CurvePoint"
+        },
+        {
+          "name": "DriverCareerContractOwner",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#DriverCareerContractOwner"
+        },
+        {
+          "name": "DriverCareerContractsManagerComponent",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#DriverCareerContractsManagerComponent"
+        },
+        {
+          "name": "DriverContract",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#DriverContract"
+        },
+        {
+          "name": "DriverContractsMyTeamComponent",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#DriverContractsMyTeamComponent"
+        },
+        {
+          "name": "DriverMoveConfirmedMessage",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#DriverMoveConfirmedMessage"
+        },
+        {
+          "name": "DriverMoveRecord",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#DriverMoveRecord"
+        },
+        {
+          "name": "DriverMovesFinalisedMessage",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#DriverMovesFinalisedMessage"
+        },
+        {
+          "name": "DriverStatistic",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#DriverStatistic"
+        },
+        {
+          "name": "DriverStatisticsComponent",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#DriverStatisticsComponent"
+        },
+        {
+          "name": "DriverStatsEntry",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#DriverStatsEntry"
+        },
+        {
+          "name": "EvolutionCurve",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#EvolutionCurve"
+        },
+        {
+          "name": "F1SeasonStandings",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#F1SeasonStandings"
+        },
+        {
+          "name": "FacilityNode",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#FacilityNode"
+        },
+        {
+          "name": "FacilityPerkTree",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#FacilityPerkTree"
+        },
+        {
+          "name": "FacilityTeamData",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#FacilityTeamData"
+        },
+        {
+          "name": "FacilityTeamEntry",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#FacilityTeamEntry"
+        },
+        {
+          "name": "LineupChange",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#LineupChange"
+        },
+        {
+          "name": "MyTeamFacilitiesComponent",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#MyTeamFacilitiesComponent"
+        },
+        {
+          "name": "MyTeamFacility",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#MyTeamFacility"
+        },
+        {
+          "name": "RenownAwardedMessage",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#RenownAwardedMessage"
+        },
+        {
+          "name": "RenownConfig",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#RenownConfig"
+        },
+        {
+          "name": "ResourcePointsComponent",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#ResourcePointsComponent"
+        },
+        {
+          "name": "Season",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#Season"
+        },
+        {
+          "name": "Session",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#Session"
+        },
+        {
+          "name": "SponsorEntry",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#SponsorEntry"
+        },
+        {
+          "name": "SponsorLoyaltyLevel",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#SponsorLoyaltyLevel"
+        },
+        {
+          "name": "SponsorLoyaltyXpMessage",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#SponsorLoyaltyXpMessage"
+        },
+        {
+          "name": "SponsorTeamRecord",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#SponsorTeamRecord"
+        },
+        {
+          "name": "StandingsPoints",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#StandingsPoints"
+        },
+        {
+          "name": "StandingsResult",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#StandingsResult"
+        },
+        {
+          "name": "StandingsRound",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#StandingsRound"
+        },
+        {
+          "name": "StandingsSession",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#StandingsSession"
+        },
+        {
+          "name": "StatInfo",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#StatInfo"
+        },
+        {
+          "name": "TeamRenownData",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#TeamRenownData"
+        },
+        {
+          "name": "UpgradeInstance",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#UpgradeInstance"
+        },
+        {
+          "name": "Upgrades",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#Upgrades"
+        },
+        {
+          "name": "UpgradesComponent",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#UpgradesComponent"
+        },
+        {
+          "name": "UpgradeStateEntry",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#UpgradeStateEntry"
+        },
+        {
+          "name": "UpgradeTree",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#UpgradeTree"
+        },
+        {
+          "name": "Weekend",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/career#Weekend"
+        },
+        {
+          "name": "Career_Add_SeasonWeekend",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_Add_SeasonWeekend"
+        },
+        {
+          "name": "Career_Add_TeamModifier",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_Add_TeamModifier"
+        },
+        {
+          "name": "Career_Adjust_RpDriverWallet",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_Adjust_RpDriverWallet"
+        },
+        {
+          "name": "Career_Adjust_RpTeamWallet",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_Adjust_RpTeamWallet"
+        },
+        {
+          "name": "Career_Build_DriverContract",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_Build_DriverContract"
+        },
+        {
+          "name": "Career_Build_LineupChanges",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_Build_LineupChanges"
+        },
+        {
+          "name": "Career_Calc_UpgradeCost",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_Calc_UpgradeCost"
+        },
+        {
+          "name": "Career_Cancel_UpgradeDevelopment",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_Cancel_UpgradeDevelopment"
+        },
+        {
+          "name": "Career_Cancel_UpgradeResearch",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_Cancel_UpgradeResearch"
+        },
+        {
+          "name": "Career_Complete_PerkTreeNode",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_Complete_PerkTreeNode"
+        },
+        {
+          "name": "Career_Construct_RnDDeptCard",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_Construct_RnDDeptCard"
+        },
+        {
+          "name": "Career_ContractIntro_OnEnter",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_ContractIntro_OnEnter"
+        },
+        {
+          "name": "Career_ContractIntro_OnUpdate",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_ContractIntro_OnUpdate"
+        },
+        {
+          "name": "Career_ContractOutro_OnEnter",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_ContractOutro_OnEnter"
+        },
+        {
+          "name": "Career_ContractOutro_OnUpdate",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_ContractOutro_OnUpdate"
+        },
+        {
+          "name": "Career_ContractUpdate_OnEnter",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_ContractUpdate_OnEnter"
+        },
+        {
+          "name": "Career_ContractUpdate_OnExit",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_ContractUpdate_OnExit"
+        },
+        {
+          "name": "Career_ContractUpdate_OnUpdate",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_ContractUpdate_OnUpdate"
+        },
+        {
+          "name": "Career_Create_SeasonWeekend",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_Create_SeasonWeekend"
+        },
+        {
+          "name": "Career_Decide_ContractNegotiation",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_Decide_ContractNegotiation"
+        },
+        {
+          "name": "Career_Eval_Curve",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_Eval_Curve"
+        },
+        {
+          "name": "Career_Get_CareerLengthDays_Thunk",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_Get_CareerLengthDays_Thunk"
+        },
+        {
+          "name": "Career_Get_DriverOverallRating",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_Get_DriverOverallRating"
+        },
+        {
+          "name": "Career_Get_RpWallet",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_Get_RpWallet"
+        },
+        {
+          "name": "Career_Get_TeamRenownData",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_Get_TeamRenownData"
+        },
+        {
+          "name": "Career_Needs_DriverContract",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_Needs_DriverContract"
+        },
+        {
+          "name": "Career_Post_UpgradeFittedRatio",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_Post_UpgradeFittedRatio"
+        },
+        {
+          "name": "Career_Rebuild_ChampionshipStandings",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_Rebuild_ChampionshipStandings"
+        },
+        {
+          "name": "Career_Rebuild_SeasonStandings",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_Rebuild_SeasonStandings"
+        },
+        {
+          "name": "Career_Record_DriverMove",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_Record_DriverMove"
+        },
+        {
+          "name": "Career_Refresh_RnDDeptMode",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_Refresh_RnDDeptMode"
+        },
+        {
+          "name": "Career_Refresh_UpgradeAvailability",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_Refresh_UpgradeAvailability"
+        },
+        {
+          "name": "Career_Set_DriverContractState",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_Set_DriverContractState"
+        },
+        {
+          "name": "Career_Set_EntrantData_Thunk",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_Set_EntrantData_Thunk"
+        },
+        {
+          "name": "Career_Set_UpgradeFacilityLocked",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_Set_UpgradeFacilityLocked"
+        },
+        {
+          "name": "Career_Set_UpgradesOwner",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_Set_UpgradesOwner"
+        },
+        {
+          "name": "Career_Sign_DriverContract",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_Sign_DriverContract"
+        },
+        {
+          "name": "Career_Start_UpgradeDevelopment",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_Start_UpgradeDevelopment"
+        },
+        {
+          "name": "Career_Start_UpgradeResearch",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_Start_UpgradeResearch"
+        },
+        {
+          "name": "Career_Teardown_Weekend",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/career#Career_Teardown_Weekend"
+        },
+        {
+          "name": "g_Career_FlowLinkContinue",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#g_Career_FlowLinkContinue"
+        },
+        {
+          "name": "g_Career_RnDOverviewSelectedDept",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#g_Career_RnDOverviewSelectedDept"
+        },
+        {
+          "name": "g_Career_UpgradeLifecycle",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#g_Career_UpgradeLifecycle"
+        },
+        {
+          "name": "k_Career_CareerBankComponentDesc",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#k_Career_CareerBankComponentDesc"
+        },
+        {
+          "name": "k_Career_CareerComponentDesc",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#k_Career_CareerComponentDesc"
+        },
+        {
+          "name": "k_Career_CareerDriverContractRenewalComponentDesc",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#k_Career_CareerDriverContractRenewalComponentDesc"
+        },
+        {
+          "name": "k_Career_CareerDriverMarketComponentDesc",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#k_Career_CareerDriverMarketComponentDesc"
+        },
+        {
+          "name": "k_Career_CareerFacilitiesComponentDesc",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#k_Career_CareerFacilitiesComponentDesc"
+        },
+        {
+          "name": "k_Career_CareerSetupComponentDesc",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#k_Career_CareerSetupComponentDesc"
+        },
+        {
+          "name": "k_Career_CareerSponsorsComponentDesc",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#k_Career_CareerSponsorsComponentDesc"
+        },
+        {
+          "name": "k_Career_CareerTimeComponentDesc",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#k_Career_CareerTimeComponentDesc"
+        },
+        {
+          "name": "k_Career_ChampionshipComponentDesc",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#k_Career_ChampionshipComponentDesc"
+        },
+        {
+          "name": "k_Career_ChampionshipDesc",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#k_Career_ChampionshipDesc"
+        },
+        {
+          "name": "k_Career_CostCapComponentDesc",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#k_Career_CostCapComponentDesc"
+        },
+        {
+          "name": "k_Career_DriverCareerContractsManagerComponentDesc",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#k_Career_DriverCareerContractsManagerComponentDesc"
+        },
+        {
+          "name": "k_Career_DriverCareerPlayerDriverStatisticsComponentDesc",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#k_Career_DriverCareerPlayerDriverStatisticsComponentDesc"
+        },
+        {
+          "name": "k_Career_DriverContractsMyTeamComponentDesc",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#k_Career_DriverContractsMyTeamComponentDesc"
+        },
+        {
+          "name": "k_Career_DriverStatisticsComponentDesc",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#k_Career_DriverStatisticsComponentDesc"
+        },
+        {
+          "name": "k_Career_EngineSuppliersComponentDesc",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#k_Career_EngineSuppliersComponentDesc"
+        },
+        {
+          "name": "k_Career_MyTeamAttributesComponentDesc",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#k_Career_MyTeamAttributesComponentDesc"
+        },
+        {
+          "name": "k_Career_MyTeamFacilitiesComponentDesc",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#k_Career_MyTeamFacilitiesComponentDesc"
+        },
+        {
+          "name": "k_Career_MyTeamRFComponentDesc",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#k_Career_MyTeamRFComponentDesc"
+        },
+        {
+          "name": "k_Career_MyTeamStatsComponentDesc",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#k_Career_MyTeamStatsComponentDesc"
+        },
+        {
+          "name": "k_Career_OwnerPerksComponentDesc",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#k_Career_OwnerPerksComponentDesc"
+        },
+        {
+          "name": "k_Career_OwnerSetupComponentDesc",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#k_Career_OwnerSetupComponentDesc"
+        },
+        {
+          "name": "k_Career_ResourcePointsComponentDesc",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#k_Career_ResourcePointsComponentDesc"
+        },
+        {
+          "name": "k_Career_RnDCardColourTable",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#k_Career_RnDCardColourTable"
+        },
+        {
+          "name": "k_Career_RnDDeptColourTable",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#k_Career_RnDDeptColourTable"
+        },
+        {
+          "name": "k_Career_RnDErrorDeptName",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#k_Career_RnDErrorDeptName"
+        },
+        {
+          "name": "k_Career_ScheduleComponentDesc",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#k_Career_ScheduleComponentDesc"
+        },
+        {
+          "name": "k_Career_TeamHQControllerComponentDesc",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#k_Career_TeamHQControllerComponentDesc"
+        },
+        {
+          "name": "k_Career_UpgradeBlockNameTable",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#k_Career_UpgradeBlockNameTable"
+        },
+        {
+          "name": "k_Career_UpgradesComponentDesc",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#k_Career_UpgradesComponentDesc"
+        },
+        {
+          "name": "k_Career_UpgradeTypeOrder",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#k_Career_UpgradeTypeOrder"
+        },
+        {
+          "name": "k_Career_WeatherAndTimeOfDayComponentDesc",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/career#k_Career_WeatherAndTimeOfDayComponentDesc"
+        },
+        {
+          "name": "vt_Career_BankTransactionMessage",
+          "kind": "vtable",
+          "status": "experimental",
+          "link": "/reference/game/career#vt_Career_BankTransactionMessage"
+        },
+        {
+          "name": "vt_Career_Championship",
+          "kind": "vtable",
+          "status": "experimental",
+          "link": "/reference/game/career#vt_Career_Championship"
+        },
+        {
+          "name": "vt_Career_FacilityNode",
+          "kind": "vtable",
+          "status": "experimental",
+          "link": "/reference/game/career#vt_Career_FacilityNode"
+        },
+        {
+          "name": "vt_Career_MessageDriverMoveConfirmed",
+          "kind": "vtable",
+          "status": "experimental",
+          "link": "/reference/game/career#vt_Career_MessageDriverMoveConfirmed"
+        },
+        {
+          "name": "vt_Career_MessageDriverMovesFinalised",
+          "kind": "vtable",
+          "status": "experimental",
+          "link": "/reference/game/career#vt_Career_MessageDriverMovesFinalised"
+        },
+        {
+          "name": "vt_Career_MessageDriverMovesFinalisedRecognition",
+          "kind": "vtable",
+          "status": "experimental",
+          "link": "/reference/game/career#vt_Career_MessageDriverMovesFinalisedRecognition"
+        },
+        {
+          "name": "vt_Career_MessageDriverMovesFinalisedUpgrades",
+          "kind": "vtable",
+          "status": "experimental",
+          "link": "/reference/game/career#vt_Career_MessageDriverMovesFinalisedUpgrades"
+        },
+        {
+          "name": "vt_Career_RenownAwardedMessage",
+          "kind": "vtable",
+          "status": "experimental",
+          "link": "/reference/game/career#vt_Career_RenownAwardedMessage"
+        },
+        {
+          "name": "vt_Career_RnDDeptCard",
+          "kind": "vtable",
+          "status": "experimental",
+          "link": "/reference/game/career#vt_Career_RnDDeptCard"
+        },
+        {
+          "name": "vt_Career_Season",
+          "kind": "vtable",
+          "status": "experimental",
+          "link": "/reference/game/career#vt_Career_Season"
+        },
+        {
+          "name": "vt_Career_SponsorLoyaltyXpMessage",
+          "kind": "vtable",
+          "status": "experimental",
+          "link": "/reference/game/career#vt_Career_SponsorLoyaltyXpMessage"
+        },
+        {
+          "name": "vt_Career_Weekend",
+          "kind": "vtable",
+          "status": "experimental",
+          "link": "/reference/game/career#vt_Career_Weekend"
+        },
+        {
+          "name": "site_Career_RnDPerfViewModelSlotDtor",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPerfViewModelSlotDtor"
+        },
+        {
+          "name": "site_Career_RnDPieMoveAssignSlotDtor",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPieMoveAssignSlotDtor"
+        },
+        {
+          "name": "site_Career_RnDPieMovedFromSlotDtor",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPieMovedFromSlotDtor"
+        },
+        {
+          "name": "site_Career_RnDPieSliceDescFormat",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPieSliceDescFormat"
+        },
+        {
+          "name": "site_Career_RnDPieTeardownSlotDtor",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPieTeardownSlotDtor"
+        },
+        {
+          "name": "site_Career_TeleRecordTypeNameCall",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_TeleRecordTypeNameCall"
+        },
+        {
+          "name": "site_Career_TeleResearchTypeNameCall",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_TeleResearchTypeNameCall"
+        },
+        {
+          "name": "site_Career_ApplyUpgradeBlockNameDefault",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_ApplyUpgradeBlockNameDefault"
+        },
+        {
+          "name": "site_Career_ApplyUpgradeBlockNameJoin",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_ApplyUpgradeBlockNameJoin"
+        },
+        {
+          "name": "site_Career_ApplyUpgradeKeyCall",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_ApplyUpgradeKeyCall"
+        },
+        {
+          "name": "site_Career_ApplyUpgradeKeyFilter",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_ApplyUpgradeKeyFilter"
+        },
+        {
+          "name": "site_Career_DeserialiseUpgradesEnd",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_DeserialiseUpgradesEnd"
+        },
+        {
+          "name": "site_Career_LoadUpgradeRows_DeptPath",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_LoadUpgradeRows_DeptPath"
+        },
+        {
+          "name": "site_Career_RnDBoxGridFirstTab",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDBoxGridFirstTab"
+        },
+        {
+          "name": "site_Career_RnDBoxGridNameClamp",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDBoxGridNameClamp"
+        },
+        {
+          "name": "site_Career_RnDBoxGridNameIndex",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDBoxGridNameIndex"
+        },
+        {
+          "name": "site_Career_RnDBoxGridNameRead",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDBoxGridNameRead"
+        },
+        {
+          "name": "site_Career_RnDCardArtImage0",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDCardArtImage0"
+        },
+        {
+          "name": "site_Career_RnDCardArtImage1",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDCardArtImage1"
+        },
+        {
+          "name": "site_Career_RnDCardArtImage2",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDCardArtImage2"
+        },
+        {
+          "name": "site_Career_RnDCardArtMask0",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDCardArtMask0"
+        },
+        {
+          "name": "site_Career_RnDCardArtMask1",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDCardArtMask1"
+        },
+        {
+          "name": "site_Career_RnDCardArtMask2",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDCardArtMask2"
+        },
+        {
+          "name": "site_Career_RnDCardColourPick0",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDCardColourPick0"
+        },
+        {
+          "name": "site_Career_RnDCardColourPick1",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDCardColourPick1"
+        },
+        {
+          "name": "site_Career_RnDCardColourPick2",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDCardColourPick2"
+        },
+        {
+          "name": "site_Career_RnDCardColourPick3",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDCardColourPick3"
+        },
+        {
+          "name": "site_Career_RnDCardColourPick4",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDCardColourPick4"
+        },
+        {
+          "name": "site_Career_RnDCardDeptIcon0",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDCardDeptIcon0"
+        },
+        {
+          "name": "site_Career_RnDCardDeptIcon1",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDCardDeptIcon1"
+        },
+        {
+          "name": "site_Career_RnDCardDeptIcon2",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDCardDeptIcon2"
+        },
+        {
+          "name": "site_Career_RnDCompareDept",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDCompareDept"
+        },
+        {
+          "name": "site_Career_RnDContainerOpenMaint",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDContainerOpenMaint"
+        },
+        {
+          "name": "site_Career_RnDContainerOpenTail",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDContainerOpenTail"
+        },
+        {
+          "name": "site_Career_RnDDeptBoxGridEntry",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDDeptBoxGridEntry"
+        },
+        {
+          "name": "site_Career_RnDDeptBoxGridInject",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDDeptBoxGridInject"
+        },
+        {
+          "name": "site_Career_RnDDeptBoxLayoutProbe",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDDeptBoxLayoutProbe"
+        },
+        {
+          "name": "site_Career_RnDDeptPagePreQuery",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDDeptPagePreQuery"
+        },
+        {
+          "name": "site_Career_RnDDeptPageQueryDone",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDDeptPageQueryDone"
+        },
+        {
+          "name": "site_Career_RnDDeptPageTypeLoop",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDDeptPageTypeLoop"
+        },
+        {
+          "name": "site_Career_RnDDeptRowCategoryIcon",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDDeptRowCategoryIcon"
+        },
+        {
+          "name": "site_Career_RnDDeptRowTypeIcon",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDDeptRowTypeIcon"
+        },
+        {
+          "name": "site_Career_RnDDeptRowTypeIconJoin",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDDeptRowTypeIconJoin"
+        },
+        {
+          "name": "site_Career_RnDDeptRowTypeLabel",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDDeptRowTypeLabel"
+        },
+        {
+          "name": "site_Career_RnDDeptRowTypeLabelJoin",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDDeptRowTypeLabelJoin"
+        },
+        {
+          "name": "site_Career_RnDInProgressColourStore",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDInProgressColourStore"
+        },
+        {
+          "name": "site_Career_RnDInProgressPartIcon",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDInProgressPartIcon"
+        },
+        {
+          "name": "site_Career_RnDInProgressStrip",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDInProgressStrip"
+        },
+        {
+          "name": "site_Career_RnDInProgressTypeIcon",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDInProgressTypeIcon"
+        },
+        {
+          "name": "site_Career_RnDInProgressTypeIconJoin",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDInProgressTypeIconJoin"
+        },
+        {
+          "name": "site_Career_RnDInProgressTypeLabel",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDInProgressTypeLabel"
+        },
+        {
+          "name": "site_Career_RnDInProgressTypeLabelJoin",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDInProgressTypeLabelJoin"
+        },
+        {
+          "name": "site_Career_RnDListRowColourStore",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDListRowColourStore"
+        },
+        {
+          "name": "site_Career_RnDListRowDeptIcon",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDListRowDeptIcon"
+        },
+        {
+          "name": "site_Career_RnDListRowLightColourStore",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDListRowLightColourStore"
+        },
+        {
+          "name": "site_Career_RnDPageModifierList",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPageModifierList"
+        },
+        {
+          "name": "site_Career_RnDPanelModifierList",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPanelModifierList"
+        },
+        {
+          "name": "site_Career_RnDPanelResearchLimit",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPanelResearchLimit"
+        },
+        {
+          "name": "site_Career_RnDPerfChildName",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPerfChildName"
+        },
+        {
+          "name": "site_Career_RnDPerfDeptColour",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPerfDeptColour"
+        },
+        {
+          "name": "site_Career_RnDPerfDeptLoopEnd",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPerfDeptLoopEnd"
+        },
+        {
+          "name": "site_Career_RnDPerfDeptName",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPerfDeptName"
+        },
+        {
+          "name": "site_Career_RnDPerfGotoName",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPerfGotoName"
+        },
+        {
+          "name": "site_Career_RnDPerksTitleDeptIcon",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPerksTitleDeptIcon"
+        },
+        {
+          "name": "site_Career_RnDPieBufSize",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPieBufSize"
+        },
+        {
+          "name": "site_Career_RnDPieCtorRet",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPieCtorRet"
+        },
+        {
+          "name": "site_Career_RnDPieFocusJoin",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPieFocusJoin"
+        },
+        {
+          "name": "site_Career_RnDPieFocusNameCmp",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPieFocusNameCmp"
+        },
+        {
+          "name": "site_Career_RnDPieFocusRestore",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPieFocusRestore"
+        },
+        {
+          "name": "site_Career_RnDPiePopulateDeptGuard",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPiePopulateDeptGuard"
+        },
+        {
+          "name": "site_Career_RnDPiePopulateGate",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPiePopulateGate"
+        },
+        {
+          "name": "site_Career_RnDPiePopulateNextCode",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPiePopulateNextCode"
+        },
+        {
+          "name": "site_Career_RnDPiePopulateSlotCap",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPiePopulateSlotCap"
+        },
+        {
+          "name": "site_Career_RnDPieSliceDefaultColour",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPieSliceDefaultColour"
+        },
+        {
+          "name": "site_Career_RnDPieSliceIconArgs",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPieSliceIconArgs"
+        },
+        {
+          "name": "site_Career_RnDPieSliceNameJoin",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPieSliceNameJoin"
+        },
+        {
+          "name": "site_Career_RnDPopupCategoryIcon",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPopupCategoryIcon"
+        },
+        {
+          "name": "site_Career_RnDPopupColourStore",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPopupColourStore"
+        },
+        {
+          "name": "site_Career_RnDPotentialPieEntry",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPotentialPieEntry"
+        },
+        {
+          "name": "site_Career_RnDPurchaseBackOpen",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPurchaseBackOpen"
+        },
+        {
+          "name": "site_Career_RnDPurchaseOptionsEntry",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPurchaseOptionsEntry"
+        },
+        {
+          "name": "site_Career_RnDPurchasePanelTypeLabel",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPurchasePanelTypeLabel"
+        },
+        {
+          "name": "site_Career_RnDPurchasePanelTypeLabelJoin",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPurchasePanelTypeLabelJoin"
+        },
+        {
+          "name": "site_Career_RnDPurchaseRequestEntry",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPurchaseRequestEntry"
+        },
+        {
+          "name": "site_Career_RnDPurchaseScreenTypeLabel",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPurchaseScreenTypeLabel"
+        },
+        {
+          "name": "site_Career_RnDPurchaseScreenTypeLabelJoin",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDPurchaseScreenTypeLabelJoin"
+        },
+        {
+          "name": "site_Career_RnDResearchFocusNameCmp",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDResearchFocusNameCmp"
+        },
+        {
+          "name": "site_Career_RnDResearchRowCategoryIcon",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDResearchRowCategoryIcon"
+        },
+        {
+          "name": "site_Career_RnDResearchRowTypeIcon",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDResearchRowTypeIcon"
+        },
+        {
+          "name": "site_Career_RnDResearchRowTypeIconJoin",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDResearchRowTypeIconJoin"
+        },
+        {
+          "name": "site_Career_RnDResearchRowTypeLabel",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDResearchRowTypeLabel"
+        },
+        {
+          "name": "site_Career_RnDResearchRowTypeLabelJoin",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDResearchRowTypeLabelJoin"
+        },
+        {
+          "name": "site_Career_RnDResearchTypeLoop",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDResearchTypeLoop"
+        },
+        {
+          "name": "site_Career_RnDResultTypeIcon",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDResultTypeIcon"
+        },
+        {
+          "name": "site_Career_RnDResultTypeIconJoin",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDResultTypeIconJoin"
+        },
+        {
+          "name": "site_Career_RnDResultTypeLabel",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDResultTypeLabel"
+        },
+        {
+          "name": "site_Career_RnDResultTypeLabelJoin",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDResultTypeLabelJoin"
+        },
+        {
+          "name": "site_Career_RnDTileCountBody",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDTileCountBody"
+        },
+        {
+          "name": "site_Career_RnDTileCountExit",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDTileCountExit"
+        },
+        {
+          "name": "site_Career_RnDTileCountGuards",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDTileCountGuards"
+        },
+        {
+          "name": "site_Career_RnDTileCountIndexGuard",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDTileCountIndexGuard"
+        },
+        {
+          "name": "site_Career_RnDTodoTypeLabel",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDTodoTypeLabel"
+        },
+        {
+          "name": "site_Career_RnDTodoTypeLabelJoin",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDTodoTypeLabelJoin"
+        },
+        {
+          "name": "site_Career_RnDTreeRowCountProbe",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDTreeRowCountProbe"
+        },
+        {
+          "name": "site_Career_RnDUpgradeInfoTypeLabel",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDUpgradeInfoTypeLabel"
+        },
+        {
+          "name": "site_Career_RnDUpgradeInfoTypeLabelJoin",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDUpgradeInfoTypeLabelJoin"
+        },
+        {
+          "name": "site_Career_RnDUpgradeListDeptIcon",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_RnDUpgradeListDeptIcon"
+        },
+        {
+          "name": "site_Career_TeamDeptEnumStore",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_TeamDeptEnumStore"
+        },
+        {
+          "name": "site_Career_TeamHqIsMyTeamResult",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_TeamHqIsMyTeamResult"
+        },
+        {
+          "name": "site_Career_TeamHqRnDPopupTypeIcon",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_TeamHqRnDPopupTypeIcon"
+        },
+        {
+          "name": "site_Career_TeamHqRnDPopupTypeIconJoin",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_TeamHqRnDPopupTypeIconJoin"
+        },
+        {
+          "name": "site_Career_TeleFailedTypeName",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_TeleFailedTypeName"
+        },
+        {
+          "name": "site_Career_TeleFailedTypeNameJoin",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_TeleFailedTypeNameJoin"
+        },
+        {
+          "name": "site_Career_TeleRecordTypeName",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_TeleRecordTypeName"
+        },
+        {
+          "name": "site_Career_TeleResearchTypeName",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_TeleResearchTypeName"
+        },
+        {
+          "name": "site_Career_Unk141814320TypeLabel",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_Unk141814320TypeLabel"
+        },
+        {
+          "name": "site_Career_Unk141814320TypeLabelJoin",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_Unk141814320TypeLabelJoin"
+        },
+        {
+          "name": "site_Career_Unk1418169f0TypeLabel",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_Unk1418169f0TypeLabel"
+        },
+        {
+          "name": "site_Career_Unk1418169f0TypeLabelJoin",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_Unk1418169f0TypeLabelJoin"
+        },
+        {
+          "name": "site_Career_UpgradeAutoFitBody",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_UpgradeAutoFitBody"
+        },
+        {
+          "name": "site_Career_UpgradeAutoFitDeptGate",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_UpgradeAutoFitDeptGate"
+        },
+        {
+          "name": "site_Career_UpgradeBlockReplayEntry",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_UpgradeBlockReplayEntry"
+        },
+        {
+          "name": "site_Career_UpgradeCardDeptIcon",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_UpgradeCardDeptIcon"
+        },
+        {
+          "name": "site_Career_UpgradeCardTypeLabel",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_UpgradeCardTypeLabel"
+        },
+        {
+          "name": "site_Career_UpgradeCardTypeLabelJoin",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_UpgradeCardTypeLabelJoin"
+        },
+        {
+          "name": "site_Career_UpgradeGraphHubTest",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_UpgradeGraphHubTest"
+        },
+        {
+          "name": "site_Career_UpgradeGraphRegularNode",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_UpgradeGraphRegularNode"
+        },
+        {
+          "name": "site_Career_UpgradeInitFakeDeptBranch",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_UpgradeInitFakeDeptBranch"
+        },
+        {
+          "name": "site_Career_UpgradeInitNormal",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_UpgradeInitNormal"
+        },
+        {
+          "name": "site_Career_UpgradeMetaTypeJoin",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_UpgradeMetaTypeJoin"
+        },
+        {
+          "name": "site_Career_UpgradePushStateBody",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_UpgradePushStateBody"
+        },
+        {
+          "name": "site_Career_UpgradePushStateDeptGate",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_UpgradePushStateDeptGate"
+        },
+        {
+          "name": "site_Career_UpgradeRowTypeJoin",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_UpgradeRowTypeJoin"
+        },
+        {
+          "name": "site_Career_UpgradeSetEnabledBody",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_UpgradeSetEnabledBody"
+        },
+        {
+          "name": "site_Career_UpgradeSetEnabledDeptGate",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_UpgradeSetEnabledDeptGate"
+        },
+        {
+          "name": "site_Career_UpgradeSetFittedBody",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_UpgradeSetFittedBody"
+        },
+        {
+          "name": "site_Career_UpgradeSetFittedDeptGate",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_UpgradeSetFittedDeptGate"
+        },
+        {
+          "name": "site_Career_UpgradeSetLockedBody",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_UpgradeSetLockedBody"
+        },
+        {
+          "name": "site_Career_UpgradeSetLockedDeptGate",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_UpgradeSetLockedDeptGate"
+        },
+        {
+          "name": "site_Career_VehicleFillOrderEnd",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_VehicleFillOrderEnd"
+        },
+        {
+          "name": "site_Career_VehicleFillOrderStart",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_VehicleFillOrderStart"
+        },
+        {
+          "name": "site_Career_WeekendObjectiveNext",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_WeekendObjectiveNext"
+        },
+        {
+          "name": "site_Career_WeekendObjectiveType",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/career#site_Career_WeekendObjectiveType"
+        }
+      ]
+    },
+    {
       "name": "core",
       "link": "/reference/game/core",
       "entries": [
+        {
+          "name": "NeAllocator",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/core#NeAllocator"
+        },
+        {
+          "name": "NeAllocatorVtbl",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/core#NeAllocatorVtbl"
+        },
         {
           "name": "NeLogGate",
           "kind": "struct",
           "status": null,
           "link": "/reference/game/core#NeLogGate"
+        },
+        {
+          "name": "NeMessageBus",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/core#NeMessageBus"
+        },
+        {
+          "name": "NeOptionalVec",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/core#NeOptionalVec"
+        },
+        {
+          "name": "NeSharedCtrl",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/core#NeSharedCtrl"
+        },
+        {
+          "name": "Ne_Compare_StringNoCase",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/core#Ne_Compare_StringNoCase"
+        },
+        {
+          "name": "Ne_Detach_ChildNode",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/core#Ne_Detach_ChildNode"
+        },
+        {
+          "name": "Ne_Entity_FindComponent",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/core#Ne_Entity_FindComponent"
+        },
+        {
+          "name": "Ne_Format_String",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/core#Ne_Format_String"
+        },
+        {
+          "name": "Ne_Get_SettingBool",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/core#Ne_Get_SettingBool"
+        },
+        {
+          "name": "Ne_Get_SettingU32",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/core#Ne_Get_SettingU32"
         },
         {
           "name": "Ne_Log_Thunk",
@@ -24,16 +1830,286 @@
           "link": "/reference/game/core#Ne_Make_StrFromCStr"
         },
         {
+          "name": "Ne_Parse_Long",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/core#Ne_Parse_Long"
+        },
+        {
+          "name": "Ne_Play_FullscreenVideo",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/core#Ne_Play_FullscreenVideo"
+        },
+        {
+          "name": "Ne_Post_BusMessage",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/core#Ne_Post_BusMessage"
+        },
+        {
+          "name": "g_Ne_DefaultAllocator",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/core#g_Ne_DefaultAllocator"
+        },
+        {
           "name": "g_Ne_LogGate",
           "kind": "data",
           "status": "experimental",
           "link": "/reference/game/core#g_Ne_LogGate"
         },
         {
+          "name": "k_Ne_TypeChainEnd",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/core#k_Ne_TypeChainEnd"
+        },
+        {
+          "name": "k_Ne_TypeRoot",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/core#k_Ne_TypeRoot"
+        },
+        {
+          "name": "site_Ne_HwBool_CrowdInShadows",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/core#site_Ne_HwBool_CrowdInShadows"
+        },
+        {
+          "name": "site_Ne_HwBool_GodRaysPost",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/core#site_Ne_HwBool_GodRaysPost"
+        },
+        {
+          "name": "site_Ne_HwBool_GrassFlattening",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/core#site_Ne_HwBool_GrassFlattening"
+        },
+        {
+          "name": "site_Ne_HwBool_GroundCoverEnabled",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/core#site_Ne_HwBool_GroundCoverEnabled"
+        },
+        {
+          "name": "site_Ne_HwBool_GroundCoverMeshes",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/core#site_Ne_HwBool_GroundCoverMeshes"
+        },
+        {
+          "name": "site_Ne_HwBool_LensStreak",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/core#site_Ne_HwBool_LensStreak"
+        },
+        {
+          "name": "site_Ne_HwBool_MotionBlurV2",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/core#site_Ne_HwBool_MotionBlurV2"
+        },
+        {
+          "name": "site_Ne_HwBool_NightShadowCharCast",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/core#site_Ne_HwBool_NightShadowCharCast"
+        },
+        {
+          "name": "site_Ne_HwBool_RainBeads",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/core#site_Ne_HwBool_RainBeads"
+        },
+        {
+          "name": "site_Ne_HwBool_RainHigh",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/core#site_Ne_HwBool_RainHigh"
+        },
+        {
+          "name": "site_Ne_HwBool_RainSheets",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/core#site_Ne_HwBool_RainSheets"
+        },
+        {
+          "name": "site_Ne_HwBool_RainSplashes",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/core#site_Ne_HwBool_RainSplashes"
+        },
+        {
+          "name": "site_Ne_HwBool_SkyShadowLowLod",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/core#site_Ne_HwBool_SkyShadowLowLod"
+        },
+        {
+          "name": "site_Ne_HwBool_SkyShadowMap32Bits",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/core#site_Ne_HwBool_SkyShadowMap32Bits"
+        },
+        {
+          "name": "site_Ne_HwBool_TrackHeatHaze",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/core#site_Ne_HwBool_TrackHeatHaze"
+        },
+        {
+          "name": "site_Ne_HwBool_VolumetricFog",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/core#site_Ne_HwBool_VolumetricFog"
+        },
+        {
+          "name": "site_Ne_HwConfigParseCall",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/core#site_Ne_HwConfigParseCall"
+        },
+        {
+          "name": "site_Ne_HwInt_CrowdBillboardDistance",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/core#site_Ne_HwInt_CrowdBillboardDistance"
+        },
+        {
+          "name": "site_Ne_HwInt_NightShadowMapSize",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/core#site_Ne_HwInt_NightShadowMapSize"
+        },
+        {
+          "name": "site_Ne_HwInt_NightShadowSourceCount",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/core#site_Ne_HwInt_NightShadowSourceCount"
+        },
+        {
+          "name": "site_Ne_HwInt_ShadowSampling",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/core#site_Ne_HwInt_ShadowSampling"
+        },
+        {
+          "name": "site_Ne_HwInt_SkyShadowCascadeCount",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/core#site_Ne_HwInt_SkyShadowCascadeCount"
+        },
+        {
+          "name": "site_Ne_HwInt_SkyShadowMapSize",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/core#site_Ne_HwInt_SkyShadowMapSize"
+        },
+        {
+          "name": "site_Ne_HwInt_SpotShadowMapSize",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/core#site_Ne_HwInt_SpotShadowMapSize"
+        },
+        {
+          "name": "site_Ne_HwInt_SpotShadowSampling",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/core#site_Ne_HwInt_SpotShadowSampling"
+        },
+        {
+          "name": "site_Ne_HwInt_TexStreamSizeInMiB",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/core#site_Ne_HwInt_TexStreamSizeInMiB"
+        },
+        {
+          "name": "site_Ne_HwInt_VolFogMapHeight",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/core#site_Ne_HwInt_VolFogMapHeight"
+        },
+        {
+          "name": "site_Ne_HwInt_VolFogMapWidth",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/core#site_Ne_HwInt_VolFogMapWidth"
+        },
+        {
+          "name": "site_Ne_HwInt_WorldShadowMapSize",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/core#site_Ne_HwInt_WorldShadowMapSize"
+        },
+        {
+          "name": "site_Ne_HwXmlParseCall",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/core#site_Ne_HwXmlParseCall"
+        },
+        {
+          "name": "site_Ne_HwXmlWriteCall",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/core#site_Ne_HwXmlWriteCall"
+        },
+        {
           "name": "site_Ne_Format_String_Entry",
           "kind": "site",
           "status": "experimental",
           "link": "/reference/game/core#site_Ne_Format_String_Entry"
+        },
+        {
+          "name": "site_Ne_ReplayAfterRecord",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/core#site_Ne_ReplayAfterRecord"
+        }
+      ]
+    },
+    {
+      "name": "entrants",
+      "link": "/reference/game/entrants",
+      "entries": [
+        {
+          "name": "EntrantRecord",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/entrants#EntrantRecord"
+        },
+        {
+          "name": "EntrantWriteData",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/entrants#EntrantWriteData"
+        }
+      ]
+    },
+    {
+      "name": "fe_flow",
+      "link": "/reference/game/fe_flow",
+      "entries": [
+        {
+          "name": "FlowState",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/fe_flow#FlowState"
+        },
+        {
+          "name": "FeFlow_Set_StateStatus",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/fe_flow#FeFlow_Set_StateStatus"
+        },
+        {
+          "name": "site_FeFlow_SetStateStatus",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/fe_flow#site_FeFlow_SetStateStatus"
         }
       ]
     },
@@ -108,10 +2184,256 @@
           "link": "/reference/game/fe_tiles#FeTile_Build_List"
         },
         {
+          "name": "FeTile_CareerDlcItem_Populate",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/fe_tiles#FeTile_CareerDlcItem_Populate"
+        },
+        {
+          "name": "FeTile_Construct_CareerItem",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/fe_tiles#FeTile_Construct_CareerItem"
+        },
+        {
           "name": "FeTile_ItemBase_Populate",
           "kind": "func",
           "status": "stable",
           "link": "/reference/game/fe_tiles#FeTile_ItemBase_Populate"
+        },
+        {
+          "name": "FeTile_Route_CareerItem",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/fe_tiles#FeTile_Route_CareerItem"
+        },
+        {
+          "name": "g_FeTile_CustomisationSystem",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/fe_tiles#g_FeTile_CustomisationSystem"
+        },
+        {
+          "name": "g_FeTile_SelectedCareerContent",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/fe_tiles#g_FeTile_SelectedCareerContent"
+        },
+        {
+          "name": "site_FeTile_CareerContentEnd",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/fe_tiles#site_FeTile_CareerContentEnd"
+        }
+      ]
+    },
+    {
+      "name": "game",
+      "link": "/reference/game/game",
+      "entries": [
+        {
+          "name": "ChampionshipHolder",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/game#ChampionshipHolder"
+        },
+        {
+          "name": "GameManager",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/game#GameManager"
+        },
+        {
+          "name": "GameMessageBusHolder",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/game#GameMessageBusHolder"
+        },
+        {
+          "name": "GameModeContext",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/game#GameModeContext"
+        },
+        {
+          "name": "Game_Career_IsDriverCareerMode",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/game#Game_Career_IsDriverCareerMode"
+        },
+        {
+          "name": "Game_CareerWizard_PushNextStep",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/game#Game_CareerWizard_PushNextStep"
+        },
+        {
+          "name": "Game_CareerWizard_StartsInF1",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/game#Game_CareerWizard_StartsInF1"
+        },
+        {
+          "name": "Game_DriverSelectHeader_SetTabState",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/game#Game_DriverSelectHeader_SetTabState"
+        },
+        {
+          "name": "Game_EngineMgmt_AddGridPenalty",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/game#Game_EngineMgmt_AddGridPenalty"
+        },
+        {
+          "name": "Game_EngineMgmt_ApplySessionWear",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/game#Game_EngineMgmt_ApplySessionWear"
+        },
+        {
+          "name": "Game_EntrantsUi_BuildCharacterRef",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/game#Game_EntrantsUi_BuildCharacterRef"
+        },
+        {
+          "name": "Game_EntrantsUi_OnCharacterListLoaded",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/game#Game_EntrantsUi_OnCharacterListLoaded"
+        },
+        {
+          "name": "Game_Rnd_CalcUpgradeTypeProgress",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/game#Game_Rnd_CalcUpgradeTypeProgress"
+        },
+        {
+          "name": "Game_Rnd_FillVehicleUpgrades",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/game#Game_Rnd_FillVehicleUpgrades"
+        },
+        {
+          "name": "Game_SeasonLength_ApplyPreset",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/game#Game_SeasonLength_ApplyPreset"
+        },
+        {
+          "name": "Game_SeasonLength_PushCalendarEntry",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/game#Game_SeasonLength_PushCalendarEntry"
+        },
+        {
+          "name": "Game_SpeechSystem_PostLine",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/game#Game_SpeechSystem_PostLine"
+        },
+        {
+          "name": "g_Game_FlowLinkStay",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/game#g_Game_FlowLinkStay"
+        },
+        {
+          "name": "g_Game_Manager",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/game#g_Game_Manager"
+        },
+        {
+          "name": "g_Game_MessageBus",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/game#g_Game_MessageBus"
+        },
+        {
+          "name": "g_Game_Root",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/game#g_Game_Root"
+        },
+        {
+          "name": "k_Game_TrackListComponentDesc",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/game#k_Game_TrackListComponentDesc"
+        },
+        {
+          "name": "vt_Game_CareerWizardSettingsSelectViewModel",
+          "kind": "vtable",
+          "status": "experimental",
+          "link": "/reference/game/game#vt_Game_CareerWizardSettingsSelectViewModel"
+        },
+        {
+          "name": "vt_Game_DriverCareerSlotPredicate",
+          "kind": "vtable",
+          "status": "experimental",
+          "link": "/reference/game/game#vt_Game_DriverCareerSlotPredicate"
+        },
+        {
+          "name": "vt_Game_TrackListComponent",
+          "kind": "vtable",
+          "status": "experimental",
+          "link": "/reference/game/game#vt_Game_TrackListComponent"
+        },
+        {
+          "name": "site_Game_DriverSelectHeader_BuildTabs",
+          "kind": "call",
+          "status": "experimental",
+          "link": "/reference/game/game#site_Game_DriverSelectHeader_BuildTabs"
+        },
+        {
+          "name": "site_Game_CareerWizard_BackRoute",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/game#site_Game_CareerWizard_BackRoute"
+        },
+        {
+          "name": "site_Game_CareerWizardConfirm_NextRoute",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/game#site_Game_CareerWizardConfirm_NextRoute"
+        },
+        {
+          "name": "site_Game_DriverSelect_BackRoute",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/game#site_Game_DriverSelect_BackRoute"
+        }
+      ]
+    },
+    {
+      "name": "gamedb",
+      "link": "/reference/game/gamedb",
+      "entries": [
+        {
+          "name": "GdbStringRecord",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/gamedb#GdbStringRecord"
+        },
+        {
+          "name": "Gdb_Lookup_Key",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/gamedb#Gdb_Lookup_Key"
+        },
+        {
+          "name": "k_Gdb_StringXorKey",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/gamedb#k_Gdb_StringXorKey"
+        },
+        {
+          "name": "site_Gdb_DeptCountStore",
+          "kind": "site",
+          "status": "experimental",
+          "link": "/reference/game/gamedb#site_Gdb_DeptCountStore"
         }
       ]
     },
@@ -119,6 +2441,138 @@
       "name": "session",
       "link": "/reference/game/session",
       "entries": [
+        {
+          "name": "GameWeatherSystem",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/session#GameWeatherSystem"
+        },
+        {
+          "name": "TimeOfDayClock",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/session#TimeOfDayClock"
+        },
+        {
+          "name": "TimeOfDayOwner",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/session#TimeOfDayOwner"
+        },
+        {
+          "name": "TimeOfDaySystem",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/session#TimeOfDaySystem"
+        },
+        {
+          "name": "WeatherAndTimeOfDayComponent",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/session#WeatherAndTimeOfDayComponent"
+        },
+        {
+          "name": "WeatherDataset",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/session#WeatherDataset"
+        },
+        {
+          "name": "WeatherSessionSettings",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/session#WeatherSessionSettings"
+        },
+        {
+          "name": "WeatherState",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/session#WeatherState"
+        },
+        {
+          "name": "WeatherTypeRange",
+          "kind": "struct",
+          "status": null,
+          "link": "/reference/game/session#WeatherTypeRange"
+        },
+        {
+          "name": "Sess_Build_GroupResult",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/session#Sess_Build_GroupResult"
+        },
+        {
+          "name": "Sess_Find_GroupRowPosition",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/session#Sess_Find_GroupRowPosition"
+        },
+        {
+          "name": "Sess_GameWeatherSystem_SetupSession",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/session#Sess_GameWeatherSystem_SetupSession"
+        },
+        {
+          "name": "Sess_GameWeatherSystem_UpdateRandomSeed",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/session#Sess_GameWeatherSystem_UpdateRandomSeed"
+        },
+        {
+          "name": "Sess_Record_GroupTimes",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/session#Sess_Record_GroupTimes"
+        },
+        {
+          "name": "Sess_Tod_BuildSessionDataset_Thunk",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/session#Sess_Tod_BuildSessionDataset_Thunk"
+        },
+        {
+          "name": "Sess_TyreAllocation_OnSessionStart",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/session#Sess_TyreAllocation_OnSessionStart"
+        },
+        {
+          "name": "Sess_Tyres_ClosestAvailableCompound",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/session#Sess_Tyres_ClosestAvailableCompound"
+        },
+        {
+          "name": "Sess_WeatherComponent_SetSystemRandomSeed",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/session#Sess_WeatherComponent_SetSystemRandomSeed"
+        },
+        {
+          "name": "g_Sess_TyreRulesActive",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/session#g_Sess_TyreRulesActive"
+        },
+        {
+          "name": "g_Sess_TyreRulesMode",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/session#g_Sess_TyreRulesMode"
+        },
+        {
+          "name": "g_Sess_TyreRulesSessionType",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/session#g_Sess_TyreRulesSessionType"
+        },
+        {
+          "name": "k_Sess_TyreComponentType",
+          "kind": "data",
+          "status": "experimental",
+          "link": "/reference/game/session#k_Sess_TyreComponentType"
+        },
         {
           "name": "site_Sess_AiVehicleRegisterCall",
           "kind": "call",
@@ -148,6 +2602,12 @@
           "kind": "func",
           "status": "experimental",
           "link": "/reference/game/vm#Vm_Set_String"
+        },
+        {
+          "name": "Vm_Set_TabEnabled",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/vm#Vm_Set_TabEnabled"
         },
         {
           "name": "g_Vm_Registry",
