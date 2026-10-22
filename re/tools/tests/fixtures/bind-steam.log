@@ -1,0 +1,14 @@
+2026-10-23 10:00:00.000 [  100] swofty loader (version.dll proxy) attached, pid 4242
+2026-10-23 10:00:00.001 [  100] exe: size 408063872 (analysed 408063872), PE timestamp 1789118616 (analysed 1789118616) -> MATCHES the analysed build
+2026-10-23 10:00:01.000 [  100] [core] bindings: 2 set(s) present, selected bindings.json by PE timestamp 1789118616
+2026-10-23 10:00:01.001 [  100] [core] bindings.json: 7 binding(s) for build d873a1c8d2044cef, this exe (rva checked); 1 string-anchored (1 build-agnostic), pattern first
+2026-10-23 10:00:01.002 [  100] [bind] id=FeTile_Build_List build=steam pass=init result=resolved method=hint matches=1 rva=0x173df80 match=0x173df80 verified=yes reason="" site_bytes=""
+2026-10-23 10:00:01.003 [  100] [bind] id=FeHome_Add_CareerTile build=steam pass=init result=resolved method=hint matches=1 rva=0x1746710 match=0x1742fc7 verified=yes reason="" site_bytes=""
+2026-10-23 10:00:01.004 [  100] [core] binding site_FeHome_AfterCareerCall: the pattern does not match at the KB address 0x141742fc0; scanning .xtls
+2026-10-23 10:00:01.005 [  100] [bind] id=site_FeHome_AfterCareerCall build=steam pass=init result=resolved method=scan matches=1 rva=0x1742fd6 match=0x1742fc7 verified=yes reason="" site_bytes=""
+2026-10-23 10:00:01.006 [  100] [bind] id=FeHome_Handle_Command build=steam pass=init result=resolved method=anchor matches=- rva=0x1bb3c20 match=- verified=yes reason="" site_bytes=""
+2026-10-23 10:00:01.007 [  100] [bind] id=Vm_Set_String build=steam pass=init result=resolved method=scan matches=1 rva=0x846270 match=0x846270 verified=no reason="expect bytes not checked" site_bytes=""
+2026-10-23 10:00:01.008 [  100] [bind] id=Vm_Set_Bool build=steam pass=init result=unresolved method=- matches=0 rva=- match=0x975db0 verified=no reason="signature did not match exactly once; hint \"0x975db0\" bytes differ" site_bytes="48 89 5C 24 08 57 48 83 EC 20 48 8B F9 E8 00 00"
+2026-10-23 10:00:01.009 [  100] [bind] id=Car_Reset_LastFittedUpgrade build=steam pass=init result=unresolved method=- matches=- rva=- match=- verified=- reason="unresolvable: no unique pattern" site_bytes=""
+2026-10-23 10:00:01.010 [  100] [core] bind FeTile_Build_List -> 0x14173df80 (base+0x173df80), func stable via pattern at the KB address
+2026-10-23 10:00:01.011 [  100] [bind] summary build=steam pass=init resolved=5 deferred=0 unresolved=2 total=7

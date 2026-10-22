@@ -17,3 +17,6 @@
 *.exe binary
 
 native/third_party/** linguist-vendored
+
+# Loader log fixtures stay byte for byte: some are CRLF, as the game writes them.
+re/tools/tests/fixtures/**/*.log -text

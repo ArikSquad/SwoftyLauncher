@@ -1,0 +1,54 @@
+2026-10-22 13:16:08.357 [ 3876] swofty loader (version.dll proxy) attached, pid 3872
+2026-10-22 13:16:08.357 [ 3876] exe: size 342936448 (analysed 408063872), PE timestamp 1789128892 (analysed 1789118616) -> DIFFERS from the analysed build, signatures may fail
+2026-10-22 13:16:14.413 [ 3912] [core] bindings: 2 set(s) present, selected bindings.ea.json by PE timestamp 1789128892
+2026-10-22 13:16:14.414 [ 3912] [core] bindings.ea.json: 269 binding(s) for build cc506879c1c834aa, this exe (rva checked); 11 string-anchored (3 build-agnostic), pattern first
+2026-10-22 13:16:14.414 [ 3912] [core] binding resolution: 0 of 269 pattern(s) carry their KB address; each is checked there first and scanned only when the bytes differ
+2026-10-22 13:16:14.414 [ 3912] [ea] per-binding resolution report (core-init): 269 binding(s); each shows anchor string, its code xref, the resolved site, and whether that code is decrypted
+2026-10-22 13:16:14.415 [ 3912] [ea] binding Car_Reset_LastFittedUpgrade    VERDICT no-anchor (pattern-only; the EA code section holds no plaintext to pattern-scan, needs a decrypted dump to derive an EA string anchor)
+2026-10-22 13:16:14.415 [ 3912] [ea] binding Career_Add_SeasonWeekend       VERDICT no-anchor (pattern-only; the EA code section holds no plaintext to pattern-scan, needs a decrypted dump to derive an EA string anchor)
+2026-10-22 13:16:14.415 [ 3912] [ea] binding Career_Add_TeamModifier        VERDICT no-anchor (pattern-only; the EA code section holds no plaintext to pattern-scan, needs a decrypted dump to derive an EA string anchor)
+2026-10-22 13:16:14.481 [ 3912] [ea] binding FeHome_Add_CareerTile          string @base+0x5818987, func @base+0x1738350, site @base+0x1740ae0, site-page entropy 6.06 (decrypted) -> VERDICT resolved
+2026-10-22 13:16:14.513 [ 3912] [ea] binding FeHome_Handle_Command          string @base+0x584aaa8, func @base+0x1bae090, site @base+0x1bae090, site-page entropy 6.26 (decrypted) -> VERDICT resolved
+2026-10-22 13:16:14.519 [ 3912] [ea] binding FeTile_Build_List              string @base+0x5818987, func @base+0x1738350, site @base+0x1738350, site-page entropy 6.12 (decrypted) -> VERDICT resolved
+2026-10-22 13:16:14.553 [ 3912] [ea] binding FeTile_ItemBase_Populate       string @base+0x580fe3a, func @base+0x1691f60, site @base+0x1691f60, site-page entropy 6.10 (decrypted) -> VERDICT resolved
+2026-10-22 13:16:14.584 [ 3912] [ea] binding Ne_Log_Thunk                   string @base+0x577d538, func @base+0xaeedd0, site @base+0x6d5500, site-page entropy 6.76 (mixed) -> VERDICT resolved [WARNING: code reads encrypted, treat the address as unverified]
+2026-10-22 13:16:14.616 [ 3912] [ea] binding Vm_Set_Bool                    string @base+0x580fe3a, func @base+0x1691f60, site @base+0x974850, site-page entropy 6.60 (mixed) -> VERDICT resolved [WARNING: code reads encrypted, treat the address as unverified]
+2026-10-22 13:16:14.624 [ 3912] [ea] binding Vm_Set_String                  string @base+0x580fe3a, func @base+0x1691f60, site @base+0x845080, site-page entropy 6.24 (decrypted) -> VERDICT resolved
+2026-10-22 13:16:14.630 [ 3912] [ea] binding g_Ne_LogGate                   string @base+0x577d538, func @base+0xaeedd0, site @base+0x6181230, site-page entropy 1.13 (decrypted) -> VERDICT resolved
+2026-10-22 13:16:14.638 [ 3912] [ea] binding g_Vm_Registry                  string @base+0x580fe3a, func @base+0x1691f60, site @base+0x6ddaf58, site-page entropy 3.23 (decrypted) -> VERDICT resolved
+2026-10-22 13:16:14.650 [ 3912] [ea] binding site_FeHome_AfterCareerCall    string @base+0x5818987, func @base+0x1738350, site @base+0x173d3a6, site-page entropy 5.90 (decrypted) -> VERDICT resolved
+2026-10-22 13:16:14.681 [ 3912] [ea] binding site_Sess_AiVehicleRegisterCall string @base+0x57464c5, func @base+0x600160, site @base+0x603b5d, site-page entropy 6.06 (decrypted) -> VERDICT resolved
+2026-10-22 13:16:14.682 [ 3912] [ea] per-binding summary (core-init): 11 resolved, 0 code-still-encrypted, 0 xref-not-found, 0 string-not-found, 258 no-anchor (of 269)
+2026-10-22 13:16:14.682 [ 3912] [core] bind Ne_Make_StrFromCStr -> 0x14418b6d0 (base+0x418b6d0), func ea-captured via pattern
+2026-10-22 13:16:14.682 [ 3912] [core] bind Vm_Set_String -> 0x140845080 (base+0x845080), func ea-captured via pattern
+2026-10-22 13:16:14.682 [ 3912] [core] bind FeTile_ItemBase_Populate -> 0x141691f60 (base+0x1691f60), func ea-captured via pattern
+2026-10-22 13:16:14.682 [ 3912] [core] bind g_Vm_Registry -> 0x146ddaf58 (base+0x6ddaf58), data ea-captured via pattern
+2026-10-22 13:16:14.682 [ 3912] [core] bind Vm_Set_Bool -> 0x140974850 (base+0x974850), func ea-captured via pattern
+2026-10-22 13:16:14.682 [ 3912] [core] bind site_FeHome_AfterCareerCall -> 0x14173d3a6 (base+0x173d3a6), site ea-captured via pattern
+2026-10-22 13:16:14.682 [ 3912] [core] bind FeTile_Build_List -> 0x141738350 (base+0x1738350), func ea-captured via pattern
+2026-10-22 13:16:14.682 [ 3912] [core] bind FeHome_Add_CareerTile -> 0x141740ae0 (base+0x1740ae0), func ea-captured via pattern
+2026-10-22 13:16:14.682 [ 3912] [core] bind g_Ne_LogGate -> 0x146181230 (base+0x6181230), data ea-captured via pattern
+2026-10-22 13:16:14.683 [ 3912] [core] bind site_FeFlow_SetStateStatus -> 0x144418173 (base+0x4418173), site ea-captured via pattern
+2026-10-22 13:16:14.683 [ 3912] [core] bind site_Career_TeamHqIsMyTeamResult -> 0x1436efd1d (base+0x36efd1d), site ea-captured via pattern
+2026-10-22 13:16:14.688 [ 3912] [core] bind FeHome_Handle_Command -> 0x141bae090 (base+0x1bae090), func ea-captured via pattern
+2026-10-22 13:16:14.694 [ 3912] [core] bind Ne_Log_Thunk -> 0x1406d5500 (base+0x6d5500), func ea-captured via pattern
+2026-10-22 13:16:14.701 [ 3912] [core] bind site_Ne_Format_String_Entry -> 0x1441572e0 (base+0x41572e0), site ea-captured via pattern
+2026-10-22 13:16:14.701 [ 3912] [core] bind k_Gdb_StringXorKey -> 0x1459a1bb8 (base+0x59a1bb8), data ea-captured via pattern
+2026-10-22 13:16:14.701 [ 3912] stage: window (main window visible (fallback)), addons were loaded at the window stage
+2026-10-22 13:16:14.701 [ 3912] [ea] window stage reached; re-sampling entropy and re-resolving bindings (settles bulk-vs-transient decryption: if pages/sites are now decrypted, decryption is bulk-on-unlock and the resolver works once the menu builds)
+2026-10-22 13:16:14.702 [ 3912] [ea] per-binding resolution report (window): 269 binding(s); each shows anchor string, its code xref, the resolved site, and whether that code is decrypted
+2026-10-22 13:16:14.702 [ 3912] [ea] binding Car_Reset_LastFittedUpgrade    VERDICT no-anchor (pattern-only; the EA code section holds no plaintext to pattern-scan, needs a decrypted dump to derive an EA string anchor)
+2026-10-22 13:16:14.702 [ 3912] [ea] binding Career_Add_SeasonWeekend       VERDICT no-anchor (pattern-only; the EA code section holds no plaintext to pattern-scan, needs a decrypted dump to derive an EA string anchor)
+2026-10-22 13:16:14.702 [ 3912] [ea] binding Career_Add_TeamModifier        VERDICT no-anchor (pattern-only; the EA code section holds no plaintext to pattern-scan, needs a decrypted dump to derive an EA string anchor)
+2026-10-22 13:16:14.709 [ 3912] [ea] binding FeHome_Add_CareerTile          string @base+0x5818987, func @base+0x1738350, site @base+0x1740ae0, site-page entropy 6.06 (decrypted) -> VERDICT resolved
+2026-10-22 13:16:14.716 [ 3912] [ea] binding FeHome_Handle_Command          string @base+0x584aaa8, func @base+0x1bae090, site @base+0x1bae090, site-page entropy 6.26 (decrypted) -> VERDICT resolved
+2026-10-22 13:16:14.722 [ 3912] [ea] binding FeTile_Build_List              string @base+0x5818987, func @base+0x1738350, site @base+0x1738350, site-page entropy 6.12 (decrypted) -> VERDICT resolved
+2026-10-22 13:16:14.730 [ 3912] [ea] binding FeTile_ItemBase_Populate       string @base+0x580fe3a, func @base+0x1691f60, site @base+0x1691f60, site-page entropy 6.10 (decrypted) -> VERDICT resolved
+2026-10-22 13:16:14.737 [ 3912] [ea] binding Ne_Log_Thunk                   string @base+0x577d538, func @base+0xaeedd0, site @base+0x6d5500, site-page entropy 6.76 (mixed) -> VERDICT resolved [WARNING: code reads encrypted, treat the address as unverified]
+2026-10-22 13:16:14.744 [ 3912] [ea] binding Vm_Set_Bool                    string @base+0x580fe3a, func @base+0x1691f60, site @base+0x974850, site-page entropy 6.60 (mixed) -> VERDICT resolved [WARNING: code reads encrypted, treat the address as unverified]
+2026-10-22 13:16:14.752 [ 3912] [ea] binding Vm_Set_String                  string @base+0x580fe3a, func @base+0x1691f60, site @base+0x845080, site-page entropy 6.24 (decrypted) -> VERDICT resolved
+2026-10-22 13:16:14.758 [ 3912] [ea] binding g_Ne_LogGate                   string @base+0x577d538, func @base+0xaeedd0, site @base+0x6181230, site-page entropy 1.13 (decrypted) -> VERDICT resolved
+2026-10-22 13:16:14.770 [ 3912] [ea] binding g_Vm_Registry                  string @base+0x580fe3a, func @base+0x1691f60, site @base+0x6ddaf58, site-page entropy 3.23 (decrypted) -> VERDICT resolved
+2026-10-22 13:16:14.793 [ 3912] [ea] binding site_FeHome_AfterCareerCall    string @base+0x5818987, func @base+0x1738350, func-page entropy 6.12 (decrypted) -> VERDICT resolve-failed (expect bytes differ); candidate site @base+0x173d3a6 bytes [E9 01 02 03 04 90 90 90 90 90 90 90]
+2026-10-22 13:16:14.801 [ 3912] [ea] binding site_Sess_AiVehicleRegisterCall string @base+0x57464c5, func @base+0x600160, site @base+0x603b5d, site-page entropy 6.06 (decrypted) -> VERDICT resolved
+2026-10-22 13:16:14.801 [ 3912] [ea] per-binding summary (window): 10 resolved, 1 code-still-encrypted, 0 xref-not-found, 0 string-not-found, 258 no-anchor (of 269)

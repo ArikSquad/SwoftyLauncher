@@ -1,0 +1,45 @@
+2026-10-22 13:03:14.983 [ 3884] swofty loader (version.dll proxy) attached, pid 3880
+2026-10-22 13:03:14.983 [ 3884] exe: size 342936448 (analysed 408063872), PE timestamp 1789128892 (analysed 1789118616) -> DIFFERS from the analysed build, signatures may fail
+2026-10-22 13:03:20.774 [ 3928] [core] bindings: 2 set(s) present, selected bindings.ea.json by PE timestamp 1789128892
+2026-10-22 13:03:20.775 [ 3928] [core] bindings.ea.json: 269 binding(s) for build cc506879c1c834aa, this exe (rva checked); 11 string-anchored (3 build-agnostic), pattern first
+2026-10-22 13:03:20.775 [ 3928] [core] binding resolution: 0 of 269 pattern(s) carry their KB address; each is checked there first and scanned only when the bytes differ
+2026-10-22 13:03:20.775 [ 3928] [ea] per-binding resolution report (core-init): 269 binding(s); each shows anchor string, its code xref, the resolved site, and whether that code is decrypted
+2026-10-22 13:03:20.810 [ 3928] [ea] binding FeHome_Add_CareerTile          string @base+0x5818987, func @base+0x1738350, func-page entropy 6.12 (decrypted) -> VERDICT resolve-failed (target differs from the KB build); candidate site @base+0x173d3a2 bytes [22 22 22 22 22 22 22 22 22 22 22 22]
+2026-10-22 13:03:20.841 [ 3928] [ea] binding FeHome_Handle_Command          string @base+0x584aaa8, func @base+0x1bae090, site @base+0x1bae090, site-page entropy 6.26 (decrypted) -> VERDICT resolved
+2026-10-22 13:03:20.848 [ 3928] [ea] binding FeTile_Build_List              string @base+0x5818987, func @base+0x1738350, site @base+0x1738350, site-page entropy 6.12 (decrypted) -> VERDICT resolved
+2026-10-22 13:03:20.880 [ 3928] [ea] binding FeTile_ItemBase_Populate       string @base+0x580fe3a, func @base+0x1691f60, site @base+0x1691f60, site-page entropy 6.10 (decrypted) -> VERDICT resolved
+2026-10-22 13:03:20.912 [ 3928] [ea] binding Ne_Log_Thunk                   string @base+0x577d538, func @base+0xaeedd0, func-page entropy 6.88 (mixed) -> VERDICT code-still-encrypted (target differs from the KB build); candidate site @base+0xaeee65 bytes [44 44 44 44 44 44 44 44 44 44 44 44]
+2026-10-22 13:03:20.922 [ 3928] [ea] binding Vm_Set_Bool                    string @base+0x580fe3a, func @base+0x1691f60, func-page entropy 6.10 (decrypted) -> VERDICT resolve-failed (target differs from the KB build); candidate site @base+0x16921ef bytes [33 33 33 33 33 33 33 33 33 33 33 33]
+2026-10-22 13:03:20.933 [ 3928] [ea] binding Vm_Set_String                  string @base+0x580fe3a, func @base+0x1691f60, func-page entropy 6.10 (decrypted) -> VERDICT resolve-failed (target differs from the KB build); candidate site @base+0x1691fca bytes [66 66 66 66 66 66 66 66 66 66 66 66]
+2026-10-22 13:03:20.958 [ 3928] [ea] binding g_Ne_LogGate                   string @base+0x577d538, func @base+0xaeedd0, func-page entropy 6.88 (mixed) -> VERDICT code-still-encrypted (target differs from the KB build); candidate site @base+0xaeedfd bytes [11 11 11 11 11 11 11 11 11 11 11 11]
+2026-10-22 13:03:20.966 [ 3928] [ea] binding g_Vm_Registry                  string @base+0x580fe3a, func @base+0x1691f60, func-page entropy 6.10 (decrypted) -> VERDICT resolve-failed (target differs from the KB build); candidate site @base+0x1691fb6 bytes [55 55 55 55 55 55 55 55 55 55 55 55]
+2026-10-22 13:03:20.976 [ 3928] [ea] binding site_FeHome_AfterCareerCall    string @base+0x5818987, func @base+0x1738350, site @base+0x173d3a6, site-page entropy 5.90 (decrypted) -> VERDICT resolved
+2026-10-22 13:03:21.007 [ 3928] [ea] binding site_Sess_AiVehicleRegisterCall string @base+0x57464c5, func @base+0x600160, site @base+0x603b5d, site-page entropy 6.06 (decrypted) -> VERDICT resolved
+2026-10-22 13:03:21.007 [ 3928] [ea] per-binding summary (core-init): 5 resolved, 6 code-still-encrypted, 0 xref-not-found, 0 string-not-found, 258 no-anchor (of 269)
+2026-10-22 13:03:21.007 [ 3928] [core] bind Ne_Make_StrFromCStr -> 0x14418b6d0 (base+0x418b6d0), func ea-captured via pattern
+2026-10-22 13:03:21.007 [ 3928] [core] binding Vm_Set_String: unresolved (pattern: target differs from the KB build; string anchor: target differs from the KB build)
+2026-10-22 13:03:21.007 [ 3928] [core] bind FeTile_ItemBase_Populate -> 0x141691f60 (base+0x1691f60), func ea-captured via pattern
+2026-10-22 13:03:21.007 [ 3928] [core] binding g_Vm_Registry: unresolved (pattern: target differs from the KB build; string anchor: target differs from the KB build)
+2026-10-22 13:03:21.007 [ 3928] [core] binding Vm_Set_Bool: unresolved (pattern: target differs from the KB build; string anchor: target differs from the KB build)
+2026-10-22 13:03:21.007 [ 3928] [core] bind site_FeHome_AfterCareerCall -> 0x14173d3a6 (base+0x173d3a6), site ea-captured via pattern
+2026-10-22 13:03:21.007 [ 3928] [core] bind FeTile_Build_List -> 0x141738350 (base+0x1738350), func ea-captured via pattern
+2026-10-22 13:03:21.007 [ 3928] [core] binding FeHome_Add_CareerTile: unresolved (pattern: target differs from the KB build; string anchor: target differs from the KB build)
+2026-10-22 13:03:21.008 [ 3928] [core] binding g_Ne_LogGate: unresolved (pattern: target differs from the KB build; string anchor: target differs from the KB build)
+2026-10-22 13:03:21.008 [ 3928] [core] bind site_FeFlow_SetStateStatus -> 0x144418173 (base+0x4418173), site ea-captured via pattern
+2026-10-22 13:03:21.008 [ 3928] [core] bind site_Career_TeamHqIsMyTeamResult -> 0x1436efd1d (base+0x36efd1d), site ea-captured via pattern
+2026-10-22 13:03:21.008 [ 3928] [core] binding k_Gdb_StringXorKey: target differs from the KB build
+2026-10-22 13:03:21.008 [ 3928] stage: window (main window visible (fallback)), addons were loaded at the window stage
+2026-10-22 13:03:21.008 [ 3928] [ea] window stage reached; re-sampling entropy and re-resolving bindings (settles bulk-vs-transient decryption: if pages/sites are now decrypted, decryption is bulk-on-unlock and the resolver works once the menu builds)
+2026-10-22 13:03:21.009 [ 3928] [ea] per-binding resolution report (window): 269 binding(s); each shows anchor string, its code xref, the resolved site, and whether that code is decrypted
+2026-10-22 13:03:21.016 [ 3928] [ea] binding FeHome_Add_CareerTile          string @base+0x5818987, func @base+0x1738350, func-page entropy 6.12 (decrypted) -> VERDICT resolve-failed (target differs from the KB build); candidate site @base+0x173d3a2 bytes [22 22 22 22 22 22 22 22 22 22 22 22]
+2026-10-22 13:03:21.022 [ 3928] [ea] binding FeHome_Handle_Command          string @base+0x584aaa8, func @base+0x1bae090, site @base+0x1bae090, site-page entropy 6.26 (decrypted) -> VERDICT resolved
+2026-10-22 13:03:21.029 [ 3928] [ea] binding FeTile_Build_List              string @base+0x5818987, func @base+0x1738350, site @base+0x1738350, site-page entropy 6.12 (decrypted) -> VERDICT resolved
+2026-10-22 13:03:21.036 [ 3928] [ea] binding FeTile_ItemBase_Populate       string @base+0x580fe3a, func @base+0x1691f60, site @base+0x1691f60, site-page entropy 6.10 (decrypted) -> VERDICT resolved
+2026-10-22 13:03:21.043 [ 3928] [ea] binding Ne_Log_Thunk                   string @base+0x577d538, func @base+0xaeedd0, func-page entropy 6.88 (mixed) -> VERDICT code-still-encrypted (target differs from the KB build); candidate site @base+0xaeee65 bytes [44 44 44 44 44 44 44 44 44 44 44 44]
+2026-10-22 13:03:21.050 [ 3928] [ea] binding Vm_Set_Bool                    string @base+0x580fe3a, func @base+0x1691f60, func-page entropy 6.10 (decrypted) -> VERDICT resolve-failed (target differs from the KB build); candidate site @base+0x16921ef bytes [33 33 33 33 33 33 33 33 33 33 33 33]
+2026-10-22 13:03:21.058 [ 3928] [ea] binding Vm_Set_String                  string @base+0x580fe3a, func @base+0x1691f60, func-page entropy 6.10 (decrypted) -> VERDICT resolve-failed (target differs from the KB build); candidate site @base+0x1691fca bytes [66 66 66 66 66 66 66 66 66 66 66 66]
+2026-10-22 13:03:21.067 [ 3928] [ea] binding g_Ne_LogGate                   string @base+0x577d538, func @base+0xaeedd0, func-page entropy 6.88 (mixed) -> VERDICT code-still-encrypted (target differs from the KB build); candidate site @base+0xaeedfd bytes [11 11 11 11 11 11 11 11 11 11 11 11]
+2026-10-22 13:03:21.074 [ 3928] [ea] binding g_Vm_Registry                  string @base+0x580fe3a, func @base+0x1691f60, func-page entropy 6.10 (decrypted) -> VERDICT resolve-failed (target differs from the KB build); candidate site @base+0x1691fb6 bytes [55 55 55 55 55 55 55 55 55 55 55 55]
+2026-10-22 13:03:21.085 [ 3928] [ea] binding site_FeHome_AfterCareerCall    string @base+0x5818987, func @base+0x1738350, site @base+0x173d3a6, site-page entropy 5.90 (decrypted) -> VERDICT resolved
+2026-10-22 13:03:21.092 [ 3928] [ea] binding site_Sess_AiVehicleRegisterCall string @base+0x57464c5, func @base+0x600160, site @base+0x603b5d, site-page entropy 6.06 (decrypted) -> VERDICT resolved
+2026-10-22 13:03:21.093 [ 3928] [ea] per-binding summary (window): 5 resolved, 6 code-still-encrypted, 0 xref-not-found, 0 string-not-found, 258 no-anchor (of 269)

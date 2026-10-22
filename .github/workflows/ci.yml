@@ -276,6 +276,10 @@ jobs:
             echo $? > "$RUNNER_TEMP/wine-install.status"
           ) > "$RUNNER_TEMP/wine-install.log" 2>&1 &
 
+      # The binding generator, capture and verifier tests use only the standard library.
+      - name: RE tools unit tests
+        run: python3 -m unittest discover -s re/tools/tests
+
       # The native scripts pin their compilers to the maintainer's healthy cores (taskset -c 2-7,...),
       # which leaves two of a hosted runner's four. This shim drops the pin and runs the command as is.
       - name: Use every runner core

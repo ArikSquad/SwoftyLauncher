@@ -198,12 +198,12 @@ class RepoData(unittest.TestCase):
 @unittest.skipUnless(os.environ.get('SWOFTY_STEAM_EXE'), 'set SWOFTY_STEAM_EXE to the KB build F1_25.exe')
 class SteamExe(unittest.TestCase):
     def test_every_pattern_matches_once(self):
-        import sigcheck
-        img = sigcheck.Image(os.environ['SWOFTY_STEAM_EXE'])
+        import bindverify
+        img = bindverify.Image(os.environ['SWOFTY_STEAM_EXE'])
         _, bindings, _, _ = bindgen.load()
         for b in bindings:
-            hits = sigcheck.find_all(img, b['section'], sigcheck.parse_pattern(b['pattern']), limit=2)
-            self.assertEqual([hex(h - img.base) for h in hits], [b['match']], b['id'])
+            hits, at, _ = img.scan(b['section'], b['pattern'])
+            self.assertEqual((hits, at and hex(at)), (1, b['match']), b['id'])
 
 
 if __name__ == '__main__':
