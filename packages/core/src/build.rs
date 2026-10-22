@@ -25,7 +25,9 @@ use crate::manifest::{AddonManifest, relative_inside};
 use crate::map::TrackPackage;
 use crate::owned;
 use crate::placed::Placed;
-use crate::planner::{Conflict, Features, Kind, Planner, Route, Target, load_features, waiting_lines};
+use crate::planner::{
+    Conflict, Features, Kind, Planner, Route, Target, load_features, stock_removals_line, waiting_lines,
+};
 use crate::profile::Profile;
 use crate::registry::Host;
 use crate::resolver::resolve;
@@ -411,6 +413,7 @@ pub(crate) fn build_as(store: &Store, profile: &str, game: &Game, checking: bool
         built_at: crate::conflicts::now(),
         pairs: Vec::new(),
         order: p.enabled().map(str::to_owned).collect(),
+        stock_removals: BTreeMap::new(),
     };
     if p.is_vanilla() {
         built.plan = Plan::vanilla();
@@ -634,9 +637,11 @@ pub(crate) fn build_as(store: &Store, profile: &str, game: &Game, checking: bool
     built
         .warnings
         .extend(ui_notes.into_iter().map(|n| format!("menus: {n}")));
+    let mut stock_removals = BTreeMap::new();
     if !maps.is_empty() || planner.has_db() {
         let shipped = std::fs::read(&db_src).map_err(io_err(&db_src))?;
         let mut db = Gvdb::parse(&shipped)?;
+        let stock = db.records.iter().map(|r| r.key).collect();
         for ((_, pkg), slot) in maps.iter().zip(&slots) {
             let names = slot.map(|s| (slot_asset_group(s), format!("{s}.assetgroup")));
             let root = slot_asset_root();
@@ -659,10 +664,15 @@ pub(crate) fn build_as(store: &Store, profile: &str, game: &Game, checking: bool
         }
         let staged = (planner.route(Kind::Db) == Route::Runtime && planner.has_db()).then(|| db.clone());
         let mut db_report = crate::ops::DbReport::default();
-        let added = planner.apply_db_report(&mut db, &mut db_report)?;
+        let added = planner.apply_db_report(&mut db, &stock, &mut db_report)?;
         built.lines.extend(db_report.lines);
         built.warnings.extend(db_report.warnings);
         built.warnings.extend(planner.take_skipped());
+        stock_removals = planner.take_stock_removals();
+        for (id, n) in &stock_removals {
+            let name = addons.get(id).map_or(id.as_str(), |m| m.name.as_str());
+            built.warnings.push(stock_removals_line(name, *n));
+        }
         if !added.is_empty() {
             let found = owned::owned_items(&db, &Gvdb::parse(&shipped)?, &added);
             built.lines.extend(found.lines);
@@ -1020,6 +1030,7 @@ pub(crate) fn build_as(store: &Store, profile: &str, game: &Game, checking: bool
     built.warnings.extend(within);
     built.report = Report {
         order: built.report.order.clone(),
+        stock_removals,
         ..report
     };
     built.conflicts = planned.conflicts;
@@ -1977,6 +1988,119 @@ mod tests {
         ] {
             assert_eq!(out.get_text(path).as_deref(), Some(want), "{path}");
         }
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn skips_removals_of_stock_records_so_runtime_edits_still_apply() {
+        use swofty_formats::gvdb::Record;
+        if loader_dir().is_some() {
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("swofty-build-stockremove-{}", std::process::id()));
+        std::fs::remove_dir_all(&root).ok();
+        let dir = root.join("game");
+        std::fs::create_dir_all(dir.join("game_package/gamedatabases")).unwrap();
+        std::fs::write(dir.join(crate::GAME_EXE), "exe").unwrap();
+        let mut records = vec![
+            Record::new("entrants.teams._team_instancecount_", 0, "1"),
+            Record::new("entrants.teams.team_0._metadata_", 4, "mclaren_26"),
+            Record::new("entrants.teams.team_0.stat_id", 0, "100"),
+        ];
+        records.extend((0..5).map(|i| Record::new(&format!("stock.key_{i}"), 0, i.to_string())));
+        let stock = Gvdb { records };
+        std::fs::write(dir.join(GVDB), stock.to_bytes()).unwrap();
+        let game = Game {
+            identity: Identity::detect(&dir, Some(1)).unwrap(),
+            dir: dir.clone(),
+            user_reg: None,
+        };
+        let store = Store::new(root.join("data"));
+        let install = |id: &str, name: &str, ops: &str| {
+            let src = root.join("src").join(id);
+            std::fs::create_dir_all(&src).unwrap();
+            std::fs::write(
+                src.join("swofty.json"),
+                format!(
+                    r#"{{ "schema_version": 1, "id": "{id}", "name": "{name}", "version": "1.0.0", "author": "t",
+                         "compat": {{ "game": "f1_25" }}, "operations": {{ "assets": ["ops.json"] }} }}"#
+                ),
+            )
+            .unwrap();
+            std::fs::write(
+                src.join("ops.json"),
+                format!(r#"{{ "schema_version": 1, "ops": [{ops}] }}"#),
+            )
+            .unwrap();
+            store.install_addon(&src).unwrap();
+            store
+                .update_profile("default", |p| p.set_enabled(id, true))
+                .unwrap();
+        };
+        let put = |key: &str, value: &str| {
+            format!(r#"{{"op":"db.put-record","key":"{key}","type":0,"value":"{value}"}},"#)
+        };
+        let remove = |key: &str| format!(r#"{{"op":"db.remove-record","key":"{key}"}}"#);
+        let mut ops = put("entrants.teams.team_0.stat_id", "3135");
+        for i in 0..3 {
+            ops += &put(&format!("mod.key_{i}"), "3130");
+        }
+        for i in 0..5 {
+            ops += &remove(&format!("stock.key_{i}"));
+            ops += ",";
+        }
+        ops += &remove("entrants.teams.team_0.stat_id");
+        ops += ",";
+        ops += &remove("mod.key_0");
+        install("t.peugeot", "Peugeot TotalEnergies F1 Team", &ops);
+
+        let built = build(&store, "default", &game).unwrap();
+        let line = "Peugeot TotalEnergies F1 Team: 6 removal(s) of stock database records skipped; \
+                    the game crashes when a record it reads is missing";
+        assert_eq!(
+            built
+                .warnings
+                .iter()
+                .filter(|w| w.contains("stock database records"))
+                .collect::<Vec<_>>(),
+            [line],
+            "{:?}",
+            built.warnings
+        );
+        assert_eq!(
+            built.report.stock_removals,
+            BTreeMap::from([("t.peugeot".to_owned(), 6)])
+        );
+        let out = Gvdb::parse(&std::fs::read(&built.plan.data[GVDB]).unwrap()).unwrap();
+        for r in &stock.records {
+            assert!(out.get_key(r.key).is_some(), "{:#018x}", r.key);
+        }
+        assert_eq!(
+            out.get_text("entrants.teams.team_0.stat_id").as_deref(),
+            Some("15")
+        );
+        assert!(out.get("mod.key_0").is_none());
+        assert_eq!(out.get_text("mod.key_1").as_deref(), Some("10"));
+        assert_eq!(db_edits(&stock, &out).map(|e| e.len()), Ok(3));
+
+        install(
+            "t.author",
+            "Author",
+            &format!(
+                r#"{}, {{"op":"db.remove-record","key":"stock.key_4","allow_stock_removal":true}}"#,
+                remove("mod.key_1")
+            ),
+        );
+        let built = build(&store, "default", &game).unwrap();
+        assert_eq!(
+            built.report.stock_removals,
+            BTreeMap::from([("t.peugeot".to_owned(), 6)])
+        );
+        let out = Gvdb::parse(&std::fs::read(&built.plan.data[GVDB]).unwrap()).unwrap();
+        assert!(out.get("mod.key_1").is_none());
+        assert!(out.get("stock.key_4").is_none());
+        assert!(out.get("stock.key_3").is_some());
+        assert!(db_edits(&stock, &out).is_err());
         std::fs::remove_dir_all(&root).ok();
     }
 
