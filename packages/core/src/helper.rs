@@ -762,17 +762,38 @@ mod tests {
         dir
     }
 
+    // The script is written by a child process: a write fd open in this
+    // process leaks into whatever another test spawns at that moment, and
+    // exec then fails with "Text file busy" until that child has exec'd.
     fn addon(dir: &Path, script: &str) {
         std::fs::create_dir_all(dir.join("bin")).unwrap();
         std::fs::write(dir.join("swofty.json"), MANIFEST).unwrap();
-        std::fs::write(dir.join("bin/helper"), format!("#!/bin/sh\n{script}")).unwrap();
+        let mut cat = Command::new("sh")
+            .args(["-c", r#"cat > "$0""#])
+            .arg(dir.join("bin/helper"))
+            .stdin(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut stdin = cat.stdin.take().unwrap();
+        write!(stdin, "#!/bin/sh\n{script}").unwrap();
+        drop(stdin);
+        assert!(cat.wait().unwrap().success());
     }
 
+    // Long enough that only a hung helper reaches it, however loaded the
+    // machine running the tests is.
+    const PATIENT: Duration = Duration::from_secs(60);
+    const HUNG: Duration = Duration::from_millis(500);
+
     fn helper(dir: &Path) -> HelperAddon {
+        helper_waiting(dir, PATIENT)
+    }
+
+    fn helper_waiting(dir: &Path, wait: Duration) -> HelperAddon {
         let manifest = AddonManifest::load(dir).unwrap();
         HelperAddon::new(manifest, dir).unwrap().with_timeouts(Timeouts {
-            quick: Duration::from_millis(500),
-            long: Duration::from_millis(500),
+            quick: wait,
+            long: wait,
         })
     }
 
@@ -922,6 +943,7 @@ echo '{"method":"invalidate","params":{}}'
 echo '{"id":2,"result":null}'
 answer '{"id":3,"error":"nope"}'
 echo '{"method":"invalidate","params":{"section":"late"}}'
+answer '{"id":4,"result":null}'
 read -r l
 "#;
 
@@ -954,14 +976,12 @@ read -r l
         let e = h.try_tick(&cx, "items").unwrap().unwrap_err();
         assert_eq!(e.to_string(), "Helper: nope");
         assert!(h.running());
-        let late = std::time::Instant::now();
-        while h.take_stale().is_none() {
-            assert!(
-                late.elapsed() < Duration::from_secs(2),
-                "the late invalidate never arrived"
-            );
-            std::thread::sleep(Duration::from_millis(20));
-        }
+        h.try_tick(&cx, "items").unwrap().unwrap();
+        assert_eq!(
+            h.take_stale(),
+            Some(Stale::Sections(BTreeSet::from(["late".to_owned()]))),
+            "an invalidate between replies is taken before the next reply"
+        );
         let received: Vec<Value> = std::fs::read_to_string(dir.join("received"))
             .unwrap()
             .lines()
@@ -1175,7 +1195,9 @@ read -r l
                 h.event(&cx, "items", Event::Click { id: "x".into() }).unwrap()
             })
         };
-        std::thread::sleep(Duration::from_millis(300));
+        while !h.busy() && !busy.is_finished() {
+            std::thread::yield_now();
+        }
         let asked = std::time::Instant::now();
         assert!(h.try_view(&cx, "items").is_none());
         assert_eq!(h.summary(&cx), Some(summary));
@@ -1226,7 +1248,8 @@ read -r l
         std::fs::create_dir_all(&cache).unwrap();
         let cx = Cx::new("t.helper", &p, &root, &cache, None, &state);
         for (name, _, error) in cases {
-            let h = helper(&root.join(name));
+            let wait = if name == "hang" { HUNG } else { PATIENT };
+            let h = helper_waiting(&root.join(name), wait);
             let view = h.view(&cx, "items").unwrap();
             let notice = &view.notices[0];
             assert!(
@@ -1294,6 +1317,7 @@ esac"#;
         let manifest = MANIFEST.replace(r#""imports":["exmod"]"#, r#""imports":["exmod"],"claims":true"#);
         std::fs::write(dir.join("swofty.json"), manifest).unwrap();
         let h = helper(&dir);
+        let hung = helper_waiting(&dir, HUNG);
         let file = |name: &str| {
             let p = root.join(name);
             std::fs::write(&p, "x").unwrap();
@@ -1306,7 +1330,7 @@ esac"#;
         assert_eq!(h.claims(&root.join("mod")), Claim::Yes);
         assert_eq!(h.claims(&file("a.exmod")), Claim::No, "the helper's answer wins");
         assert_eq!(
-            h.claims(&file("b.slow")),
+            hung.claims(&file("b.slow")),
             Claim::No,
             "a stalled helper claims nothing"
         );
