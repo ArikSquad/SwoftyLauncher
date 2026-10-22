@@ -14,6 +14,7 @@ use gpui_kit::component::{Icon, TitleBar, WindowExt, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use swofty_core::crash::StartFailure;
+use swofty_core::install::Source;
 use swofty_core::launch;
 use swofty_core::process::{GameProcess, stop_game};
 use swofty_core::quarantine;
@@ -583,6 +584,10 @@ impl Shell {
         let Some(install) = self.install.clone() else {
             return;
         };
+        if install.source == Source::EaApp {
+            self.ea_app_unsupported(window, cx);
+            return;
+        }
         if !swofty_core::offline::is_accepted(&self.store.root) {
             self.confirm_offline_play(window, cx);
             return;
