@@ -35,7 +35,7 @@ On a window less than 760 pixels tall, the install cards shrink to one row.
 
 ## Turn addons on or off
 
-Each row has a switch for the active [profile](/using/profiles). The next time you press **Play**, the launcher builds the profile with the change.
+The list has two groups for the active [profile](/using/profiles): **On** and **Off**. Drag a row into the other group to turn it on or off. Dropped on a row that is on, an addon turns on in that place in the load order. You can also right-click a row and select **Turn on** or **Turn off**. The next time you press **Play**, the launcher builds the profile with the change.
 
 Some addons, such as Driver Manager, change what your careers store. Turning one of those off asks first: careers you played with it may not load without it. Select **Turn off anyway** to go ahead, or **Cancel** to leave it on.
 
@@ -45,7 +45,7 @@ In the `vanilla` profile the list is read-only. Switch to a modded profile to tu
 
 ## Load order
 
-Addons that are on are listed first, in load order. When two addons change the same thing, the one lower in the list wins. Drag a row, or use the arrows in its panel, to move it. Rows that are always on have no drag handle.
+Addons that are on are listed first, in load order. When two addons change the same thing, the one lower in the list wins. Drag a row, or use the arrows in its panel, to move it. Rows that are always on have no drag handle. Built-in addons can be dragged between **On** and **Off** but keep their place in the load order.
 
 After a conflict check, a row that is on shows **Loses to** with the number of addons lower in the list that replace some of its changes, or **Wins over** with the number it replaces. The badges go away when an addon is turned on, turned off or moved, until the next check.
 
@@ -67,7 +67,7 @@ Change a value under **Settings** in the addon's panel. **Reset to defaults** pu
 
 ## Remove an addon
 
-Select **Remove** in the addon's panel and confirm. Removing an addon deletes its files and takes it out of every profile. Built-in addons can't be removed.
+Right-click its row and select **Remove…**, or select **Remove** in the addon's panel, then confirm. Removing an addon deletes its files and takes it out of every profile. Built-in addons can't be removed.
 
 Removing a DB Editor addon deletes its changes. To keep them, select **Export** › **Share addon (.zip)** in the [DB Editor](/using/db-editor) first.
 
