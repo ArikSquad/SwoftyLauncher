@@ -131,6 +131,8 @@ class BuildSet(unittest.TestCase):
         doc = bindgen.build_set(ea, BINDINGS, False)
         a, b, c = doc['bindings']
         self.assertTrue(doc['build']['packed'])
+        self.assertEqual(list(doc), ['schema', 'generator', 'build', 'sections', 'bindings'])
+        self.assertEqual(doc['sections'], {'.xtls': '.rdata'})
         self.assertEqual(a['pattern'], '48 89 5C 24 08 57 48 83 EC 20 8B FA')
         self.assertEqual((a['anchor'], a['resolve'], a['expect'], a['section']), (4, {'kind': 'rel32', 'insn': 3}, 'E8', '.text'))
         self.assertEqual(a['match'], '0x4000')
@@ -172,6 +174,8 @@ class RepoData(unittest.TestCase):
             self.assertEqual(len(doc['bindings']), len(self.bindings))
             for e in doc['bindings']:
                 self.assertTrue(e['pattern'], f'{name}: {e["id"]}')
+                self.assertTrue(e['section'].startswith('.'), f'{name}: {e["id"]}')
+                self.assertNotIn(e['section'], ov.get('sections', {}), f'{name}: {e["id"]} names a KB section')
                 self.assertIn(e['status'], ('stable', 'experimental', 'unresolvable'))
                 self.assertEqual(e['status'] == 'unresolvable', 'reason' in e)
 
@@ -198,12 +202,12 @@ class RepoData(unittest.TestCase):
 @unittest.skipUnless(os.environ.get('SWOFTY_STEAM_EXE'), 'set SWOFTY_STEAM_EXE to the KB build F1_25.exe')
 class SteamExe(unittest.TestCase):
     def test_every_pattern_matches_once(self):
-        import sigcheck
-        img = sigcheck.Image(os.environ['SWOFTY_STEAM_EXE'])
+        import bindverify
+        img = bindverify.Image(os.environ['SWOFTY_STEAM_EXE'])
         _, bindings, _, _ = bindgen.load()
         for b in bindings:
-            hits = sigcheck.find_all(img, b['section'], sigcheck.parse_pattern(b['pattern']), limit=2)
-            self.assertEqual([hex(h - img.base) for h in hits], [b['match']], b['id'])
+            hits, at, _ = img.scan(b['section'], b['pattern'])
+            self.assertEqual((hits, at and hex(at)), (1, b['match']), b['id'])
 
 
 if __name__ == '__main__':

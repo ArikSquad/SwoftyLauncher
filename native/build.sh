@@ -33,6 +33,14 @@ mkdir -p "$DIST/swofty/addons/core"
 # bindgen writes bindings.json for the KB build and bindings.<build>.json for every other overlay in
 # re/db/builds; core picks the set whose build.pe_timestamp matches the running exe.
 python3 ../re/tools/bindgen.py --json "$DIST/swofty/addons/core/bindings.json" --symbols "$DIST/swofty/addons/core/symbols.tsv"
+# With a game image at hand, resolve the emitted sets against it the way core does; a binding that fails stops the build.
+if [[ -n ${SWOFTY_STEAM_EXE:-} ]]; then
+    python3 ../re/tools/bindverify.py --set "$DIST/swofty/addons/core/bindings.json" --image "$SWOFTY_STEAM_EXE"
+fi
+if [[ -n ${SWOFTY_EA_DUMP:-} ]]; then
+    python3 ../re/tools/bindverify.py --set "$DIST/swofty/addons/core/bindings.ea.json" --image "$SWOFTY_EA_DUMP" \
+        ${SWOFTY_STEAM_EXE:+--compare "$SWOFTY_STEAM_EXE"}
+fi
 python3 - src/core/stage.cpp "$DIST/swofty/addons/core/features.json" <<'EOF'
 import json, re, sys
 table = open(sys.argv[1]).read().split('FEATURES[] = ', 1)[1].split(';', 1)[0]

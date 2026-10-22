@@ -337,6 +337,10 @@
    "pattern": "49 8B 4C 24 50 48 8D 15 ?? ?? ?? ?? E8 ?? ?? ?? ?? 85 C0 40 0F 94 D7",
    "note": "The base pattern ends on Steam .data1 protector filler (66). EA's .xcode copy has the real test/sete there instead (found through its crowdInShadows string xref)."
   },
+  "site_Ne_HwBool_NightShadowCharCast": {
+   "pattern": "E8 ?? ?? ?? ?? 85 C0 0F 94 96 C1 05 00 00 4C 8B B6 18 06 00 00 4C 2B B6 10 06 00 00",
+   "note": "The base pattern ends on Steam .data1 protector filler (40 8A 3D, 31 3D). On EA it still matches once, but at a call to __security_check_cookie. EA's real site calls Ne_Compare_StringNoCase like Steam's and is followed by the same sete [rsi+0x5c1] and this+0x610 list loads."
+  },
   "site_Ne_HwInt_NightShadowMapSize": {
    "pattern": "49 8B 4C 24 50 31 D2 45 31 C0 E8 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 89 86 A8 05 00 00",
    "note": "The base pattern ends on Steam .data1 protector filler (66). EA's .xcode copy has 10 other filler bytes after the call. They are wildcarded up to the mov [rsi+0x5a8], eax that both builds share (found through its nightShadowMapSize string xref)."
@@ -1137,7 +1141,7 @@
    "match": "0x2f753b8"
   },
   "site_Ne_HwBool_NightShadowCharCast": {
-   "match": "0x1534e49f"
+   "match": "0x7353b18"
   },
   "site_Ne_HwBool_RainBeads": {
    "match": "0x15b28c"

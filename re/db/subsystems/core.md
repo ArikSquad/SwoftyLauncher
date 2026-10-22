@@ -18,6 +18,8 @@ Owner: see `subsystems.tsv`. Write-up: research/exe.md §1.
 - `build.packed: true` marks a build whose code section is encrypted on disk; core resolves and hooks its code bindings once that code reads decrypted.
 - The EA App build (sha256 `cc506879c1c834aa…`, pe_timestamp 1789128892) is packed: its engine code is in `.rdata` (Steam `.xtls`), its RWX `.xcode` sits where Steam has `.data1`, and the code is bulk-decrypted by the window stage.
 - `re/db/ea-targets.json` and `re/db/signatures.ea.json` were retired on 2026-10-22; their fixed EA targets were dropped and the scan replaces them.
+- On the EA dump `F1_25.1789128892.110548.mem`, `re/tools/bindverify.py` resolves all 299 EA bindings by hint and all 299 by scan, and the 11 exported string anchors locate the same targets on both builds.
+- `site_Ne_HwBool_NightShadowCharCast` needs an EA override: the Steam pattern ends on .data1 protector filler and matches once on EA at a call to `__security_check_cookie`.
 
 ## Open
 - NeStr release path (for mods that should not leak refs).

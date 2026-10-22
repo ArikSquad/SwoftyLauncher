@@ -56,7 +56,7 @@ class BindFormat(unittest.TestCase):
         self.assertEqual(work['Vm_Set_Bool']['site_bytes'], '48 89 5C 24 08 57 48 83 EC 20 48 8B F9 E8 00 00')
         ea = analyse(fixture('bind-ea.log'))['ea']
         site = next(w for w in ea['worklist'] if w['id'] == 'site_FeHome_AfterCareerCall')
-        self.assertEqual((site['site'], site['site_bytes']), ('0x173d3a6', 'E9 C8 2C 8B FE 90 41 80 C7 02 4C 89'))
+        self.assertEqual((site['site'], site['site_bytes']), ('0x173d3a6', 'E9 01 02 03 04 90 90 90 90 90 90 90'))
         self.assertEqual([w['subsystem'] for w in ea['worklist']], ['core', 'fe_home'])
 
 
@@ -106,7 +106,7 @@ class LegacyLogs(unittest.TestCase):
         self.assertEqual(ea['bindings']['site_FeHome_AfterCareerCall']['source'], 'core')
         diag = ea['diagnostics'][0]
         self.assertEqual((diag['id'], diag['pass'], diag['site_bytes']),
-                         ('site_FeHome_AfterCareerCall', 'window', 'E9 C8 2C 8B FE 90 41 80 C7 02 4C 89'))
+                         ('site_FeHome_AfterCareerCall', 'window', 'E9 01 02 03 04 90 90 90 90 90 90 90'))
 
     def test_legacy_unresolved_takes_site_bytes_from_the_ea_report(self):
         ea = analyse(fixture('ea-prev.log'))['ea']

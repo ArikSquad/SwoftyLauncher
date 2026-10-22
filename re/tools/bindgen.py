@@ -2,7 +2,7 @@
 """Generate mod bindings from re/db, applying the export gate (research/mixin-design.md, PROTOCOL.md §2).
 
   bindgen.py                 write bindings.json, bindings.<build>.json, the C++ headers and the Rust module
-  bindgen.py --check         exit 1 if any output is stale
+  bindgen.py --check         exit 1 if any output is stale (the sets and symbols.tsv only once native/dist exists)
   bindgen.py --no-exe        skip the sigcheck pass over the KB exe
   bindgen.py --exe PATH      run the sigcheck pass over PATH (default work/exe/F1_25.exe)
 
@@ -15,7 +15,7 @@ Gate: L3 whose trace test passed -> stable; L2 (or L3 without a passed test) wit
 latest verify.tsv verdict -> experimental; everything else is not exported. Runtime bindings need a
 signature verified on the KB build; struct fields go through the same gate.
 """
-import argparse, json, os, re, sys
+import argparse, json, os, re, subprocess, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -31,7 +31,7 @@ OVERLAY_KEYS = {'schema', 'build', 'note', 'sections', 'overrides', 'hints', 'un
 OVERRIDE_KEYS = {'pattern', 'note', 'anchor', 'resolve', 'expect', 'section'}
 HINT_KEYS = {'match', 'func_rva'}
 HEX_RE = re.compile(r'^0x[0-9a-fA-F]+$')
-OUT_JSON = os.path.join(ROOT, 'native', 'dist', 'swofty', 'mods', 'core', 'bindings.json')
+OUT_JSON = os.path.join(ROOT, 'native', 'dist', 'swofty', 'addons', 'core', 'bindings.json')
 OUT_SYMBOLS = os.path.join(os.path.dirname(OUT_JSON), 'symbols.tsv')
 OUT_INC = os.path.join(ROOT, 'native', 'include', 'swofty')
 OUT_RS = os.path.join(OUT_INC, 'game.rs')
@@ -374,7 +374,12 @@ def build_set(overlay, bindings, is_kb):
             e['status'] = 'unresolvable'
             e['reason'] = unres[i]
         out.append(e)
-    return {'schema': 1, 'generator': 're/tools/bindgen.py', 'build': {k: b[k] for k in BUILD_KEYS}, 'bindings': out}
+    doc = {'schema': 1, 'generator': 're/tools/bindgen.py', 'build': {k: b[k] for k in BUILD_KEYS}}
+    if sections:
+        # core's read_section_map sends core and addon scans of a KB section name to this build's section
+        doc['sections'] = dict(sections)
+    doc['bindings'] = out
+    return doc
 
 
 def unknown_ids(overlay, bindings):
@@ -549,6 +554,16 @@ def gen_rust(build, bindings, structs):
     return ''.join(out)
 
 
+def rustfmt(text):
+    """The committed game.rs is rustfmt output under the repo's rustfmt.toml; without rustfmt the text stays as is."""
+    try:
+        r = subprocess.run(['rustfmt', '--edition', '2024', '--config-path', os.path.join(ROOT, 'rustfmt.toml')],
+                           input=text, capture_output=True, text=True)
+    except OSError:
+        return text, False
+    return (r.stdout, True) if r.returncode == 0 else (text, False)
+
+
 def gen_symbols(build):
     base = int(build['image_base'], 16)
     rows = sorted((int(r['addr'], 16) - base, r['name'], r['level']) for r in kb.read_table('functions')[0])
@@ -600,16 +615,23 @@ def main():
     build, bindings, structs, skipped = load()
     kb_name, overlays = load_overlays(build)
     bindings, sc = run_sigcheck(build, bindings, None if a.no_exe else a.exe)
-    outputs = {a.rust: gen_rust(build, bindings, structs), a.symbols: gen_symbols(build)}
+    rust, formatted = rustfmt(gen_rust(build, bindings, structs))
+    if not formatted:
+        print('bindgen: rustfmt unavailable or failed; game.rs is written unformatted', file=sys.stderr)
+    outputs = {a.rust: rust, a.symbols: gen_symbols(build)}
+    built = {a.symbols}
     sets = []
     for name, overlay in overlays.items():
         doc = build_set(overlay, bindings, name == kb_name)
         path = set_path(a.json, name, name == kb_name)
         outputs[path] = json.dumps(doc, indent=1) + '\n'
+        built.add(path)
         sets.append((path, overlay, doc, unknown_ids(overlay, bindings)))
     outputs |= {os.path.join(a.include, k): v for k, v in gen_cpp(build, bindings, structs).items()}
     stale = []
     for p, text in outputs.items():
+        if a.check and p in built and not os.path.isdir(os.path.dirname(p)):
+            continue
         old = open(p).read() if os.path.exists(p) else None
         if old != text:
             stale.append(p)

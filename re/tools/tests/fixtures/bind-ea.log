@@ -1,0 +1,21 @@
+2026-10-23 11:00:00.000 [  200] swofty loader (version.dll proxy) attached, pid 5150
+2026-10-23 11:00:00.001 [  200] exe: size 342936448 (analysed 408063872), PE timestamp 1789128892 (analysed 1789118616) -> DIFFERS from the analysed build, signatures may fail
+2026-10-23 11:00:01.000 [  200] [core] bindings: 2 set(s) present, selected bindings.ea.json by PE timestamp 1789128892
+2026-10-23 11:00:01.001 [  200] [core] bindings.ea.json: 6 binding(s) for build cc506879c1c834aa, this exe (rva checked); 1 string-anchored (1 build-agnostic), pattern first
+2026-10-23 11:00:01.002 [  200] [bind] id=g_Vm_Registry build=ea pass=init result=resolved method=scan matches=1 rva=0x6ddaf58 match=0x1691fb0 verified=yes reason="" site_bytes=""
+2026-10-23 11:00:01.003 [  200] [bind] id=FeTile_Build_List build=ea pass=init result=deferred method=- matches=- rva=- match=- verified=- reason="code section still encrypted" site_bytes=""
+2026-10-23 11:00:01.004 [  200] [bind] id=FeHome_Add_CareerTile build=ea pass=init result=deferred method=- matches=- rva=- match=- verified=- reason="code section still encrypted" site_bytes=""
+2026-10-23 11:00:01.005 [  200] [bind] id=site_FeHome_AfterCareerCall build=ea pass=init result=deferred method=- matches=- rva=- match=- verified=- reason="code section still encrypted" site_bytes=""
+2026-10-23 11:00:01.006 [  200] [bind] id=Vm_Set_Bool build=ea pass=init result=deferred method=- matches=- rva=- match=- verified=- reason="code section still encrypted" site_bytes=""
+2026-10-23 11:00:01.007 [  200] [bind] id=Ne_Log_Thunk build=ea pass=init result=deferred method=- matches=- rva=- match=- verified=- reason="code section still encrypted" site_bytes=""
+2026-10-23 11:00:01.008 [  200] [bind] summary build=ea pass=init resolved=1 deferred=5 unresolved=0 total=6
+2026-10-23 11:00:05.000 [  200] stage: window (main window visible), addons were loaded at the window stage
+2026-10-23 11:00:05.001 [  200] [bind] id=FeTile_Build_List build=ea pass=window result=resolved method=scan matches=1 rva=0x1738350 match=0x173a1b2 verified=yes reason="" site_bytes=""
+2026-10-23 11:00:05.002 [  200] [bind] id=FeHome_Add_CareerTile build=ea pass=window result=resolved method=hint matches=1 rva=0x1740ae0 match=0x173d397 verified=yes reason="" site_bytes=""
+2026-10-23 11:00:05.003 [  200] [bind] id=site_FeHome_AfterCareerCall build=ea pass=window result=unresolved method=- matches=0 rva=- match=- site=0x173d3a6 verified=no reason="expect bytes differ" site_bytes="E90102030490909090909090"
+2026-10-23 11:00:05.004 [  200] [bind] id=Vm_Set_Bool build=ea pass=window result=deferred method=- matches=- rva=- match=- verified=- reason="site page still encrypted" site_bytes=""
+2026-10-23 11:00:05.005 [  200] [bind] id=Ne_Log_Thunk build=ea pass=window result=resolved method=scan matches=1 rva=0x6d5500 match=0x6d5500 verified=yes reason="" site_bytes=""
+2026-10-23 11:00:05.006 [  200] [bind] summary build=ea pass=window resolved=2 deferred=1 unresolved=1 total=6
+2026-10-23 11:00:07.000 [  200] [bind] id=Vm_Set_Bool build=ea pass=stage:1 result=resolved method=scan matches=1 rva=0x974850 match=0x9747f0 verified=yes reason="" site_bytes=""
+2026-10-23 11:00:07.001 [  200] [bind] id=Ne_Log_Thunk build=ea pass=stage:1 result=unresolved method=- matches=2 rva=- match=- verified=no reason="signature matched 2 times" site_bytes=""
+2026-10-23 11:00:07.002 [  200] [bind] summary build=ea pass=stage:1 resolved=1 deferred=0 unresolved=1 total=6
