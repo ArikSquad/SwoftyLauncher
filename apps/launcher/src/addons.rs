@@ -20,7 +20,7 @@ use swofty_core::manifest::{Category, Kind, MANIFEST_FILE};
 use swofty_core::profile::VANILLA;
 
 use crate::library::{AddonItem, Changes, Source, plural};
-use crate::pages::{GUTTER, addon_icon, badge, chevron, fact, label, logo, tag};
+use crate::pages::{GUTTER, addon_icon, badge, chevron, fact, label, logo, tag, track_badge};
 use crate::shell::{Page, Shell};
 use crate::theme::{Palette, palette};
 
@@ -142,6 +142,14 @@ fn pinned_delta(addons: &[swofty_core::profile::ProfileAddon], id: &str, from: u
         .last()
         .map_or(0, |(i, _)| i + 1);
     to.max(floor) as isize - from as isize
+}
+
+/// The icon an addon without its own shows: a race track for tracks, else a box.
+fn fallback_icon(m: &AddonItem, size: f32, p: Palette) -> Div {
+    match m.category() {
+        Some(Category::Tracks) => track_badge(size, p),
+        _ => badge(IconName::Package, size, p),
+    }
 }
 
 #[derive(Clone)]
@@ -1388,7 +1396,7 @@ impl Shell {
         let icon = match &m.icon {
             _ if man.is_builtin() => logo(28.),
             Some(icon) => addon_icon(icon, 28., p),
-            None => badge(IconName::Package, 28., p),
+            None => fallback_icon(m, 28., p),
         };
         let grip = div().w(px(14.)).flex_shrink_0().when(draggable, |d| {
             d.child(
@@ -1685,7 +1693,7 @@ impl Shell {
             .child(match &m.icon {
                 _ if man.is_builtin() => logo(40.),
                 Some(icon) => addon_icon(icon, 40., p),
-                None => badge(IconName::Package, 40., p),
+                None => fallback_icon(m, 40., p),
             })
             .child(
                 v_flex()
