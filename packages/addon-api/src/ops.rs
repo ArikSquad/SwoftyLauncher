@@ -36,6 +36,8 @@ pub enum StatIdMode {
 pub struct DbReport {
     pub lines: Vec<String>,
     pub warnings: Vec<String>,
+    /// `remove-record` ops left out because their key is a stock record.
+    pub stock_removals: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -84,9 +86,12 @@ pub enum DbOp {
         tag: u8,
         value: String,
     },
-    /// Removing a key already absent is a no-op.
+    /// Removing a key already absent is a no-op. A stock record stays unless
+    /// `allow_stock_removal` is set; see [`FieldNames::stock`].
     RemoveRecord {
         key: String,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        allow_stock_removal: bool,
     },
 }
 
@@ -247,6 +252,23 @@ pub trait FieldNames {
         let _ = shape;
         None
     }
+
+    /// Whether `key` is a record of the game's stock database.
+    fn stock(&self, key: u64) -> bool {
+        let _ = key;
+        false
+    }
+}
+
+/// Stock record keys and no field names.
+impl FieldNames for HashSet<u64> {
+    fn fields(&self, _: &str, _: &str) -> Option<Vec<String>> {
+        None
+    }
+
+    fn stock(&self, key: u64) -> bool {
+        self.contains(&key)
+    }
 }
 
 pub const ANY_SHAPE: &str = "*";
@@ -283,6 +305,10 @@ impl FieldNames for Schema<'_> {
 
     fn row_keys(&self, shape: &str) -> Option<&[String]> {
         self.names.row_keys(shape)
+    }
+
+    fn stock(&self, key: u64) -> bool {
+        self.names.stock(key)
     }
 }
 
@@ -736,12 +762,21 @@ fn apply(db: &mut Db, op: &DbOp, names: &dyn FieldNames, cx: &mut Cx) -> Result<
             }
             Ok(Some(k))
         }
-        DbOp::RemoveRecord { key } => {
+        DbOp::RemoveRecord {
+            key,
+            allow_stock_removal,
+        } => {
             let k = resolve_key(db, key)?;
-            if !db.remove(k) {
+            if db.get(k).is_none() {
                 cx.report.lines.push(format!("{key}: already removed"));
                 return Ok(None);
             }
+            // The game reads every stock key and crashes at the missing-key sentinel.
+            if !allow_stock_removal && names.stock(k) {
+                cx.report.stock_removals += 1;
+                return Ok(None);
+            }
+            db.remove(k);
             Ok(Some(k))
         }
     }
@@ -1148,9 +1183,10 @@ mod tests {
             r#"{{"schema_version":1,"ops":[
             {{"op":"put-record","key":"{code:#018x}","type":4,"value":"4d434c"}},
             {{"op":"put-record","key":"entrants.teams.team_0.new_field","type":0,"value":"3132"}},
-            {{"op":"remove-record","key":"entrants.teams.team_1.stat_id"}}]}}"#
+            {{"op":"remove-record","key":"entrants.teams.team_1.stat_id","allow_stock_removal":true}}]}}"#
         ));
-        let replaced = apply_db_ops(&mut db, &ops, &names()).unwrap();
+        let stock: HashSet<u64> = db.records.iter().map(|r| r.key).collect();
+        let replaced = apply_db_ops(&mut db, &ops, &stock).unwrap();
         assert_eq!(replaced[0], code);
         assert_eq!(replaced.len(), 3);
         let r = db.get("entrants.teams.team_0.display_name_code").unwrap();
@@ -1191,6 +1227,48 @@ mod tests {
             {{"op":"remove-record","key":"{key}"}}]}}"#
         );
         apply_db_ops(&mut db(), &ops(&strict), &names()).unwrap();
+    }
+
+    #[test]
+    fn remove_record_keeps_stock_records_unless_the_op_allows_it() {
+        let mut db = db();
+        let stock: HashSet<u64> = db.records.iter().map(|r| r.key).collect();
+        let json = r#"{"schema_version":1,"ops":[
+            {"op":"put-record","key":"entrants.teams.team_0.extra","type":0,"value":"31"},
+            {"op":"put-record","key":"entrants.teams.team_1.extra","type":0,"value":"32"},
+            {"op":"remove-record","key":"entrants.teams.team_0.stat_id"},
+            {"op":"remove-record","key":"entrants.teams.team[_metadata_=gm_cadillac_26].stat_id"},
+            {"op":"remove-record","key":"entrants.teams.team_0.extra"},
+            {"op":"remove-record","key":"entrants.teams.team_1._metadata_","allow_stock_removal":true}]}"#;
+        let mut report = DbReport::default();
+        let replaced = apply_db_ops_report(&mut db, &ops(json), &stock, &mut report).unwrap();
+        assert_eq!(report.stock_removals, 2);
+        assert!(report.warnings.is_empty(), "{report:?}");
+        let extra = fnv1a64("entrants.teams.team_0.extra");
+        assert_eq!(
+            replaced,
+            [
+                extra,
+                fnv1a64("entrants.teams.team_1.extra"),
+                extra,
+                fnv1a64("entrants.teams.team_1._metadata_")
+            ]
+        );
+        for kept in ["entrants.teams.team_0.stat_id", "entrants.teams.team_1.stat_id"] {
+            assert!(db.get(kept).is_some(), "{kept}");
+        }
+        assert!(db.get("entrants.teams.team_0.extra").is_none());
+        assert_eq!(db.get_text("entrants.teams.team_1.extra").as_deref(), Some("2"));
+        assert!(db.get("entrants.teams.team_1._metadata_").is_none());
+
+        let mut unguarded = self::db();
+        apply_db_ops(&mut unguarded, &ops(json), &names()).unwrap();
+        assert!(unguarded.get("entrants.teams.team_0.stat_id").is_none());
+        let op: DbOp = serde_json::from_str(r#"{"op":"remove-record","key":"a.b"}"#).unwrap();
+        assert_eq!(
+            serde_json::to_string(&op).unwrap(),
+            r#"{"op":"remove-record","key":"a.b"}"#
+        );
     }
 
     const SETS: &str = "track_data.game_setup";
@@ -1383,8 +1461,10 @@ mod tests {
              "field":"TrackNameData_0.title",
              "value_from":"track_data.game_setup.TrackDataSet[_metadata_=f1_2026].TrackData[_metadata_=suzuka].TrackNameData_0.title"},
             {"op":"put-record","key":"track_data.game_setup.TrackDataSet[_metadata_=f1_2026].TrackData[_metadata_=suzuka].laps","type":0,"value":"3533"},
-            {"op":"remove-record","key":"track_data.game_setup.TrackDataSet[_metadata_=f1_2026].TrackData[_metadata_=melbourne].track"}]}"#);
-        apply_db_ops(&mut db, &ops, &names()).unwrap();
+            {"op":"remove-record","key":"track_data.game_setup.TrackDataSet[_metadata_=f1_2026].TrackData[_metadata_=melbourne].track",
+             "allow_stock_removal":true}]}"#);
+        let stock: HashSet<u64> = db.records.iter().map(|r| r.key).collect();
+        apply_db_ops(&mut db, &ops, &stock).unwrap();
         let get = |p: &str| db.get_text(&format!("{SETS}.{p}"));
         assert_eq!(
             get("TrackDataSet_0.TrackData_0.TrackNameData_0.title").as_deref(),

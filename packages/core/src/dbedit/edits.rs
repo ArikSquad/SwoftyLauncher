@@ -444,7 +444,10 @@ impl Edits {
             .chain(self.edits.iter().filter(relabels));
         let ops = ordered
             .map(|e| match (&e.value, &e.stock, &e.select, &e.field) {
-                (None, _, _, _) => DbOp::RemoveRecord { key: key_ref(e) },
+                (None, _, _, _) => DbOp::RemoveRecord {
+                    key: key_ref(e),
+                    allow_stock_removal: false,
+                },
                 (Some(v), Some(_), Some(select), Some(field)) if field != "_metadata_" => DbOp::Set {
                     select: select.clone(),
                     field: field.clone(),

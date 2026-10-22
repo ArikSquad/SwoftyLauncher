@@ -49,12 +49,13 @@ A lookup of a key that does not exist does not return null. The not-found path o
 
 `tools/gdb_hashsim.py` replays the loader and prints this sentinel for any database. The stock and modded files give the same value; the shipping game never looks up a missing key.
 
-**Rule: every key the game reads must exist.** Crashes found so far:
+**Rule: every key the game reads must exist.** The build skips `remove-record` ops on stock keys unless they set `allow_stock_removal` ([Removing stock records](/reference/ops/database#removing-stock-records)). Crashes found so far:
 
 | Case | Key | Where |
 |---|---|---|
 | New vehicle row with 28 of its 246 keys | `entrants.vehicles.vehicle_413.ai_vehicle_config.exit_fallibility.max_yaw_angle_deg` | `Sess_Parse_AiHandlingConfig` (`0x1406828a0`), fault at `0x1406831f7`, during startup |
 | New team row above `_team_instancecount_` | `Invalid.stat_id` after a failed label lookup | team branch of `Sess_Parse_Entrant` (`0x142452e60`), fault at `0x14245323c` |
+| Imported mod made for game version 1.0.138 on 1.0.141, which removed 14,618 stock records | Not identified | `Sess_Apply_ContentAvailability` reads the sentinel `0x08000f000800000e`, during startup |
 | Cloned track row missing stack-built sub-tables | `Daylight_0.start`, `Daylight_0.end`, `CareerHubFirstVisit_0.timeofday`, `CareerHubLastVisit_0.timeofday` | track reader `0x142e4c640`, fault at `0x142e53c0b`, at startup under `Sess_Apply_ContentAvailability` |
 
 ### Checked and unchecked reads

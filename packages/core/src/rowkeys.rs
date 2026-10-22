@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io::Read;
 use std::sync::OnceLock;
 
@@ -59,6 +59,7 @@ impl RowKeys {
 pub struct Names<'a> {
     pub fields: &'a BTreeMap<String, Vec<String>>,
     pub keys: &'a RowKeys,
+    pub stock: Option<&'a HashSet<u64>>,
 }
 
 impl FieldNames for Names<'_> {
@@ -68,6 +69,10 @@ impl FieldNames for Names<'_> {
 
     fn row_keys(&self, shape: &str) -> Option<&[String]> {
         self.keys.get(shape)
+    }
+
+    fn stock(&self, key: u64) -> bool {
+        self.stock.is_some_and(|s| s.contains(&key))
     }
 }
 
