@@ -31,10 +31,14 @@ impl Fragment {
     }
 
     pub fn data(&self) -> Result<Vec<u8>> {
+        self.data_cow().map(std::borrow::Cow::into_owned)
+    }
+
+    pub(crate) fn data_cow(&self) -> Result<std::borrow::Cow<'_, [u8]>> {
         if self.compression == ZSTD || self.compression != STORED && self.raw.starts_with(&ZSTD_MAGIC) {
-            Ok(zstd::decode_all(self.raw.as_slice())?)
+            Ok(zstd::decode_all(self.raw.as_slice())?.into())
         } else {
-            Ok(self.raw.clone())
+            Ok(std::borrow::Cow::Borrowed(&self.raw))
         }
     }
 }

@@ -238,7 +238,12 @@ impl Catalog {
         };
         let mut s = score_all(&mut ix.names.iter().map(|e| e.0.as_str()));
         group(HitKind::Key, &mut s, &|i| {
-            ix.names[i].1.iter().map(|&id| key_hit(id)).collect()
+            ix.names[i]
+                .1
+                .iter()
+                .take(PER_GROUP)
+                .map(|&id| key_hit(id))
+                .collect()
         });
         let mut s = score_all(&mut ix.meanings.iter().map(|e| e.0.as_str()));
         group(HitKind::Key, &mut s, &|i| vec![key_hit(ix.meanings[i].1)]);
@@ -247,6 +252,7 @@ impl Catalog {
             ix.values[i]
                 .1
                 .iter()
+                .take(PER_GROUP)
                 .map(|&r| {
                     let id = self.record_node(r);
                     (short(self.record(r).value), self.path(id), Target::Node(id))
