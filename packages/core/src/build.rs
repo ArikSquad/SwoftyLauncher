@@ -539,7 +539,31 @@ pub(crate) fn build_as(store: &Store, profile: &str, game: &Game, checking: bool
         }
         for s in &m.operations.screens {
             let path = dir.join(&s.file);
-            hasher.update(std::fs::read(&path).map_err(io_err(&path))?);
+            let data = std::fs::read(&path).map_err(io_err(&path))?;
+            if swofty_formats::pkg::is_pkg(&data) {
+                let (cat, engine) = (crate::ui::catalog::stock(), crate::ui::catalog::engine());
+                let none = crate::ui::catalog::Scenes::default();
+                let resource = format!("{id}/{}", s.file);
+                let input = crate::ui::check::UiInput {
+                    resource: &resource,
+                    frag: "temp",
+                    data: &data,
+                    stock: None,
+                };
+                let report = crate::ui::check::ui_edit(&input, &none, cat, engine)?;
+                if !report.hard.is_empty() {
+                    let lines: Vec<String> = report.hard.iter().map(|h| h.to_string()).collect();
+                    return Err(Error::Other(format!(
+                        "{id}: screen {} breaks rules the game's UI loader enforces:\n  {}",
+                        s.name,
+                        lines.join("\n  ")
+                    )));
+                }
+                built
+                    .warnings
+                    .extend(report.warnings.iter().map(|w| format!("{id}: ui: {w}")));
+            }
+            hasher.update(&data);
         }
         let pending = m.operations.ui.len();
         if pending > 0 {
@@ -919,6 +943,9 @@ pub(crate) fn build_as(store: &Store, profile: &str, game: &Game, checking: bool
         }
         for n in erps.take_notes() {
             built.lines.push(format!("erp: {n}"));
+        }
+        for w in erps.check_ui()? {
+            built.warnings.push(format!("ui: {w}"));
         }
         mipmaps = erps.take_mipmaps();
         if let Some(note) = planner.route_note(Kind::Erp) {

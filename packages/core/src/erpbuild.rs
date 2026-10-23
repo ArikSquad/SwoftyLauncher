@@ -764,6 +764,67 @@ impl<'a> ErpBuild<'a> {
         Ok(found)
     }
 
+    pub fn check_ui(&self) -> Result<Vec<String>> {
+        use crate::ui::check::ArchiveUi;
+        let ui = |r: &Resource| matches!(r.kind().as_str(), "UIDF" | SCENE) && !r.name.contains('?');
+        let frags = |r: &Resource| {
+            r.fragments
+                .iter()
+                .map(|f| f.data())
+                .collect::<swofty_formats::Result<Vec<_>>>()
+        };
+        let (mut edited, mut stock) = (Vec::new(), Vec::new());
+        for (rel, a) in &self.erps {
+            if !a.slots.iter().any(|s| matches!(s, Slot::Owned(r) if ui(r))) {
+                continue;
+            }
+            let mut was = ArchiveUi {
+                archive: rel.clone(),
+                ..Default::default()
+            };
+            for r in a.file.erp.resources.iter().filter(|r| ui(r)) {
+                let loaded = a.file.load(r)?;
+                was.resources.insert(r.name.clone(), (r.kind(), frags(&loaded)?));
+            }
+            let mut now = ArchiveUi {
+                archive: rel.clone(),
+                ..Default::default()
+            };
+            for s in &a.slots {
+                let r = a.entry(s);
+                if !ui(r) {
+                    continue;
+                }
+                let entry = match (s, was.resources.get(&r.name)) {
+                    (Slot::Stock(_), Some(stock)) => stock.clone(),
+                    _ => (r.kind(), frags(r)?),
+                };
+                now.resources.insert(r.name.clone(), entry);
+            }
+            edited.push(now);
+            stock.push(was);
+        }
+        if edited.is_empty() {
+            return Ok(Vec::new());
+        }
+        let report = crate::ui::check::archives(
+            &edited,
+            &stock,
+            crate::ui::catalog::stock(),
+            crate::ui::catalog::engine(),
+        )
+        .map_err(|e| fail(format!("checking UI edits: {e}")))?;
+        if !report.hard.is_empty() {
+            let lines: Vec<String> = report.hard.iter().map(|h| h.to_string()).collect();
+            return Err(fail(format!(
+                "{} UI edit(s) break rules the game's UI loader enforces:\n  {}",
+                lines.len(),
+                lines.join("\n  ")
+            )));
+        }
+        Ok(report.warnings.iter().map(|w| w.to_string()).collect())
+    }
+
     pub fn write(self, out: &Path) -> Result<Vec<String>> {
         let mut written = Vec::new();
         for (rel, archive) in self.erps.into_iter().filter(|(_, a)| !a.untouched()) {
