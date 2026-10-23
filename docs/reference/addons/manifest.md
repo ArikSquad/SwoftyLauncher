@@ -32,7 +32,7 @@ Your addon needs a `swofty.json` at its root. This is where you give it a name, 
 | `license` | string? | SPDX identifier, such as `MIT`. |
 | `homepage` | string? | A URL. |
 | `icon` | string? | A path inside your addon, shown on the Tools page and your addon's sidebar pages. Use an `.svg` for a one-colour glyph in the launcher's icon style, or a square `.png`, `.jpg` or `.webp` to show the image as it is. |
-| `kind` | string[] | What the addon touches: `database`, `erp`, `text`, `ui`, `files`, `native`. `text` needs launcher 1.3.0 or later, and an earlier launcher rejects the manifest. |
+| `kind` | string[] | What the addon touches: `database`, `erp`, `text`, `ui`, `files`, `native`, `simplified`. `text` needs launcher 1.3.0 or later and `simplified` 1.3.6 or later; an earlier launcher rejects the manifest. `simplified` marks a mod merged into the game's shader packages, as the Simplified Suite loads `.serps` mods. |
 | `category` | string? | What the addon is for ([category](#category)). |
 | `origin` | object? | The tool and file the addon was made from ([origin](#origin)). |
 
@@ -41,22 +41,19 @@ Your addon needs a `swofty.json` at its root. This is where you give it a name, 
 `kind` says what an addon touches; `category` says what it is for. The **Addons** page groups and filters by it.
 
 ```json
-"category": "liveries"
+"category": "cars"
 ```
 
 | Value | Label |
 |---|---|
-| `tracks` | Tracks |
-| `liveries` | Liveries |
-| `cars` | Cars |
-| `drivers-teams` | Drivers & teams |
 | `seasons` | Seasons |
-| `database` | Database |
-| `gameplay` | Gameplay |
-| `ui` | UI |
-| `audio` | Audio |
-| `tools` | Tools |
-| `other` | Other |
+| `tracks` | Tracks |
+| `cars` | Cars |
+| `helmets` | Helmets |
+
+An addon without a category is listed as Uncategorised. `helmets` needs launcher 1.3.6 or later.
+
+Launchers from 1.3.6 read the categories of earlier launchers: `liveries` as `cars`, and `drivers-teams`, `database`, `gameplay`, `ui`, `audio`, `tools` and `other` as no category.
 
 ## origin
 
@@ -74,7 +71,7 @@ Your addon needs a `swofty.json` at its root. This is where you give it a name, 
 | `file` | string? | The file name the addon was made from. |
 | `sha256` | string? | That file's SHA-256, in hex. |
 
-The **Addons** page shows the source as Built in, DB Editor, Simplified or Installed. A launcher before 1.3.0 rejects `category` and `origin`; set `"compat": { "launcher": ">=1.3.0" }` when you use them.
+The **Addons** page shows the source as Built in, DB Editor, Imported or Installed. A launcher before 1.3.0 rejects `category` and `origin`; set `"compat": { "launcher": ">=1.3.0" }` when you use them.
 
 ## saves
 

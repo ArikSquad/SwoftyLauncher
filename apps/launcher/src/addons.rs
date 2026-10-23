@@ -34,15 +34,17 @@ enum Type {
     Database,
     Archives,
     Text,
+    Simplified,
     Files,
     Code,
 }
 
 impl Type {
-    const ALL: [Type; 5] = [
+    const ALL: [Type; 6] = [
         Self::Database,
         Self::Archives,
         Self::Text,
+        Self::Simplified,
         Self::Files,
         Self::Code,
     ];
@@ -52,6 +54,7 @@ impl Type {
             Kind::Database => Self::Database,
             Kind::Erp => Self::Archives,
             Kind::Text | Kind::Ui => Self::Text,
+            Kind::Simplified => Self::Simplified,
             Kind::Files => Self::Files,
             Kind::Native => Self::Code,
         }
@@ -62,9 +65,16 @@ impl Type {
             Self::Database => "Database",
             Self::Archives => "Archives",
             Self::Text => "Text & UI",
+            Self::Simplified => "Simplified",
             Self::Files => "Files",
             Self::Code => "Code",
         }
+    }
+
+    /// An addon's types in [`Type::ALL`] order, as "Database, Archives".
+    fn list(m: &AddonItem) -> String {
+        let types: BTreeSet<Type> = m.manifest.kind.iter().map(|k| Self::of(*k)).collect();
+        types.into_iter().map(Self::label).collect::<Vec<_>>().join(", ")
     }
 }
 
@@ -1418,6 +1428,7 @@ impl Shell {
             None if m.source == Source::Builtin => None,
             None => Some("Uncategorised"),
         };
+        let types = Type::list(m);
         let row = h_flex()
             .id(SharedString::from(format!("addon-{id}")))
             .relative()
@@ -1505,6 +1516,18 @@ impl Shell {
                                     })
                                     .child(c)
                             }))
+                            .when(!types.is_empty(), |d| {
+                                d.when(category.is_some(), |d| {
+                                    d.child(div().text_color(p.text_placeholder).child("·"))
+                                })
+                                .child(
+                                    div()
+                                        .min_w_0()
+                                        .truncate()
+                                        .text_color(p.text_placeholder)
+                                        .child(types),
+                                )
+                            })
                             .child(
                                 div()
                                     .h(px(16.))
@@ -1740,6 +1763,7 @@ impl Shell {
                     p,
                 ))
             })
+            .when(!man.kind.is_empty(), |d| d.child(fact("Type", Type::list(m), p)))
             .child(fact("Source", source, p))
             .child(fact(
                 "Game version",
