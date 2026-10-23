@@ -56,12 +56,16 @@ using FeTile_Build_List_t = void(TileList *self, void *ctx, void *a3, void *a4, 
 inline constexpr fn<"FeTile_Build_List", FeTile_Build_List_t> FeTile_Build_List{}; // L3 stable
 using FeTile_CareerDlcItem_Populate_t = void(HomeItem *item, void *node, uint32_t a7);
 inline constexpr fn<"FeTile_CareerDlcItem_Populate", FeTile_CareerDlcItem_Populate_t> FeTile_CareerDlcItem_Populate{}; // L2 experimental
+using FeTile_Clear_EraTileSet_Thunk_t = void(void *tiles);
+inline constexpr fn<"FeTile_Clear_EraTileSet_Thunk", FeTile_Clear_EraTileSet_Thunk_t> FeTile_Clear_EraTileSet_Thunk{}; // L2 experimental
 using FeTile_Construct_CareerItem_t = HomeItem *(HomeItem *item, NeAllocator *alloc, const char *id);
 inline constexpr fn<"FeTile_Construct_CareerItem", FeTile_Construct_CareerItem_t> FeTile_Construct_CareerItem{}; // L2 experimental
 using FeTile_Is_EraScenarioAvailable_Thunk_t = uint8_t(void *mode, const char *setup_mode, const char *entrant_list);
 inline constexpr fn<"FeTile_Is_EraScenarioAvailable_Thunk", FeTile_Is_EraScenarioAvailable_Thunk_t> FeTile_Is_EraScenarioAvailable_Thunk{}; // L2 experimental
 using FeTile_ItemBase_Populate_t = void(HomeItem *item, void *node, uint32_t a7);
 inline constexpr fn<"FeTile_ItemBase_Populate", FeTile_ItemBase_Populate_t> FeTile_ItemBase_Populate{}; // L3 stable
+using FeTile_Press_EraTile_t = char *(void *view_model, void *command);
+inline constexpr fn<"FeTile_Press_EraTile", FeTile_Press_EraTile_t> FeTile_Press_EraTile{}; // L2 experimental
 using FeTile_Route_CareerItem_t = Action *(HomeItem *item, Action *out);
 inline constexpr fn<"FeTile_Route_CareerItem", FeTile_Route_CareerItem_t> FeTile_Route_CareerItem{}; // L2 experimental
 inline constexpr data<"g_FeTile_CustomisationSystem", void *> g_FeTile_CustomisationSystem{}; // L2 experimental

@@ -38233,6 +38233,112 @@
     }
    ],
    "used_by": []
+  },
+  {
+   "id": "fe_tiles.press_era_tile",
+   "section": ".xtls",
+   "pattern": "41 57 41 56 56 57 55 53 48 83 EC 58 48 8B 02 48 85 C0 0F 84 ?? ?? ?? ?? 48 89 CE 8B 00 3D 7A 35 B0 02",
+   "match": "0x141a6e420",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x141a6e420",
+   "kind": "func_start",
+   "names": [
+    "FeTile_Press_EraTile"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-23",
+     "by": "era-picker",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "native/src/core/era_picker.cpp"
+   ]
+  },
+  {
+   "id": "vm.get_or_create_list_child",
+   "section": ".xtls",
+   "pattern": "41 56 56 57 55 53 48 83 EC 30 48 89 CB 48 8B 0A 48 85 C9 74 20",
+   "match": "0x1442b30e0",
+   "anchor": "0x0",
+   "resolve": {
+    "kind": "addr"
+   },
+   "target": "0x1442b30e0",
+   "kind": "func_start",
+   "names": [
+    "Vm_GetOrCreate_ListChild"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-23",
+     "by": "era-picker",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "native/src/core/era_picker.cpp"
+   ]
+  },
+  {
+   "id": "vm.set_node_ref",
+   "section": ".xtls",
+   "pattern": "E8 ?? ?? ?? ?? 48 89 6C 24 60 C5 F8 11 74 24 68",
+   "match": "0x141a6eeb9",
+   "anchor": "0x1",
+   "resolve": {
+    "kind": "rel32",
+    "insn": "0x0"
+   },
+   "target": "0x14083c270",
+   "kind": "call",
+   "names": [
+    "Vm_Set_NodeRef"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-23",
+     "by": "era-picker",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "native/src/core/era_picker.cpp"
+   ]
+  },
+  {
+   "id": "fe_tiles.clear_era_tile_set",
+   "section": ".xtls",
+   "pattern": "E8 ?? ?? ?? ?? C6 86 F0 06 00 00 00 4C 8B BE 80 06 00 00",
+   "match": "0x141a6eb62",
+   "anchor": "0x1",
+   "resolve": {
+    "kind": "rel32",
+    "insn": "0x0"
+   },
+   "target": "0x141a6dd60",
+   "kind": "call",
+   "names": [
+    "FeTile_Clear_EraTileSet_Thunk"
+   ],
+   "verified": [
+    {
+     "build": "d873a1c8d2044cef",
+     "date": "2026-10-23",
+     "by": "era-picker",
+     "how": "static"
+    }
+   ],
+   "used_by": [
+    "native/src/core/era_picker.cpp"
+   ]
   }
  ]
 }

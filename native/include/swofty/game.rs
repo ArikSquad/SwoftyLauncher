@@ -1597,11 +1597,14 @@ pub type FeTile_Build_List_t = unsafe extern "C" fn(
 );
 pub type FeTile_CareerDlcItem_Populate_t =
     unsafe extern "C" fn(item: *mut HomeItem, node: *mut c_void, a7: u32);
+pub type FeTile_Clear_EraTileSet_Thunk_t = unsafe extern "C" fn(tiles: *mut c_void);
 pub type FeTile_Construct_CareerItem_t =
     unsafe extern "C" fn(item: *mut HomeItem, alloc: *mut NeAllocator, id: *const c_char) -> *mut HomeItem;
 pub type FeTile_Is_EraScenarioAvailable_Thunk_t =
     unsafe extern "C" fn(mode: *mut c_void, setup_mode: *const c_char, entrant_list: *const c_char) -> u8;
 pub type FeTile_ItemBase_Populate_t = unsafe extern "C" fn(item: *mut HomeItem, node: *mut c_void, a7: u32);
+pub type FeTile_Press_EraTile_t =
+    unsafe extern "C" fn(view_model: *mut c_void, command: *mut c_void) -> *mut c_char;
 pub type FeTile_Route_CareerItem_t =
     unsafe extern "C" fn(item: *mut HomeItem, out: *mut Action) -> *mut Action;
 pub type Game_CareerWizard_PushNextStep_t = unsafe extern "C" fn(wizard: *mut c_void);
@@ -1685,6 +1688,8 @@ pub type Sess_Tyres_ClosestAvailableCompound_t = unsafe extern "C" fn(
     wear_scale: f32,
 ) -> u32;
 pub type Sess_WeatherComponent_SetSystemRandomSeed_t = unsafe extern "C" fn(component: *mut c_void);
+pub type Vm_GetOrCreate_ListChild_t =
+    unsafe extern "C" fn(registry: *mut c_void, parent: *mut c_void, hash: *const u32) -> *mut *mut c_void;
 pub type Vm_Set_Bool_t = unsafe extern "C" fn(
     registry: *mut c_void,
     parent: *mut c_void,
@@ -1692,6 +1697,13 @@ pub type Vm_Set_Bool_t = unsafe extern "C" fn(
     value: *mut u8,
     overwrite: c_int,
 ) -> *mut c_void;
+pub type Vm_Set_NodeRef_t = unsafe extern "C" fn(
+    registry: *mut c_void,
+    parent: *mut c_void,
+    name: *const c_char,
+    value: *mut c_void,
+    overwrite: c_int,
+) -> *mut *mut c_void;
 pub type Vm_Set_String_t = unsafe extern "C" fn(
     registry: *mut c_void,
     parent: *mut c_void,
@@ -1938,6 +1950,11 @@ pub mod bindings {
         kind: "func",
         status: Status::Experimental,
     };
+    pub const FeTile_Clear_EraTileSet_Thunk: Binding = Binding {
+        id: "FeTile_Clear_EraTileSet_Thunk",
+        kind: "func",
+        status: Status::Experimental,
+    };
     pub const FeTile_Construct_CareerItem: Binding = Binding {
         id: "FeTile_Construct_CareerItem",
         kind: "func",
@@ -1952,6 +1969,11 @@ pub mod bindings {
         id: "FeTile_ItemBase_Populate",
         kind: "func",
         status: Status::Stable,
+    };
+    pub const FeTile_Press_EraTile: Binding = Binding {
+        id: "FeTile_Press_EraTile",
+        kind: "func",
+        status: Status::Experimental,
     };
     pub const FeTile_Route_CareerItem: Binding = Binding {
         id: "FeTile_Route_CareerItem",
@@ -2138,8 +2160,18 @@ pub mod bindings {
         kind: "func",
         status: Status::Experimental,
     };
+    pub const Vm_GetOrCreate_ListChild: Binding = Binding {
+        id: "Vm_GetOrCreate_ListChild",
+        kind: "func",
+        status: Status::Experimental,
+    };
     pub const Vm_Set_Bool: Binding = Binding {
         id: "Vm_Set_Bool",
+        kind: "func",
+        status: Status::Experimental,
+    };
+    pub const Vm_Set_NodeRef: Binding = Binding {
+        id: "Vm_Set_NodeRef",
         kind: "func",
         status: Status::Experimental,
     };

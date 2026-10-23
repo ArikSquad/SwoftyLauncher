@@ -2196,6 +2196,12 @@
           "link": "/reference/game/fe_tiles#FeTile_CareerDlcItem_Populate"
         },
         {
+          "name": "FeTile_Clear_EraTileSet_Thunk",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/fe_tiles#FeTile_Clear_EraTileSet_Thunk"
+        },
+        {
           "name": "FeTile_Construct_CareerItem",
           "kind": "func",
           "status": "experimental",
@@ -2212,6 +2218,12 @@
           "kind": "func",
           "status": "stable",
           "link": "/reference/game/fe_tiles#FeTile_ItemBase_Populate"
+        },
+        {
+          "name": "FeTile_Press_EraTile",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/fe_tiles#FeTile_Press_EraTile"
         },
         {
           "name": "FeTile_Route_CareerItem",
@@ -2622,10 +2634,22 @@
           "link": "/reference/game/vm#VmPropHolder"
         },
         {
+          "name": "Vm_GetOrCreate_ListChild",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/vm#Vm_GetOrCreate_ListChild"
+        },
+        {
           "name": "Vm_Set_Bool",
           "kind": "func",
           "status": "experimental",
           "link": "/reference/game/vm#Vm_Set_Bool"
+        },
+        {
+          "name": "Vm_Set_NodeRef",
+          "kind": "func",
+          "status": "experimental",
+          "link": "/reference/game/vm#Vm_Set_NodeRef"
         },
         {
           "name": "Vm_Set_String",
