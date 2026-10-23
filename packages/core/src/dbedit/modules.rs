@@ -6,6 +6,7 @@ use serde::Deserialize;
 use super::catalog::plain;
 use super::{Catalog, Edits, NodeId, rows};
 use crate::ops::first_segment;
+use crate::tracks::PlanTrack;
 use crate::{Error, Result};
 
 const MODULES_JSON: &str = include_str!("modules.json");
@@ -665,11 +666,29 @@ impl Module {
 
     /// Like `choices`, for the rows of one scope.
     pub fn choices_in(&self, catalog: &Catalog, field: usize, scope: Option<&str>) -> Vec<(String, String)> {
+        self.choices_with(catalog, field, scope, &[])
+    }
+
+    /// Like `choices_in`, where the field picks a track also offering the
+    /// tracks track addons add, and naming a stock slot after the addon that fills it.
+    pub fn choices_with(
+        &self,
+        catalog: &Catalog,
+        field: usize,
+        scope: Option<&str>,
+        tracks: &[PlanTrack],
+    ) -> Vec<(String, String)> {
         let Some(f) = self.fields.get(field) else {
             return Vec::new();
         };
         match &f.refs {
-            Some(spec) => ref_names(catalog, spec, scope),
+            Some(spec) => {
+                let mut names = ref_names(catalog, spec, scope);
+                if spec.rows == TRACK_ROWS {
+                    add_tracks(&mut names, tracks);
+                }
+                distinct(names)
+            }
             None => f
                 .options
                 .iter()
@@ -677,6 +696,120 @@ impl Module {
                 .collect(),
         }
     }
+
+    /// Whether `field` takes one value the page can set on many rows at once: not
+    /// read-only, not the row's label or a `lng_*` key, and not a list, curve or vector.
+    pub fn sets_all(&self, field: usize, tag: u8) -> bool {
+        let Some(f) = self.fields.get(field) else {
+            return false;
+        };
+        let many = match f.kind {
+            Some(k) => matches!(k, Kind::List | Kind::RefList | Kind::Curve | Kind::Vector),
+            None => matches!(tag, 9 | 13 | 14),
+        };
+        !f.readonly && !f.lng && f.path != self.label && !many
+    }
+
+    /// `value` held inside `field`'s range. Values that aren't numbers stay as they are.
+    pub fn clamp(&self, field: usize, value: &str) -> String {
+        let Some(f) = self.fields.get(field) else {
+            return value.to_owned();
+        };
+        let Ok(n) = value.trim().parse::<f64>() else {
+            return value.to_owned();
+        };
+        let held = match (f.min, f.max) {
+            (Some(min), _) if n < min => min,
+            (_, Some(max)) if n > max => max,
+            _ => return value.to_owned(),
+        };
+        format!("{held}")
+    }
+
+    /// The keys `field` reads in `rows` of `view`, each once, skipping rows without one.
+    pub fn keys_of(&self, view: &ModuleView, rows: &[usize], field: usize) -> Vec<u64> {
+        let mut keys: Vec<u64> = Vec::new();
+        for k in rows
+            .iter()
+            .filter_map(|&r| view.rows.get(r)?.cells.get(field)?.key)
+        {
+            if !keys.contains(&k) {
+                keys.push(k);
+            }
+        }
+        keys
+    }
+
+    /// Sets `field` to `value`, held inside its range, in `rows` of `view` as one change:
+    /// every value or, on an error, none. Returns how many values changed.
+    pub fn set_all(
+        &self,
+        catalog: &Catalog,
+        edits: &mut Edits,
+        view: &ModuleView,
+        rows: &[usize],
+        field: usize,
+        value: &str,
+    ) -> std::result::Result<usize, String> {
+        let Some(f) = self.fields.get(field) else {
+            return Err(format!("{}: no field {field}", self.title));
+        };
+        let value = self.clamp(field, value);
+        let keys = self.keys_of(view, rows, field);
+        let mut next = edits.clone();
+        let mut changed = 0;
+        for k in keys {
+            let tag = catalog.record_by_key(k).map_or(2, |r| r.tag);
+            if !self.sets_all(field, tag) {
+                return Err(format!("{} can't be set on every row", f.label));
+            }
+            if next.value(catalog, k) == Some(value.as_str()) {
+                continue;
+            }
+            next.set(catalog, k, &value)?;
+            changed += 1;
+        }
+        *edits = next;
+        Ok(changed)
+    }
+}
+
+const TRACK_ROWS: &str = "tracks.Track";
+
+fn add_tracks(names: &mut Vec<(String, String)>, tracks: &[PlanTrack]) {
+    for t in tracks {
+        match names.iter_mut().find(|(label, _)| *label == t.code) {
+            Some((_, have)) => {
+                if let Some(name) = &t.name {
+                    *have = name.clone();
+                }
+            }
+            None => names.push((t.code.clone(), t.name.clone().unwrap_or_else(|| t.code.clone()))),
+        }
+    }
+}
+
+/// A name more than one choice has gets each choice's label after it.
+fn distinct(names: Vec<(String, String)>) -> Vec<(String, String)> {
+    let mut count: HashMap<&str, usize> = HashMap::new();
+    for (_, name) in &names {
+        *count.entry(name.as_str()).or_default() += 1;
+    }
+    let shared: BTreeSet<String> = count
+        .into_iter()
+        .filter(|(_, n)| *n > 1)
+        .map(|(name, _)| name.to_owned())
+        .collect();
+    names
+        .into_iter()
+        .map(|(label, name)| {
+            let name = match shared.contains(&name) && name != label {
+                true => format!("{name} ({label})"),
+                false => name,
+            };
+            (label, name)
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -693,6 +826,168 @@ mod tests {
             fill("a.{label}.{0043bb1eadb80344}", |_| Some("x".into())).unwrap(),
             "a.x.{0043bb1eadb80344}"
         );
+    }
+
+    #[test]
+    fn track_choices_offer_added_tracks_and_slots_filled_by_addons() {
+        use swofty_formats::gvdb::{Gvdb, Record};
+        let rec = |path: &str, value: &str| Record::new(path, 2, value);
+        let mut records = vec![
+            Record::new("tracks._Track_instancecount_", 0, "3"),
+            Record::new(
+                "schedule.activities._activity_race_weekend_instancecount_",
+                0,
+                "1",
+            ),
+            rec(
+                "schedule.activities.activity_race_weekend_0._metadata_",
+                "singapore",
+            ),
+            rec("schedule.activities.activity_race_weekend_0.track", "singapore"),
+        ];
+        for (i, code) in ["singapore", "bahrain", "bahrain24"].into_iter().enumerate() {
+            records.push(rec(&format!("tracks.Track_{i}._metadata_"), code));
+            records.push(rec(&format!("tracks.Track_{i}.gp_short_name"), "lng_x"));
+        }
+        let cat = Catalog::load(&Gvdb { records }.to_bytes()).unwrap();
+        let weekends = module("race-weekends").unwrap();
+        let track = weekends.fields.iter().position(|f| f.id == "track").unwrap();
+        let view = weekends.view(&cat, &Edits::default(), None).unwrap();
+        assert_eq!(view.rows.len(), 1);
+        assert_eq!(view.rows[0].name, "Singapore");
+        assert_eq!(view.rows[0].cells[track].value, "singapore");
+        let stock = weekends.choices_in(&cat, track, None);
+        assert_eq!(
+            stock.iter().map(|(v, _)| v.as_str()).collect::<Vec<_>>(),
+            ["singapore", "bahrain", "bahrain24"]
+        );
+        let added = [
+            PlanTrack {
+                code: "bahrain24".into(),
+                name: Some("Sepang".into()),
+                addon: Some("mod.bahrain24".into()),
+            },
+            PlanTrack {
+                code: "okayama".into(),
+                name: None,
+                addon: Some("mod.okayama".into()),
+            },
+        ];
+        let with = weekends.choices_with(&cat, track, None, &added);
+        let named = |v: &str| with.iter().find(|(c, _)| c == v).map(|(_, n)| n.as_str());
+        assert_eq!(named("bahrain24"), Some("Sepang"));
+        assert_eq!(named("okayama"), Some("okayama"));
+        assert_eq!(with.len(), 4);
+        let calendar = module("calendar").unwrap();
+        let event = calendar.fields.iter().position(|f| f.id == "event_name").unwrap();
+        assert!(calendar.choices_with(&cat, event, None, &added).is_empty());
+    }
+
+    #[test]
+    fn sets_one_value_on_every_listed_row_held_in_range() {
+        use swofty_formats::gvdb::{Gvdb, Record};
+        let mut records = vec![Record::new("entrants.drivers._driver_instancecount_", 0, "4")];
+        for (i, (label, mistakes)) in [("a", "0.5"), ("b", "0.2"), ("c", "1"), ("d", "0.4")]
+            .into_iter()
+            .enumerate()
+        {
+            let row = format!("entrants.drivers.driver_{i}");
+            records.push(Record::new(&format!("{row}._metadata_"), 2, label));
+            records.push(Record::new(&format!("{row}.full_name"), 2, "lng_x"));
+            records.push(Record::new(&format!("{row}.car_number"), 0, "7"));
+            if label != "d" {
+                records.push(Record::new(
+                    &format!("{row}.driver_characteristics.mistakes"),
+                    1,
+                    mistakes,
+                ));
+            }
+        }
+        let cat = Catalog::load(&Gvdb { records }.to_bytes()).unwrap();
+        let drivers = module("drivers").unwrap();
+        let at = |id: &str| drivers.fields.iter().position(|f| f.id == id).unwrap();
+        let (mistakes, number, name) = (at("trait_mistakes"), at("car_number"), at("full_name"));
+        let view = drivers.view(&cat, &Edits::default(), None).unwrap();
+        let key = |row: usize| view.rows[row].cells[mistakes].key.unwrap();
+
+        assert!(drivers.sets_all(mistakes, 1) && drivers.sets_all(number, 0));
+        assert!(!drivers.sets_all(name, 2), "a lng_* key");
+        assert_eq!(drivers.clamp(mistakes, "1.5"), "1");
+        assert_eq!(drivers.clamp(mistakes, "-2"), "0");
+        assert_eq!(drivers.clamp(mistakes, "0.75"), "0.75");
+        assert_eq!(drivers.clamp(mistakes, "high"), "high");
+        assert_eq!(
+            drivers.keys_of(&view, &[0, 2, 3], mistakes).len(),
+            2,
+            "d has no value"
+        );
+
+        let mut edits = Edits::default();
+        let n = drivers
+            .set_all(&cat, &mut edits, &view, &[0, 2, 3], mistakes, "9")
+            .unwrap();
+        assert_eq!(n, 1, "c already holds the max");
+        assert_eq!(edits.value(&cat, key(0)), Some("1"));
+        assert_eq!(edits.value(&cat, key(1)), Some("0.2"), "b is not listed");
+        assert_eq!(edits.len(), 1);
+
+        let n = drivers
+            .set_all(&cat, &mut edits, &view, &[0, 1, 2], mistakes, "0.3")
+            .unwrap();
+        assert_eq!(n, 3);
+        assert!(
+            [0, 1, 2]
+                .iter()
+                .all(|&r| edits.value(&cat, key(r)) == Some("0.3"))
+        );
+
+        let before = edits.clone();
+        assert!(
+            drivers
+                .set_all(&cat, &mut edits, &view, &[0, 1], number, "seven")
+                .is_err()
+        );
+        assert_eq!(edits, before, "a failed change leaves every value as it was");
+        assert!(
+            drivers
+                .set_all(&cat, &mut edits, &view, &[0, 1], name, "lng_y")
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn shared_choice_names_show_their_labels() {
+        let names = |v: &[(&str, &str)]| -> Vec<(String, String)> {
+            v.iter()
+                .map(|(a, b)| ((*a).to_owned(), (*b).to_owned()))
+                .collect()
+        };
+        assert_eq!(
+            distinct(names(&[
+                ("bahrain", "Bahrain"),
+                ("bahrain24", "Bahrain"),
+                ("suzuka", "Japan"),
+                ("x", "x"),
+                ("y", "x"),
+            ])),
+            names(&[
+                ("bahrain", "Bahrain (bahrain)"),
+                ("bahrain24", "Bahrain (bahrain24)"),
+                ("suzuka", "Japan"),
+                ("x", "x"),
+                ("y", "x (y)"),
+            ])
+        );
+        let mut picked = names(&[("bahrain24", "Bahrain")]);
+        add_tracks(
+            &mut picked,
+            &[PlanTrack {
+                code: "bahrain24".into(),
+                name: None,
+                addon: None,
+            }],
+        );
+        assert_eq!(picked, names(&[("bahrain24", "Bahrain")]));
     }
 
     #[test]
@@ -777,5 +1072,13 @@ mod tests {
         let after = calendar.view(&cat, &swapped, before.scope.as_deref()).unwrap();
         assert_eq!(after.rows[0].cells[event].value, b.cells[event].value);
         assert_ne!(after.rows[0].name, a.name, "the name follows the edited event");
+
+        let weekends = module("race-weekends").unwrap();
+        let track = weekends.fields.iter().position(|f| f.id == "track").unwrap();
+        let choices = weekends.choices_in(&cat, track, None);
+        eprintln!("race weekend tracks: {choices:?}");
+        assert!(choices.iter().any(|(v, _)| v == "bahrain24"), "{choices:?}");
+        let names: BTreeSet<&str> = choices.iter().map(|(_, n)| n.as_str()).collect();
+        assert_eq!(names.len(), choices.len(), "{choices:?}");
     }
 }

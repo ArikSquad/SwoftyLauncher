@@ -22,7 +22,7 @@ Open **Driver Manager** and press **Add driver**. Set:
 | First and last name | Up to 24 characters each. **Surname first** shows the name as "LAST First". |
 | Code | 3 letters, A to Z, unique among your drivers |
 | Number | 1 to 99 |
-| Nationality, head, helmet, suit, gloves, pose, podium emote | The game's own choices, with previews made from your copy of the game. Heads are generic, or look like a real driver. Heads and kit that aren't installed aren't offered. |
+| Nationality, head, helmet, suit, gloves, pose, podium emote | The game's own choices, with previews made from your copy of the game. Heads are generic, or look like a real driver. Heads and kit that aren't installed aren't offered. A head or kit that an addon in the profile installs, such as one from More Driver Models, is offered with the addon's name after it. |
 | Commentary name | The surname the commentators say, or none |
 | Ratings | Experience, racecraft, awareness, pace and focus, each with a start and a peak value from 0 to 100. The game sets the starting focus itself and moves it with form; the focus values are only a guide. |
 | F1 seasons completed, garage slot preference | As on the game's own drivers |
@@ -31,7 +31,17 @@ Open **Driver Manager** and press **Add driver**. Set:
 
 Press **Add driver** to save. The page lists every driver with code, number, nationality, status and check result. **Edit**, **Duplicate**, **Retire** and **Restore** act on one driver. Every profile with Driver Manager on gets the same drivers.
 
+## Set a value for every driver
+
+**Set for every driver** gives one rating or AI trait the same value on each of your drivers. Choose the rating, a value from 0 to 100 and **Every driver** or **Free agents only**, then press **Set for drivers**. The value starts at 100, the most. For AI traits 100 is the game's 1.0; for mistake avoidance it means the fewest mistakes. Ratings take the start, the peak or both. A start above a driver's peak raises the peak to match, and a peak below the start lowers the start. The game's own drivers aren't changed.
+
+## Play with your drivers
+
 The next launch adds the drivers to the game. Start a new career to find them among the free agents. Driver Manager builds after your other addons and mods, so the drivers join the driver pools a team mod leaves. The [Career Mode Editor](/using/career-editor) swaps a free agent into a race seat in Driver Career.
+
+## Game drivers
+
+**Game drivers** lists the drivers the game already has. **Edit** on one sets its head and helmet from the same lists, including heads and helmets addons install. The helmet goes on every look the driver has, one per season and series. **Use the stock head and helmet** undoes the change. The changes apply the next time you play with Driver Manager on, in every profile with Driver Manager on. A head or helmet that isn't installed when you play leaves the driver's stock one in place.
 
 ## Checks
 
