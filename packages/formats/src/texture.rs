@@ -199,12 +199,13 @@ pub fn decode_pixels(codec: Codec, width: u32, height: u32, data: &[u8]) -> Resu
         }
     }
     let row = width as usize * 4;
-    Ok(padded
-        .chunks(pitch)
-        .take(height as usize)
-        .flat_map(|r| &r[..row])
-        .copied()
-        .collect())
+    if row != pitch {
+        for y in 1..height as usize {
+            padded.copy_within(y * pitch..y * pitch + row, y * row);
+        }
+    }
+    padded.truncate(row * height as usize);
+    Ok(padded)
 }
 
 fn unsupported(surface: &Resource, h: &Header) -> Error {
