@@ -87,23 +87,34 @@ impl Record {
     }
 }
 
-fn mask_byte(pos: usize) -> u8 {
-    MASK[(MASK_START + pos) % MASK.len()]
+fn transform<const ENCODE: bool>(bytes: &mut [u8], stream: usize) {
+    let mut offset = (MASK_START + stream) % MASK.len();
+    let mut rest = bytes;
+    while !rest.is_empty() {
+        let n = rest.len().min(MASK.len() - offset);
+        let (chunk, tail) = rest.split_at_mut(n);
+        for (b, &mask) in chunk.iter_mut().zip(&MASK[offset..offset + n]) {
+            *b = if ENCODE {
+                b.wrapping_add(mask)
+            } else {
+                b.wrapping_sub(mask)
+            };
+        }
+        rest = tail;
+        offset = 0;
+    }
 }
 
 pub fn unmask(enc: &[u8], stream: usize) -> Vec<u8> {
-    enc.iter()
-        .enumerate()
-        .map(|(i, &b)| b.wrapping_sub(mask_byte(stream + i)))
-        .collect()
+    let mut out = enc.to_vec();
+    transform::<false>(&mut out, stream);
+    out
 }
 
 pub fn mask(plain: &[u8], stream: usize) -> Vec<u8> {
-    plain
-        .iter()
-        .enumerate()
-        .map(|(i, &b)| b.wrapping_add(mask_byte(stream + i)))
-        .collect()
+    let mut out = plain.to_vec();
+    transform::<true>(&mut out, stream);
+    out
 }
 
 pub fn instance_count_path(container: &str, row: &str) -> String {
@@ -152,7 +163,7 @@ impl Gvdb {
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut order: Vec<&Record> = self.records.iter().collect();
         order.sort_by_key(|r| r.key_hi());
-        write_records(order)
+        write_records(order.iter().copied())
     }
 
     pub fn to_bytes_unsorted(&self) -> Vec<u8> {
@@ -203,9 +214,8 @@ impl Gvdb {
     }
 }
 
-fn write_records<'a>(records: impl IntoIterator<Item = &'a Record>) -> Vec<u8> {
-    let records: Vec<&Record> = records.into_iter().collect();
-    let size = 4 + records.iter().map(|r| 14 + r.value.len()).sum::<usize>();
+fn write_records<'a>(records: impl ExactSizeIterator<Item = &'a Record> + Clone) -> Vec<u8> {
+    let size = 4 + records.clone().map(|r| 14 + r.value.len()).sum::<usize>();
     let mut out = Vec::with_capacity(size);
     out.extend_from_slice(&(records.len() as u32).to_le_bytes());
     let mut stream = 0;
@@ -214,7 +224,9 @@ fn write_records<'a>(records: impl IntoIterator<Item = &'a Record>) -> Vec<u8> {
         out.extend_from_slice(&r.key_hi().to_le_bytes());
         out.push(r.tag);
         out.extend_from_slice(&(r.value.len() as u32).to_le_bytes());
-        out.extend_from_slice(&mask(&r.value, stream));
+        let start = out.len();
+        out.extend_from_slice(&r.value);
+        transform::<true>(&mut out[start..], stream);
         out.push(0);
         stream += r.value.len();
     }
