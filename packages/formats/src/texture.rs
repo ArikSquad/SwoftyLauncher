@@ -215,12 +215,12 @@ fn unsupported(surface: &Resource, h: &Header) -> Error {
     ))
 }
 
-fn pixels(surface: &Resource) -> Result<Vec<u8>> {
+fn pixels(surface: &Resource) -> Result<std::borrow::Cow<'_, [u8]>> {
     surface
         .fragments
         .get(1)
         .ok_or_else(|| Error::Format(format!("{}: not a surface", surface.name)))?
-        .data()
+        .data_cow()
 }
 
 pub fn decode(surface: &Resource) -> Result<Image> {
@@ -263,20 +263,24 @@ pub fn decode_near(surface: &Resource, root: Option<&Path>, want: u32) -> Result
         .or_else(|| sizes.first())
         .copied()
         .ok_or_else(|| Error::Format(format!("{}: no levels", surface.name)))?;
-    let data = match (level, &side, root) {
-        (Some(k), Some(side), Some(root)) => side.read(root, k)?,
+    let data: std::borrow::Cow<'_, [u8]>;
+    let selected = match (level, &side, root) {
+        (Some(k), Some(side), Some(root)) => {
+            data = std::borrow::Cow::Owned(side.read(root, k)?);
+            data.as_ref()
+        }
         _ => {
-            let all = pixels(surface)?;
+            data = pixels(surface)?;
             let (mut w, mut hh, mut at) = (h.width, h.height, 0);
             while (w, hh) != (width, height) {
                 at += codec.level_bytes(w, hh);
                 w = (w / 2).max(1);
                 hh = (hh / 2).max(1);
             }
-            all.get(at..).map(<[u8]>::to_vec).ok_or(Error::Eof(at))?
+            data.get(at..).ok_or(Error::Eof(at))?
         }
     };
-    let rgba = decode_pixels(codec, width, height, &data)
+    let rgba = decode_pixels(codec, width, height, selected)
         .map_err(|e| Error::Format(format!("{}: {e}", surface.name)))?;
     Ok(Image { width, height, rgba })
 }
