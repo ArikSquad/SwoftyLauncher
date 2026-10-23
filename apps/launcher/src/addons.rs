@@ -220,6 +220,7 @@ pub(crate) struct AddonsPage {
     window: AnyWindowHandle,
     facets: BTreeSet<Facet>,
     scroll: ListState,
+    smooth: crate::scroll::SmoothScroll,
     list_items: Vec<AddonListItem>,
     seen: Option<Instant>,
     scroll_pending: bool,
@@ -236,6 +237,10 @@ pub(crate) struct AddonsPage {
 }
 
 impl AddonsPage {
+    pub(crate) fn cancel_scroll(&self) {
+        self.smooth.cancel();
+    }
+
     pub(crate) fn new(window: &mut Window, cx: &mut Context<Shell>) -> Self {
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search addons"));
         let changed = cx.subscribe(&search, |_, _, e: &InputEvent, cx| {
@@ -248,6 +253,7 @@ impl AddonsPage {
             window: window.window_handle(),
             facets: BTreeSet::new(),
             scroll: ListState::new(0, ListAlignment::Top, px(200.)),
+            smooth: Default::default(),
             list_items: Vec::new(),
             seen: None,
             scroll_pending: false,
@@ -587,6 +593,7 @@ impl Shell {
         if self.addons.read_at == Some(at) {
             return;
         }
+        self.addons.smooth.cancel();
         self.addons.read_at = Some(at);
         self.addons.changes.clear();
         let profile = self.library.profile.name.clone();
@@ -1351,6 +1358,7 @@ impl Shell {
             }
         }
         if let Some(ix) = scroll_to {
+            self.addons.smooth.cancel();
             self.addons.scroll_pending = false;
             // Off-screen rows have no measured height yet; address the item directly.
             self.addons.scroll.scroll_to(ListOffset {
@@ -1411,6 +1419,7 @@ impl Shell {
                 .into_any_element()
         } else {
             div()
+                .relative()
                 .flex_1()
                 .min_h_0()
                 .flex()
@@ -1445,6 +1454,7 @@ impl Shell {
                     .min_h_0()
                     .pb(px(6.)),
                 )
+                .child(self.addons.smooth.overlay(&self.addons.scroll, cx))
                 .into_any_element()
         };
         v_flex()

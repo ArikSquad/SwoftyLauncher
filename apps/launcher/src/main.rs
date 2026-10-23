@@ -15,6 +15,7 @@ mod news;
 mod pages;
 mod play_bar;
 mod reveal;
+mod scroll;
 mod sections;
 mod send_logs;
 mod shell;

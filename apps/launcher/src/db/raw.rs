@@ -256,7 +256,7 @@ impl Shell {
                     .border_1()
                     .border_color(p.border_variant)
                     .overflow_hidden()
-                    .child(list)
+                    .child(self.db.list_motion.wrap(list, &self.db.list_scroll, cx))
                     .into_any_element()
             }
         };
@@ -511,7 +511,13 @@ impl Shell {
             .border_1()
             .border_color(p.border_variant)
             .overflow_x_scroll()
-            .child(v_flex().w(px(width)).h_full().child(header).child(list))
+            .child(
+                v_flex()
+                    .w(px(width))
+                    .h_full()
+                    .child(header)
+                    .child(self.db.list_motion.wrap(list, &self.db.list_scroll, cx)),
+            )
             .into_any_element()
     }
 
@@ -632,22 +638,26 @@ impl Shell {
                 .border_color(p.border_variant)
                 .overflow_hidden()
                 .child(
-                    uniform_list(
-                        "db-unnamed",
-                        rows.len(),
-                        cx.processor(move |this, range: Range<usize>, _, cx| {
-                            let p = palette(cx);
-                            let Some(catalog) = this.db.catalog().cloned() else {
-                                return Vec::new();
-                            };
-                            range
-                                .filter_map(|i| shown.get(i).map(|&n| (i, n)))
-                                .map(|(i, n)| this.db_entry(&catalog, i, n, false, p, cx))
-                                .collect::<Vec<_>>()
-                        }),
-                    )
-                    .flex_1()
-                    .track_scroll(&self.db.list_scroll),
+                    self.db.list_motion.wrap(
+                        uniform_list(
+                            "db-unnamed",
+                            rows.len(),
+                            cx.processor(move |this, range: Range<usize>, _, cx| {
+                                let p = palette(cx);
+                                let Some(catalog) = this.db.catalog().cloned() else {
+                                    return Vec::new();
+                                };
+                                range
+                                    .filter_map(|i| shown.get(i).map(|&n| (i, n)))
+                                    .map(|(i, n)| this.db_entry(&catalog, i, n, false, p, cx))
+                                    .collect::<Vec<_>>()
+                            }),
+                        )
+                        .flex_1()
+                        .track_scroll(&self.db.list_scroll),
+                        &self.db.list_scroll,
+                        cx,
+                    ),
                 )
                 .into_any_element()
         };
@@ -693,7 +703,15 @@ impl Shell {
                     .min_h_0()
                     .gap(px(16.))
                     .items_start()
-                    .child(div().flex_1().min_w_0().h_full().flex().flex_col().child(list))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .h_full()
+                            .flex()
+                            .flex_col()
+                            .child(self.db.list_motion.wrap(list, &self.db.list_scroll, cx)),
+                    )
                     .children(detail),
             )
             .into_any_element()
@@ -859,19 +877,23 @@ impl Shell {
                     .border_color(p.border_variant)
                     .overflow_hidden()
                     .child(
-                        uniform_list(
-                            "db-changes",
-                            items.len(),
-                            cx.processor(move |this, range: Range<usize>, _, cx| {
-                                let p = palette(cx);
-                                range
-                                    .filter_map(|i| shown.get(i).map(|it| (i, it)))
-                                    .map(|(i, it)| this.db_change_row(i, it, p, cx))
-                                    .collect::<Vec<_>>()
-                            }),
-                        )
-                        .flex_1()
-                        .track_scroll(&self.db.list_scroll),
+                        self.db.list_motion.wrap(
+                            uniform_list(
+                                "db-changes",
+                                items.len(),
+                                cx.processor(move |this, range: Range<usize>, _, cx| {
+                                    let p = palette(cx);
+                                    range
+                                        .filter_map(|i| shown.get(i).map(|it| (i, it)))
+                                        .map(|(i, it)| this.db_change_row(i, it, p, cx))
+                                        .collect::<Vec<_>>()
+                                }),
+                            )
+                            .flex_1()
+                            .track_scroll(&self.db.list_scroll),
+                            &self.db.list_scroll,
+                            cx,
+                        ),
                     ),
             )
             .into_any_element()

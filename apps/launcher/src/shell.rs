@@ -138,6 +138,7 @@ pub struct Shell {
     pub(crate) addons: crate::addons::AddonsPage,
     pub(crate) db: crate::db::Db,
     pub(crate) news: crate::news::News,
+    pub(crate) news_scroll: crate::news::NewsScroll,
     pub(crate) browser: crate::browser::Browser,
     pub(crate) tools: crate::tools::Carousel,
     _console_closed: Subscription,
@@ -423,6 +424,7 @@ impl Shell {
             addons: crate::addons::AddonsPage::new(window, cx),
             db: crate::db::Db::new(cx),
             news,
+            news_scroll: Default::default(),
             browser,
             tools: Default::default(),
             _console_closed: console_closed,
@@ -1064,7 +1066,18 @@ impl Shell {
         )
     }
 
+    pub(crate) fn cancel_scroll(&self) {
+        self.news_scroll.cancel();
+        self.addons.cancel_scroll();
+        self.browser.smooth.cancel();
+        self.db.rows_motion.cancel();
+        self.db.list_motion.cancel();
+    }
+
     pub(crate) fn open_page(&mut self, page: Page, cx: &mut Context<Self>) {
+        if self.page != page {
+            self.cancel_scroll();
+        }
         self.db_leaving(page, cx);
         self.page = page;
         if let Some(i) = self.open_section().filter(|i| !self.section_loaded(*i)) {

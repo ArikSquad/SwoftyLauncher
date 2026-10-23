@@ -136,7 +136,9 @@ pub(crate) struct Db {
     pub slots: Slots,
     pub focus: Option<FocusHandle>,
     pub rows_scroll: UniformListScrollHandle,
+    pub rows_motion: crate::scroll::SmoothScroll,
     pub list_scroll: UniformListScrollHandle,
+    pub list_motion: crate::scroll::SmoothScroll,
     pending_tab: Option<(String, String, String)>,
     pending_link: Option<LinkSpec>,
     pub importing: bool,
@@ -199,7 +201,9 @@ impl Db {
             slots: Slots::default(),
             focus: None,
             rows_scroll: UniformListScrollHandle::new(),
+            rows_motion: Default::default(),
             list_scroll: UniformListScrollHandle::new(),
+            list_motion: Default::default(),
             pending_tab: None,
             pending_link: None,
             importing: false,
@@ -955,6 +959,7 @@ impl Shell {
             .iter()
             .position(|&i| slot.view.rows[i].label == r.label)
         {
+            self.db.rows_motion.cancel();
             self.db.rows_scroll.scroll_to_item(i, ScrollStrategy::Center);
         }
         if slot.view.rows.iter().any(|row| row.label == r.label) {
@@ -1079,6 +1084,8 @@ impl Shell {
 
     pub(crate) fn db_go(&mut self, nav: Nav, cx: &mut Context<Self>) {
         if self.db.nav != nav {
+            self.db.rows_motion.cancel();
+            self.db.list_motion.cancel();
             self.db.nav = nav;
             self.db.row = None;
             self.db.reveal = None;

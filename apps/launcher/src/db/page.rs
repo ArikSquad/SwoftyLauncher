@@ -925,7 +925,7 @@ impl Shell {
             .border_color(p.border_variant)
             .overflow_hidden()
             .child(header)
-            .child(list)
+            .child(self.db.rows_motion.wrap(list, &self.db.rows_scroll, cx))
             .into_any_element()
     }
 

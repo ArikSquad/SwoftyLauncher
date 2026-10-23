@@ -151,6 +151,7 @@ impl Shell {
         }
         let from = std::mem::replace(&mut b.view, to.clone());
         b.trail.push((from, b.scroll.offset()));
+        b.smooth.cancel();
         b.scroll.set_offset(Point::default());
         b.activity_open = false;
         self.load_view(&to, cx);
@@ -167,12 +168,14 @@ impl Shell {
         if let View::Installed(id) = view {
             b.view = View::Grid;
             b.trail.clear();
+            b.smooth.cancel();
             b.scroll.set_offset(Point::default());
             self.open_addon = Some(id);
             self.go(Page::Addons, cx);
             return;
         }
         b.view = view.clone();
+        b.smooth.cancel();
         b.scroll.set_offset(offset);
         self.load_view(&view, cx);
         cx.notify();
@@ -191,6 +194,7 @@ impl Shell {
         };
         b.trail = vec![(View::Grid, grid)];
         b.view = View::Creators;
+        b.smooth.cancel();
         b.scroll.set_offset(Point::default());
         b.activity_open = false;
         cx.notify();
@@ -208,6 +212,7 @@ impl Shell {
         let b = &mut self.browser;
         b.trail = vec![(View::Installed(id.to_owned()), Point::default())];
         b.view = to.clone();
+        b.smooth.cancel();
         b.scroll.set_offset(Point::default());
         b.activity_open = false;
         self.load_view(&to, cx);
@@ -720,7 +725,7 @@ impl Shell {
             )
             .children(rows)
             .children(empty);
-        self.scroll_area(body).into_any_element()
+        self.scroll_area(body, cx).into_any_element()
     }
 
     fn author_sort_button(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
@@ -956,7 +961,7 @@ impl Shell {
             )
             .children(rows)
             .children(empty);
-        self.scroll_area(body).into_any_element()
+        self.scroll_area(body, cx).into_any_element()
     }
 
     pub(super) fn published_by(&self, a: &Addon, p: Palette, cx: &mut Context<Self>) -> Option<Div> {
