@@ -82,7 +82,7 @@ In an `assets` file, the prefix before the dot names the kind:
 | `item.show` | `id`, `name`, optional `author`, `version`, `description` | A read-only tile in the in-game **ADDON SETTINGS** screen | [Asset API](/reference/addons/asset-api#op-files) |
 | `warn` | `message` | Nothing; prints the message at build | |
 
-`db.remove-row`, `db.list-append` and `db.list-remove` are defined but not built: a build with one fails. A `patch-pkg` edit other than `clone-entry` and `set-value` makes the build skip every ERP op of that addon, with a warning.
+`db.remove-row` is defined but not built: a build with one fails. A `patch-pkg` edit other than `clone-entry` and `set-value` makes the build skip every ERP op of that addon, with a warning.
 
 An unknown op name or field fails the build and names the file.
 

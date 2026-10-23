@@ -45,7 +45,8 @@ Inside each file, the prefix on an op names its kind:
 | `erp.merge-slices` | `erp`, `resource`, `source` (an archive in the addon) | Write the slices of a texture array that differ from the game's over the array in `erp` ([Texture arrays](/reference/ops/erp#texture-arrays)) |
 | `erp.add-mipmaps` | `source`, `target` | Copy a mip file, or a folder of them, into the game folder |
 | `db.set`, `db.add-row` | As in [database operations](/reference/ops/database) | Change a field, or copy a row |
-| `db.remove-row`, `db.list-append`, `db.list-remove` | As in [database operations](/reference/ops/database) | Not built yet: a build with one fails |
+| `db.list-append`, `db.list-remove` | As in [database operations](/reference/ops/database) | Built |
+| `db.remove-row` | As in [database operations](/reference/ops/database) | Not built yet: a build with one fails |
 | `db.put-record` | `key` (a path, or `0x` and 16 hex digits), `type` (the tag), `value` (hex bytes) | Write one raw record |
 | `db.remove-record` | `key`, optional `allow_stock_removal` | Remove one record. A stock record stays unless `allow_stock_removal` is `true` ([Removing stock records](/reference/ops/database#removing-stock-records)) |
 | `lang.set` | `language` (a code, or `*` for every language), `key`, `value` | Set one string |

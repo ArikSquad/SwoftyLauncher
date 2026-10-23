@@ -680,6 +680,24 @@ pub fn add_row_name<'a>(table: &str, from: &'a str) -> Option<&'a str> {
         })
 }
 
+fn list_items(value: &str) -> impl Iterator<Item = &str> {
+    value.split(',').map(str::trim).filter(|v| !v.is_empty())
+}
+
+fn edit_list(db: &mut Db, select: &str, field: &str, edit: impl FnOnce(&mut Vec<String>)) -> Result<()> {
+    let key = match field.contains('[') {
+        true => resolve_path(db, &format!("{select}.{field}"))?.key(""),
+        false => resolve_row(db, select)?.field(field),
+    };
+    let r = db
+        .get_mut(key)
+        .ok_or_else(|| Error::Resolve(format!("{select}.{field}: no such key")))?;
+    let mut items: Vec<String> = list_items(&r.text()).map(String::from).collect();
+    edit(&mut items);
+    r.value = items.join(",").into_bytes();
+    Ok(())
+}
+
 fn apply(db: &mut Db, op: &DbOp, names: &dyn FieldNames, cx: &mut Cx) -> Result<Option<u64>> {
     match op {
         DbOp::Set {
@@ -743,9 +761,24 @@ fn apply(db: &mut Db, op: &DbOp, names: &dyn FieldNames, cx: &mut Cx) -> Result<
             )?;
             Ok(None)
         }
-        DbOp::RemoveRow { .. } | DbOp::ListAppend { .. } | DbOp::ListRemove { .. } => Err(Error::Resolve(
-            "remove-row and list ops are not implemented yet".into(),
-        )),
+        DbOp::RemoveRow { .. } => Err(Error::Resolve("remove-row is not implemented yet".into())),
+        DbOp::ListAppend { select, field, value } => {
+            edit_list(db, select, field, |items| {
+                for v in list_items(value) {
+                    if !items.iter().any(|i| i == v) {
+                        items.push(v.to_string());
+                    }
+                }
+            })?;
+            Ok(None)
+        }
+        DbOp::ListRemove { select, field, value } => {
+            let drop: Vec<&str> = list_items(value).collect();
+            edit_list(db, select, field, |items| {
+                items.retain(|i| !drop.contains(&i.as_str()))
+            })?;
+            Ok(None)
+        }
         DbOp::PutRecord { key, tag, value } => {
             let value = hex_bytes(key, value)?;
             let k = resolve_key(db, key)?;
@@ -1563,6 +1596,39 @@ mod tests {
         let mut db = db();
         let ops = ops(
             r#"{"schema_version":1,"ops":[{"op":"set","select":"entrants.teams.team_0","field":"nope","value":"1"}]}"#,
+        );
+        assert!(apply_db_ops(&mut db, &ops, &names()).is_err());
+    }
+
+    #[test]
+    fn list_append_adds_missing_values_once_and_list_remove_takes_them_out() {
+        let mut db = db();
+        let append = |v: &str| {
+            ops(&format!(
+                r#"{{"schema_version":1,"ops":[{{"op":"list-append","select":"entrants.teams.team[_metadata_=mclaren_26]","field":"display_name_code","value":"{v}"}}]}}"#
+            ))
+        };
+        let key = fnv1a64("entrants.teams.team_0.display_name_code");
+        assert!(
+            apply_db_ops(&mut db, &append("YYY"), &names())
+                .unwrap()
+                .is_empty()
+        );
+        apply_db_ops(&mut db, &append("ZZZ, XXX"), &names()).unwrap();
+        apply_db_ops(&mut db, &append("YYY"), &names()).unwrap();
+        assert_eq!(db.get_key(key).unwrap().text(), "XXX,YYY,ZZZ");
+        let remove = ops(
+            r#"{"schema_version":1,"ops":[{"op":"list-remove","select":"entrants.teams.team_0","field":"display_name_code","value":"XXX,ZZZ"}]}"#,
+        );
+        assert!(apply_db_ops(&mut db, &remove, &names()).unwrap().is_empty());
+        assert_eq!(db.get_key(key).unwrap().text(), "YYY");
+    }
+
+    #[test]
+    fn list_ops_on_a_missing_key_fail() {
+        let mut db = db();
+        let ops = ops(
+            r#"{"schema_version":1,"ops":[{"op":"list-append","select":"entrants.teams.team_0","field":"nope","value":"a"}]}"#,
         );
         assert!(apply_db_ops(&mut db, &ops, &names()).is_err());
     }

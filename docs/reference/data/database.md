@@ -90,7 +90,7 @@ The database keeps no key names, so the build names the source row's keys from t
 
 You'll find the full field sets in [Adding a row](/reference/gamedb/recipes#adding-a-row).
 
-`remove-row`, `list-append` and `list-remove` are defined but not built yet: a build with one of them fails. To take a value out of a list, `set` the whole list.
+`remove-row` is defined but not built yet: a build with one fails.
 
 ## 4. Rename a track
 

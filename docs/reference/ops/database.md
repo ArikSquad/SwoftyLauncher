@@ -29,12 +29,14 @@ Values are strings. Write arrays as comma-separated values, such as `"0,-0.6,0"`
 | `set` | `select`, `field`, `value` or `value_from` | Change a field |
 | `add-row` | `table`, `from`, `set`; optional `copy`, `stat_id` | Copy a row with every key, then change its fields |
 | `remove-row` | `select` | Remove a row. Not built yet: a build with it fails |
-| `list-append` | `select`, `field`, `value` | Add a value to a list if missing. Not built yet |
-| `list-remove` | `select`, `field`, `value` | Remove a value from a list. Not built yet |
+| `list-append` | `select`, `field`, `value` | Add each comma-separated value to a list field if missing |
+| `list-remove` | `select`, `field`, `value` | Remove each comma-separated value from a list field |
 | `put-record` | `key`, `type`, `value` | Write one raw record. `key` is a path, which can use [selectors](#selecting-rows), or `0x` and 16 hex digits, `type` the record tag and `value` hex bytes |
 | `remove-record` | `key`; optional `allow_stock_removal` | Remove one record |
 
 For `set`, use `create: true` and a `type` tag to add a missing field. `value_from` copies a value from another database path. A `set` whose `select` matches no row, or whose field doesn't exist, fails the build. A `remove-record` whose key is already absent is a no-op, logged.
+
+`list-append` and `list-remove` treat the field as a comma-separated list and keep its order. Several addons can append to the same list without a conflict. A missing field fails the build.
 
 ### Removing stock records
 
