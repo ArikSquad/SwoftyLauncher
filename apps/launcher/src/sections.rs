@@ -219,7 +219,7 @@ impl Shell {
                         continue;
                     }
                     s.view_gens.insert(key.clone(), generation);
-                    s.views.insert(key, view);
+                    s.views.insert(key, view.map(Arc::new));
                 }
                 cx.notify();
             })
