@@ -41,9 +41,16 @@ pub fn decompress_block(src: &[u8], size: usize) -> Result<Vec<u8>> {
         if out.len() + len > size {
             return Err(Error::Format(format!("lz4 block is longer than {size} bytes")));
         }
-        let start = out.len() - offset;
-        for i in 0..len {
-            out.push(out[start + i]);
+        if offset == 1 {
+            out.resize(out.len() + len, out[out.len() - 1]);
+        } else {
+            let start = out.len() - offset;
+            let mut remaining = len;
+            while remaining != 0 {
+                let count = remaining.min(out.len() - start);
+                out.extend_from_within(start..start + count);
+                remaining -= count;
+            }
         }
     }
     if out.len() != size {
