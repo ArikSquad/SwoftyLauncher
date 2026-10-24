@@ -210,6 +210,16 @@ The build skips a DB Editor addon's change that no longer matches the game datab
 Commands that read the game database take `--game <dir>` after `db`.
 `--package <id>` and `swofty db packages` still work, as older names of `--addon <id>` and `swofty db addons`.
 
+## `swofty setup`
+
+| Command | Purpose |
+|---|---|
+| `swofty setup status` | Show whether the one-time setup before modded play is done |
+| `swofty setup reset [--other-mods]` | Restore the game folder and start the record of original game files over |
+| `swofty setup done` | Finish the setup after verifying the game files in Steam or repairing them in the EA app |
+
+`swofty run --apply` and `swofty apply` refuse to start until the setup is done. See [The one-time setup](/reference/restore#the-one-time-setup).
+
 ## `swofty offline`
 
 | Command | Purpose |
@@ -258,7 +268,7 @@ To test an update, set `SWOFTY_UPDATE_PRETEND_VERSION=0.1.0`. The launcher and `
 swofty steam [--start]
 ```
 
-Shows whether Steam is running and signed in, with what the launcher read it from, and exits with an error when it isn't. With `--start`, it starts Steam when it's closed and waits up to 90 seconds for it to sign in, as **Play** does, without launching the game. See [Steam](/reference/launch#steam).
+Shows whether Steam is running and signed in, with what the launcher read it from, and whether Steam is verifying or updating F1 25's files. It exits with an error when Steam isn't running or signed in. With `--start`, it starts Steam when it's closed and waits up to 90 seconds for it to sign in, as **Play** does, without launching the game. See [Steam](/reference/launch#steam).
 
 ## `swofty game`
 

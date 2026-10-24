@@ -114,6 +114,15 @@ pub fn run(store: &Store, profile: &str, args: RunArgs) -> Result<ExitCode> {
     // Modded sessions run without EA AntiCheat: the terms are accepted once,
     // and declining means the game is not launched.
     crate::offline::gate(store, std::io::stdin().is_terminal())?;
+    if args.apply {
+        crate::setup::gate(store)?;
+    }
+    if let Some(state) = swofty_core::steam::find_game()
+        .filter(|i| swofty_core::copies::same_dir(&i.dir, &game))
+        .and_then(|i| swofty_core::steam::busy(&i))
+    {
+        bail!("Steam is {state} F1 25; wait for it to finish, then press Play again");
+    }
     match crate::ea::store_start(Source::detect(&game), args.direct) {
         crate::ea::StoreStart::EaApp => {
             if args.apply {
@@ -1306,6 +1315,15 @@ pub fn steam_check(store: &Store, start: bool) -> Result<ExitCode> {
     }
     let status = steam_client::status();
     say("steam", &format!("detected: {status}"));
+    if let Some(g) = swofty_core::steam::find_game() {
+        say(
+            "steam",
+            &match swofty_core::steam::busy(&g) {
+                Some(state) => format!("F1 25: Steam is {state} its files"),
+                None => "F1 25: Steam isn't changing its files".to_owned(),
+            },
+        );
+    }
     Ok(if status.state.usable() {
         ExitCode::SUCCESS
     } else {
