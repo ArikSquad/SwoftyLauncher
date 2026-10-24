@@ -176,7 +176,18 @@ pub struct Installer<'a> {
     pub depot: &'a dyn DepotHashes,
     pub stop_after: Option<usize>,
     pub session: bool,
+    /// Where a long install says how far it got.
+    pub out: &'a dyn Fn(&str),
+    pub free_space: fn(&Path) -> Option<u64>,
 }
+
+const PROGRESS_EVERY: std::time::Duration = std::time::Duration::from_secs(10);
+/// Room on the data folder's volume per file an install places, for the
+/// journal, `placed.json` and the hash cache, each rewritten through a
+/// temporary copy.
+const STATE_PER_FILE: u64 = 2048;
+
+fn quiet(_: &str) {}
 
 fn rel_parts(rel: &str) -> Vec<String> {
     let parts: Vec<&str> = rel.split('/').collect();
@@ -290,6 +301,8 @@ impl<'a> Installer<'a> {
             depot: &(),
             stop_after: None,
             session: false,
+            out: &quiet,
+            free_space: crate::disk::free_space,
         }
     }
 
@@ -588,8 +601,59 @@ impl<'a> Installer<'a> {
         if plan.is_vanilla() {
             return Ok(());
         }
-        let objects = self.objects();
         let loaded = self.baseline()?;
+        let space = self.space(plan, &loaded);
+        for (dir, v, need) in &space {
+            if let Some(free) = (self.free_space)(dir).filter(|free| need > free) {
+                return Err(Error::NoSpace {
+                    drive: v.name.clone(),
+                    need: *need,
+                    free,
+                });
+            }
+        }
+        self.place(plan, hashes, loaded).map_err(|e| self.full(e, &space))
+    }
+
+    /// The bytes an install of `plan` writes on each volume: its copies, less
+    /// the files they replace, on the game folder's; the originals it backs
+    /// up for the first time and its state files on the data folder's.
+    fn space(&self, plan: &Plan, baseline: &Baseline) -> Vec<(PathBuf, crate::disk::Volume, u64)> {
+        let size = |p: &Path| std::fs::metadata(p).map_or(0, |m| m.len());
+        let (mut game, mut data) = (0, 0);
+        for (rel, src) in &plan.data {
+            let now = size(&self.path(rel));
+            game += size(src).saturating_sub(now);
+            if !baseline.files.contains_key(rel) {
+                data += now;
+            }
+        }
+        for src in plan.added.values().chain(plan.loader.values()) {
+            game += size(src);
+        }
+        data += (plan.data.len() + plan.added.len() + plan.loader.len()) as u64 * STATE_PER_FILE;
+        crate::disk::volumes([(self.game.dir.as_path(), game), (self.data, data)])
+    }
+
+    /// A write that failed on a full volume, as the volume and the room the
+    /// install needed there.
+    fn full(&self, e: Error, space: &[(PathBuf, crate::disk::Volume, u64)]) -> Error {
+        let Error::Io { path, source } = &e else {
+            return e;
+        };
+        let on = crate::disk::volume(path).filter(|_| crate::disk::is_full(source));
+        match on.and_then(|on| space.iter().find(|(_, v, _)| v.id == on.id)) {
+            Some((dir, v, need)) => Error::NoSpace {
+                drive: v.name.clone(),
+                need: *need,
+                free: (self.free_space)(dir).unwrap_or(0),
+            },
+            None => e,
+        }
+    }
+
+    fn place(&self, plan: &Plan, hashes: &mut Hashes, loaded: Baseline) -> Result<()> {
+        let objects = self.objects();
         let mut baseline = loaded.clone();
         let mut placed = Placed::load(self.data)?;
         let mut after = BTreeMap::new();
@@ -702,57 +766,87 @@ impl<'a> Installer<'a> {
             placed.registry = Some(name.clone());
         }
         placed.save(self.data)?;
-        let mut n = 0;
-        for (rel, src) in &plan.data {
-            let path = self.path(rel);
-            let i = j.begin(
+        let mut steps = Vec::new();
+        for rel in plan.data.keys() {
+            let before = baseline.files[rel].sha256.clone();
+            steps.push((
                 Op::ReplaceFile,
-                rel,
-                Some(baseline.files[rel].sha256.clone()),
+                rel.clone(),
+                Some(before),
                 Some(after[rel.as_str()].clone()),
-            )?;
-            self.step(&mut n)?;
-            std::fs::copy(src, &path).map_err(|e| crate::quarantine::copy_error(rel, &path, e))?;
-            hashes.wrote(&path, &after[rel.as_str()]);
-            j.done(i)?;
+            ));
         }
-        for (rel, src) in plan.added.iter().chain(&plan.loader) {
+        let mut dirs = BTreeSet::new();
+        for rel in plan.added.keys().chain(plan.loader.keys()) {
             for dir in rel_parts(rel) {
-                let path = self.path(&dir);
-                if !path.is_dir() {
-                    let i = j.begin(Op::CreateDir, &dir, None, None)?;
-                    self.step(&mut n)?;
-                    std::fs::create_dir(&path).map_err(io_err(&path))?;
-                    j.done(i)?;
+                if !self.path(&dir).is_dir() && dirs.insert(dir.clone()) {
+                    steps.push((Op::CreateDir, dir, None, None));
                 }
             }
-            let path = self.path(rel);
-            let i = j.begin(Op::CreateFile, rel, None, Some(after[rel.as_str()].clone()))?;
-            self.step(&mut n)?;
-            // Windows refused the file as a threat. The entry stays pending, so
-            // the rollback clears whatever was left, and the check before the
-            // game starts finds the file missing and refuses the launch with
-            // the antivirus report instead of a bare copy error here.
-            match std::fs::copy(src, &path) {
-                Err(e) if crate::quarantine::is_virus_error(&e) => continue,
-                r => r.map_err(io_err(&path))?,
-            };
-            hashes.wrote(&path, &after[rel.as_str()]);
-            j.done(i)?;
+            steps.push((
+                Op::CreateFile,
+                rel.clone(),
+                None,
+                Some(after[rel.as_str()].clone()),
+            ));
         }
-        if let Some((reg, name, text, out)) = registry {
-            let before = objects.put_file(reg)?;
-            let i = j.begin(
-                Op::RegistryOverride,
-                &name,
-                Some(before),
-                Some(sha256_bytes(out.as_bytes())),
-            )?;
+        let registry = match registry {
+            Some((reg, name, text, out)) => {
+                let (before, now) = (objects.put_file(reg)?, sha256_bytes(out.as_bytes()));
+                steps.push((Op::RegistryOverride, name, Some(before), Some(now)));
+                Some((reg, text, out))
+            }
+            None => None,
+        };
+        j.begin_all(steps)?;
+        let sources: BTreeMap<&str, &PathBuf> = plan
+            .data
+            .iter()
+            .chain(&plan.added)
+            .chain(&plan.loader)
+            .map(|(rel, src)| (rel.as_str(), src))
+            .collect();
+        let (mut n, mut copied, mut told) = (0, 0, std::time::Instant::now());
+        for i in 0..j.entries.len() {
             self.step(&mut n)?;
-            if out != text {
-                std::fs::write(reg, out).map_err(io_err(reg))?;
+            let e = &j.entries[i];
+            let path = self.path(&e.path);
+            match e.op {
+                Op::ReplaceFile => {
+                    std::fs::copy(sources[e.path.as_str()], &path)
+                        .map_err(|err| crate::quarantine::copy_error(&e.path, &path, err))?;
+                }
+                Op::CreateDir => std::fs::create_dir(&path).map_err(io_err(&path))?,
+                // Windows refused the file as a threat. The entry stays pending, so
+                // the rollback clears whatever was left, and the check before the
+                // game starts finds the file missing and refuses the launch with
+                // the antivirus report instead of a bare copy error here.
+                Op::CreateFile => match std::fs::copy(sources[e.path.as_str()], &path) {
+                    Err(err) if crate::quarantine::is_virus_error(&err) => continue,
+                    r => {
+                        r.map_err(io_err(&path))?;
+                    }
+                },
+                Op::RegistryOverride => {
+                    if let Some((reg, text, out)) = &registry
+                        && out != text
+                    {
+                        std::fs::write(reg, out).map_err(io_err(*reg))?;
+                    }
+                }
+            }
+            if matches!(e.op, Op::ReplaceFile | Op::CreateFile) {
+                hashes.wrote(&path, e.after.as_deref().expect("a placed file has after"));
+                copied += 1;
             }
             j.done(i)?;
+            if told.elapsed() >= PROGRESS_EVERY {
+                (self.out)(&format!(
+                    "installing: {copied} of {} file(s) copied",
+                    sources.len()
+                ));
+                told = std::time::Instant::now();
+            }
         }
         j.commit()
     }
@@ -887,6 +981,52 @@ mod tests {
         );
         assert_eq!(Source::detect(&root.join("bare/F1 25")), Source::Unknown);
         std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn a_full_volume_is_named_with_what_the_install_needed_there() {
+        let root = std::env::temp_dir().join(format!("swofty-full-{}", std::process::id()));
+        let game = Game {
+            dir: root.join("game"),
+            user_reg: None,
+            identity: Identity {
+                build_id: "1".into(),
+                exe_sha256: String::new(),
+            },
+        };
+        let inst = Installer {
+            free_space: |_| Some(5 << 20),
+            ..Installer::new(&root, &game)
+        };
+        let space = crate::disk::volumes([(game.dir.as_path(), 3 << 30)]);
+        let v = space[0].1.clone();
+        let full = |source: std::io::Error| Error::Io {
+            path: root.join("state/journal/x.json.tmp"),
+            source,
+        };
+        match inst.full(full(std::io::ErrorKind::StorageFull.into()), &space) {
+            Error::NoSpace { drive, need, free } => {
+                assert_eq!((drive, need, free), (v.name, 3 << 30, 5 << 20))
+            }
+            e => panic!("{e}"),
+        }
+        assert!(matches!(
+            inst.full(full(std::io::ErrorKind::PermissionDenied.into()), &space),
+            Error::Io { .. }
+        ));
+        assert!(matches!(
+            inst.full(full(std::io::ErrorKind::StorageFull.into()), &[]),
+            Error::Io { .. }
+        ));
+        let shown = Error::NoSpace {
+            drive: "C:".into(),
+            need: 3 << 30,
+            free: 1 << 29,
+        };
+        assert_eq!(
+            shown.to_string(),
+            "not enough free space on C: this profile needs about 3.0 GB, 0.5 GB free"
+        );
     }
 
     #[test]

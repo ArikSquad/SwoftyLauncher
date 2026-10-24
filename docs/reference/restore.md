@@ -52,11 +52,15 @@ The next install records each original again as it first sees it, checked agains
 
 ## Recovery rules
 
-Record each change before applying it. Undo changes in reverse order, including steps that may have been interrupted.
+Record every change of an install in the journal, in one write, before applying the first. Undo changes in reverse order, including steps that may have been interrupted or never started.
 
 Restore replaced files from backups. Remove files and empty folders created by the launcher. Remove the Wine override added for the session.
 
 If a file has unexpected contents, leave it alone and report it. Never restore files from an old game build over a newer one.
+
+## Free space
+
+Before an install backs up or copies anything, it adds up what it writes on each volume: on the game folder's, the files it copies less the files they replace; on the data folder's, the originals it backs up for the first time and 2 KB per file for the journal and the other state files. Both folders on one volume count together. When a volume has less free space than that, the install stops with `not enough free space on <drive>: this profile needs about <X> GB, <Y> GB free`, in GB of 1024³ bytes. A write that fails on a full volume during the install stops it with the same message, and the session rolls back.
 
 ## Sessions
 
