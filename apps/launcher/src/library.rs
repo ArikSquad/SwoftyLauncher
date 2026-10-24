@@ -184,6 +184,16 @@ impl SectionItem {
     pub fn is_importer_tracks(&self) -> bool {
         self.addon == swofty_core::managed::ID && self.spec.id == TRACKS_SECTION
     }
+
+    /// The Simplified Importer's own page.
+    pub fn is_importer(&self) -> bool {
+        self.addon == swofty_core::managed::ID && self.spec.id == IMPORTER_SECTION
+    }
+
+    /// A page of Simplified for Swofty, which the sidebar lists under its own heading.
+    pub fn is_simplified(&self) -> bool {
+        self.addon == swofty_core::managed::ID
+    }
 }
 
 fn tracks_page(sections: &[SectionItem]) -> Option<usize> {
@@ -234,7 +244,6 @@ pub struct Library {
     /// The section with id `tracks` the sidebar shows, which lists track
     /// packages and track addons together.
     pub tracks_page: Option<usize>,
-    pub importer_icon: Option<AddonIcon>,
     pub error: Option<String>,
     pub loaded: Instant,
 }
@@ -314,7 +323,6 @@ impl Library {
         let tracks_page = tracks_page(&sections);
         Self {
             tracks_page,
-            importer_icon: section_icon(store, swofty_core::managed::ID, IMPORTER_SECTION),
             rebuild: profile.rebuild_pending(&manifests),
             profile,
             addons,

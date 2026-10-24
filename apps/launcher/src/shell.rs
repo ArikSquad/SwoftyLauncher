@@ -27,7 +27,7 @@ use swofty_core::view::View;
 
 use crate::game::{self, Install, Launch, Owner, Probe};
 use crate::game_edited::Edited;
-use crate::library::{AddonIcon, Library};
+use crate::library::{AddonIcon, Library, SectionItem};
 use crate::pages::{addon_icon, label};
 use crate::theme::{Palette, SCROLLBAR_GAP, ScrollArea, palette};
 
@@ -54,6 +54,14 @@ impl Page {
             Self::Profiles => "Profiles",
             Self::Database => "DB Editor",
             Self::Section(_) => "",
+        }
+    }
+
+    /// The sidebar's name for the page: the importer is just Importer there.
+    pub fn nav_label(self) -> &'static str {
+        match self {
+            Self::Importer => "Importer",
+            _ => self.label(),
         }
     }
 
@@ -1060,9 +1068,22 @@ impl Shell {
     }
 
     fn big_nav(&self, page: Page, count: Option<usize>, p: Palette, cx: &mut Context<Self>) -> AnyElement {
+        let art = NavArt::Icon(page.icon());
+        self.big_row(page, page.nav_label().into(), art, count, p, cx)
+    }
+
+    fn big_row(
+        &self,
+        page: Page,
+        title: SharedString,
+        art: NavArt,
+        count: Option<usize>,
+        p: Palette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let active = self.page == page;
         h_flex()
-            .id(SharedString::from(format!("nav-{}", page.label())))
+            .id(SharedString::from(format!("nav-{title}")))
             .h(px(40.))
             .flex_shrink_0()
             .pl(px(6.))
@@ -1082,8 +1103,8 @@ impl Shell {
                         .hover(move |s| s.bg(p.hover).text_color(p.text))
                 }
             })
-            .child(nav_art(self.big_art(page), 28., active, p))
-            .child(div().flex_1().truncate().child(page.label()))
+            .child(nav_art(art, 28., active, p))
+            .child(div().flex_1().truncate().child(title))
             .children(count.map(|n| {
                 div()
                     .text_size(px(12.))
@@ -1094,19 +1115,41 @@ impl Shell {
             .into_any_element()
     }
 
-    fn big_art(&self, page: Page) -> NavArt {
-        let glyph = (page == Page::Importer)
-            .then(|| {
-                self.importer_section()
-                    .and_then(|i| self.library.sections.get(i)?.icon.clone())
-                    .or_else(|| self.library.importer_icon.clone())
-            })
-            .flatten();
-        match glyph {
+    /// A section's sidebar art: its `sections/<id>.svg`, else its addon's icon, else
+    /// the icon its manifest names.
+    fn section_art(&self, s: &SectionItem) -> NavArt {
+        let addon = self.library.addons.iter().find(|a| a.manifest.id == s.addon);
+        match s.icon.clone().or_else(|| addon.and_then(|a| a.icon.clone())) {
             Some(AddonIcon::Glyph(data)) => NavArt::Glyph(data),
             Some(AddonIcon::Image(image)) => NavArt::Image(image),
-            None => NavArt::Icon(page.icon()),
+            None => NavArt::Icon(crate::sections::icon(s.spec.icon)),
         }
+    }
+
+    /// Simplified for Swofty's pages, in the order its manifest lists them: the
+    /// importer, as Importer with the import icon, and every other page with its
+    /// own title and art. Until the addon is on, just the importer, which offers
+    /// to install or turn it on.
+    fn simplified(&self, p: Palette, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let mut rows = Vec::new();
+        let mut importer = false;
+        for (i, s) in self.library.sections.iter().enumerate() {
+            if !s.is_simplified() || s.is_importer_tracks() {
+                continue;
+            }
+            if s.is_importer() {
+                importer = true;
+                rows.push(self.big_nav(Page::Importer, None, p, cx));
+                continue;
+            }
+            let art = self.section_art(s);
+            let count = self.section_count(i);
+            rows.push(self.big_row(Page::Section(i), s.spec.title.clone().into(), art, count, p, cx));
+        }
+        if !importer {
+            rows.push(self.big_nav(Page::Importer, None, p, cx));
+        }
+        rows
     }
 
     fn panel_nav(
@@ -1151,9 +1194,8 @@ impl Shell {
     }
 
     /// The addon panels the sidebar lists: the DB Editor, then every addon
-    /// page except the Simplified Importer's own pages.
+    /// page except Simplified for Swofty's, which have their own heading.
     fn panels(&self, p: Palette, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        let importer = self.importer_section();
         let db = Page::Database;
         let mut rows = vec![self.panel_nav(
             db,
@@ -1164,15 +1206,10 @@ impl Shell {
             cx,
         )];
         for (i, s) in self.library.sections.iter().enumerate() {
-            if Some(i) == importer || s.is_importer_tracks() {
+            if s.is_simplified() {
                 continue;
             }
-            let addon = self.library.addons.iter().find(|a| a.manifest.id == s.addon);
-            let art = match s.icon.clone().or_else(|| addon.and_then(|a| a.icon.clone())) {
-                Some(AddonIcon::Glyph(data)) => NavArt::Glyph(data),
-                Some(AddonIcon::Image(image)) => NavArt::Image(image),
-                None => NavArt::Icon(crate::sections::icon(s.spec.icon)),
-            };
+            let art = self.section_art(s);
             rows.push(self.panel_nav(
                 Page::Section(i),
                 s.spec.title.clone().into(),
@@ -1222,7 +1259,7 @@ impl Shell {
                     .pt(px(if short { 4. } else { 12. }))
                     .gap(px(6.))
                     .child(label("SIMPLIFIED FOR SWOFTY", p).px(px(8.)))
-                    .child(self.big_nav(Page::Importer, None, p, cx)),
+                    .children(self.simplified(p, cx)),
             )
             .child(
                 v_flex()

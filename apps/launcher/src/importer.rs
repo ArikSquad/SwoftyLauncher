@@ -20,7 +20,7 @@ const FETCH_TIMEOUT: Duration = Duration::from_secs(20);
 impl Shell {
     /// The index of the Simplified Importer's section, when its addon is on.
     pub(crate) fn importer_section(&self) -> Option<usize> {
-        self.library.sections.iter().position(|s| s.addon == managed::ID)
+        self.library.sections.iter().position(|s| s.is_importer())
     }
 
     /// The section the current page shows: an addon page or the Simplified Importer.
