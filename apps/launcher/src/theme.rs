@@ -1,5 +1,6 @@
+use gpui_kit::component::scroll::{Scrollable, ScrollableElement, Scrollbar, ScrollbarHandle, ScrollbarMode};
 use gpui_kit::component::{Theme, ThemeMode};
-use gpui_kit::{Anchor, App, Global, Hsla, hsla, px, rgb};
+use gpui_kit::{Anchor, App, ElementId, Global, Hsla, hsla, px, rgb};
 
 #[derive(Clone, Copy)]
 pub struct Palette {
@@ -112,6 +113,10 @@ pub fn init(cx: &mut App) {
         t.window_border = p.border;
         t.switch = p.switch_off;
         t.switch_thumb = p.text;
+        t.scrollbar_mode = ScrollbarMode::Always;
+        t.scrollbar = hsla(0., 0., 0., 0.);
+        t.scrollbar_thumb = p.switch_off;
+        t.scrollbar_thumb_hover = p.text_placeholder;
         t.success = p.success;
         t.warning = p.warning;
         t.danger = p.error;
@@ -120,4 +125,32 @@ pub fn init(cx: &mut App) {
         t.notification.margins.bottom = px(crate::play_bar::HEIGHT + 16.);
     });
     cx.set_global(p);
+}
+
+/// Room a column keeps clear of the scrollbar thumb at its right edge.
+pub const SCROLLBAR_GAP: f32 = 14.;
+
+/// Scrolls an area that has no scroll handle of its own, with the launcher's
+/// scrollbar. `id` keys the scroll position.
+pub trait ScrollArea: ScrollableElement + Sized {
+    fn scroll_y(self, id: impl Into<ElementId>) -> Scrollable<Self> {
+        self.overflow_y_scrollbar().id(id)
+    }
+
+    fn scroll_x(self, id: impl Into<ElementId>) -> Scrollable<Self> {
+        self.overflow_x_scrollbar().id(id)
+    }
+}
+
+impl<E: ScrollableElement> ScrollArea for E {}
+
+/// The launcher's scrollbar for a list that tracks its own scroll handle.
+#[track_caller]
+pub fn scrollbar_y(handle: &(impl ScrollbarHandle + Clone)) -> Scrollbar {
+    Scrollbar::vertical(handle)
+}
+
+#[track_caller]
+pub fn scrollbar_x(handle: &(impl ScrollbarHandle + Clone)) -> Scrollbar {
+    Scrollbar::horizontal(handle)
 }
