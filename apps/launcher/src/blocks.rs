@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
 use std::rc::Rc;
+use std::sync::Arc;
 use std::time::Duration;
 
 use gpui_kit::assets::IconName;
@@ -424,9 +425,13 @@ fn sorted_rows(t: &Table, sort: Option<&(String, bool)>) -> Vec<usize> {
     let Some(ci) = t.columns.iter().position(|c| c.key() == column) else {
         return order;
     };
-    let key = |i: usize| t.rows[i].cells().get(ci).map(Cell::sort_key);
-    order.sort_by(|a, b| match (key(*a), key(*b)) {
-        (Some(x), Some(y)) => x.compare(&y),
+    let keys: Vec<_> = t
+        .rows
+        .iter()
+        .map(|r| r.cells().get(ci).map(Cell::sort_key))
+        .collect();
+    order.sort_by(|a, b| match (&keys[*a], &keys[*b]) {
+        (Some(x), Some(y)) => x.compare(y),
         (x, y) => x.is_some().cmp(&y.is_some()).reverse(),
     });
     if *desc {
@@ -465,7 +470,7 @@ pub(crate) fn search_id(search: &Search, fallback: &str) -> String {
 }
 
 impl Shell {
-    fn current_view(&self) -> Option<(String, String, View, u64)> {
+    fn current_view(&self) -> Option<(String, String, Arc<View>, u64)> {
         let i = self.open_section()?;
         let s = self.library.sections.get(i)?;
         let key = format!("{}/{}", s.addon, s.spec.id);

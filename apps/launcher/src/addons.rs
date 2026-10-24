@@ -21,7 +21,7 @@ use swofty_core::profile::VANILLA;
 use crate::library::{AddonItem, Changes, Source, plural};
 use crate::pages::{GUTTER, addon_icon, badge, chevron, fact, label, logo, tag, track_badge};
 use crate::shell::{Page, Shell};
-use crate::theme::{Palette, SCROLLBAR_GAP, ScrollArea, palette, scrollbar_y};
+use crate::theme::{Palette, SCROLLBAR_GAP, ScrollArea, palette};
 
 const FADE: Duration = Duration::from_secs(4);
 pub(crate) const FILTERS_W: f32 = 226.;
@@ -201,11 +201,27 @@ impl Render for DraggedAddon {
     }
 }
 
+#[derive(Clone, PartialEq)]
+enum AddonListItem {
+    Heading {
+        group: Option<bool>,
+        first: bool,
+        empty: bool,
+    },
+    Addon {
+        index: usize,
+        position: Option<usize>,
+    },
+    Detail(String),
+}
+
 pub(crate) struct AddonsPage {
     search: Entity<InputState>,
     window: AnyWindowHandle,
     facets: BTreeSet<Facet>,
-    scroll: ScrollHandle,
+    scroll: ListState,
+    smooth: crate::scroll::SmoothScroll,
+    list_items: Vec<AddonListItem>,
     seen: Option<Instant>,
     scroll_pending: bool,
     animating: bool,
@@ -221,6 +237,10 @@ pub(crate) struct AddonsPage {
 }
 
 impl AddonsPage {
+    pub(crate) fn cancel_scroll(&self) {
+        self.smooth.cancel();
+    }
+
     pub(crate) fn new(window: &mut Window, cx: &mut Context<Shell>) -> Self {
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search addons"));
         let changed = cx.subscribe(&search, |_, _, e: &InputEvent, cx| {
@@ -232,7 +252,9 @@ impl AddonsPage {
             search,
             window: window.window_handle(),
             facets: BTreeSet::new(),
-            scroll: ScrollHandle::new(),
+            scroll: ListState::new(0, ListAlignment::Top, px(200.)),
+            smooth: Default::default(),
+            list_items: Vec::new(),
             seen: None,
             scroll_pending: false,
             animating: false,
@@ -542,14 +564,24 @@ impl Shell {
     /// The profile's enabled addons in load order, then the rest; and how many
     /// are in the load order.
     fn ordered(&self) -> (Vec<&AddonItem>, usize) {
-        let find = |id: &str| self.library.listed().find(|a| a.manifest.id == id);
         if self.vanilla() {
             return (self.library.listed().collect(), 0);
         }
-        let mut out: Vec<&AddonItem> = self.library.profile.enabled().filter_map(find).collect();
+        let by_id: HashMap<&str, &AddonItem> = self
+            .library
+            .listed()
+            .map(|a| (a.manifest.id.as_str(), a))
+            .collect();
+        let mut out: Vec<&AddonItem> = self
+            .library
+            .profile
+            .enabled()
+            .filter_map(|id| by_id.get(id).copied())
+            .collect();
         let loaded = out.len();
+        let enabled: HashSet<&str> = out.iter().map(|a| a.manifest.id.as_str()).collect();
         for m in self.library.listed() {
-            if !out.iter().any(|o| o.manifest.id == m.manifest.id) {
+            if !enabled.contains(m.manifest.id.as_str()) {
                 out.push(m);
             }
         }
@@ -561,6 +593,7 @@ impl Shell {
         if self.addons.read_at == Some(at) {
             return;
         }
+        self.addons.smooth.cancel();
         self.addons.read_at = Some(at);
         self.addons.changes.clear();
         let profile = self.library.profile.name.clone();
@@ -1264,16 +1297,31 @@ impl Shell {
             .map(|(i, m)| (i, m.manifest.id.clone()))
             .collect();
         let vanilla = self.vanilla();
-        let mut children: Vec<AnyElement> = Vec::new();
+        let indices: HashMap<&str, usize> = self
+            .library
+            .addons
+            .iter()
+            .enumerate()
+            .map(|(i, a)| (a.manifest.id.as_str(), i))
+            .collect();
+        let mut children = Vec::new();
         let mut scroll_to = None;
         let mut last_group = None;
         if !vanilla && !shown.iter().any(|(i, _)| *i < loaded) {
-            children.push(self.group_heading(Some(true), true, true, p, cx));
+            children.push(AddonListItem::Heading {
+                group: Some(true),
+                first: true,
+                empty: true,
+            });
         }
         for (i, id) in &shown {
             let group = (!vanilla).then_some(*i < loaded);
             if group != last_group {
-                children.push(self.group_heading(group, children.is_empty(), false, p, cx));
+                children.push(AddonListItem::Heading {
+                    group,
+                    first: children.is_empty(),
+                    empty: false,
+                });
                 last_group = group;
             }
             let fade = highlight.filter(|(h, _)| h == id).map(|(_, k)| *k);
@@ -1281,24 +1329,51 @@ impl Shell {
                 scroll_to = Some(children.len());
             }
             let position = (*i < loaded && !vanilla).then_some(*i + 1);
-            if let Some(m) = self.library.listed().find(|a| &a.manifest.id == id) {
-                children.push(self.list_row(m, position, fade, p, cx));
+            if let Some(&index) = indices.get(id.as_str()) {
+                children.push(AddonListItem::Addon { index, position });
             }
             if !split && self.open_addon.as_ref() == Some(id) {
-                children.push(self.addon_detail(id, true, p, cx));
+                children.push(AddonListItem::Detail(id.clone()));
             }
         }
         if !vanilla && last_group != Some(false) {
-            children.push(self.group_heading(Some(false), children.is_empty(), true, p, cx));
+            children.push(AddonListItem::Heading {
+                group: Some(false),
+                first: children.is_empty(),
+                empty: true,
+            });
         }
-        if let Some(ix) = scroll_to {
-            self.addons.scroll_pending = false;
-            if split {
-                self.addons.scroll.scroll_to_item(ix);
-            } else {
-                self.addons.scroll.scroll_to_top_of_item(ix);
+        if self.addons.list_items != children {
+            let old = &self.addons.list_items;
+            let prefix = old.iter().zip(&children).take_while(|(a, b)| a == b).count();
+            let suffix = old[prefix..]
+                .iter()
+                .rev()
+                .zip(children[prefix..].iter().rev())
+                .take_while(|(a, b)| a == b)
+                .count();
+            self.addons
+                .scroll
+                .splice(prefix..old.len() - suffix, children.len() - prefix - suffix);
+            self.addons.list_items = children;
+        } else {
+            // Inline details can change height without changing the list's items.
+            for (i, item) in self.addons.list_items.iter().enumerate() {
+                if matches!(item, AddonListItem::Detail(_)) {
+                    self.addons.scroll.remeasure_items(i..i + 1);
+                }
             }
         }
+        if let Some(ix) = scroll_to {
+            self.addons.smooth.cancel();
+            self.addons.scroll_pending = false;
+            // Off-screen rows have no measured height yet; address the item directly.
+            self.addons.scroll.scroll_to(ListOffset {
+                item_ix: ix,
+                offset_in_item: px(0.),
+            });
+        }
+        let highlight = highlight.cloned();
         let header = h_flex()
             .h(px(28.))
             .gap(px(8.))
@@ -1351,6 +1426,8 @@ impl Shell {
                 .into_any_element()
         } else {
             div()
+                .relative()
+                .flex_1()
                 .min_h_0()
                 .flex()
                 .flex_col()
@@ -1359,16 +1436,32 @@ impl Shell {
                 .border_color(p.border)
                 .overflow_hidden()
                 .child(
-                    v_flex()
-                        .id("addon-list")
-                        .flex_1()
-                        .min_h_0()
-                        .overflow_y_scroll()
-                        .track_scroll(&self.addons.scroll)
-                        .pb(px(6.))
-                        .children(children),
+                    list(
+                        self.addons.scroll.clone(),
+                        cx.processor(move |this, i, _, cx| {
+                            let p = palette(cx);
+                            match this.addons.list_items.get(i).cloned() {
+                                Some(AddonListItem::Heading { group, first, empty }) => {
+                                    this.group_heading(group, first, empty, p, cx)
+                                }
+                                Some(AddonListItem::Addon { index, position }) => {
+                                    let m = &this.library.addons[index];
+                                    let fade = highlight
+                                        .as_ref()
+                                        .filter(|(id, _)| *id == m.manifest.id)
+                                        .map(|(_, k)| *k);
+                                    this.list_row(m, position, fade, p, cx)
+                                }
+                                Some(AddonListItem::Detail(id)) => this.addon_detail(&id, true, p, cx),
+                                None => div().into_any_element(),
+                            }
+                        }),
+                    )
+                    .flex_1()
+                    .min_h_0()
+                    .pb(px(6.)),
                 )
-                .child(scrollbar_y(&self.addons.scroll))
+                .child(self.addons.smooth.overlay(&self.addons.scroll, cx))
                 .into_any_element()
         };
         v_flex()

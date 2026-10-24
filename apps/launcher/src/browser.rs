@@ -15,7 +15,7 @@ use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::menu::{DropdownMenu, PopupMenuItem};
 use gpui_kit::component::notification::Notification;
-use gpui_kit::component::scroll::{ScrollableElement, Scrollbar};
+use gpui_kit::component::scroll::ScrollableElement;
 use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{ActiveTheme, Disableable, Icon, Sizable, WindowExt, h_flex, v_flex};
@@ -505,6 +505,7 @@ pub(crate) struct Browser {
     view: View,
     trail: Vec<(View, Point<Pixels>)>,
     scroll: ScrollHandle,
+    pub(crate) smooth: crate::scroll::SmoothScroll,
     details: HashMap<String, Addon>,
     loading: BTreeSet<String>,
     working: HashMap<String, Job>,
@@ -559,6 +560,7 @@ impl Browser {
             view: View::Grid,
             trail: Vec::new(),
             scroll: ScrollHandle::new(),
+            smooth: Default::default(),
             details: HashMap::new(),
             loading: BTreeSet::new(),
             working: HashMap::new(),
@@ -2119,6 +2121,7 @@ impl Shell {
                             .text_color(p.text_placeholder)
                             .child("No addons match this search and these filters."),
                     ),
+                cx,
             )
             .into_any_element()
         } else if shown.is_empty() {
@@ -2161,6 +2164,7 @@ impl Shell {
                     .gap(px(GAP))
                     .children(found)
                     .children(rows),
+                cx,
             )
             .into_any_element()
         };
@@ -2206,7 +2210,7 @@ impl Shell {
             .collect()
     }
 
-    fn scroll_area(&self, body: Stateful<Div>) -> Div {
+    fn scroll_area(&self, body: Stateful<Div>, cx: &Context<Self>) -> Div {
         div()
             .relative()
             .flex_1()
@@ -2222,7 +2226,7 @@ impl Shell {
                     .track_scroll(&self.browser.scroll)
                     .child(body.flex_none()),
             )
-            .child(Scrollbar::new(&self.browser.scroll))
+            .child(self.browser.smooth.overlay(&self.browser.scroll, cx))
     }
 
     fn tags(&self, a: &Addon, id: String, p: Palette) -> Option<Div> {
@@ -2887,7 +2891,7 @@ impl Shell {
                             .child(changelog),
                     ),
             );
-        self.scroll_area(body).into_any_element()
+        self.scroll_area(body, cx).into_any_element()
     }
 }
 

@@ -15,7 +15,7 @@ use super::{LinkState, Load, Nav, bool_text, clean, icon_named, kind_of, swap_fi
 use crate::library::plural;
 use crate::pages::{GUTTER, badge, label};
 use crate::shell::Shell;
-use crate::theme::{Palette, SCROLLBAR_GAP, ScrollArea, palette, scrollbar_y};
+use crate::theme::{Palette, SCROLLBAR_GAP, ScrollArea, palette};
 
 const ROW_H: f32 = 40.;
 const NAME_W: f32 = 220.;
@@ -930,8 +930,7 @@ impl Shell {
             .border_color(p.border_variant)
             .overflow_hidden()
             .child(header)
-            .child(list)
-            .child(scrollbar_y(&self.db.rows_scroll))
+            .child(self.db.rows_motion.wrap(list, &self.db.rows_scroll, cx))
             .into_any_element()
     }
 

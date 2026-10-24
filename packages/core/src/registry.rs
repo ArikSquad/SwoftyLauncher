@@ -94,7 +94,11 @@ impl Registry {
     }
 
     pub fn get(&self, id: &str) -> Option<&Entry> {
-        self.entries.iter().find(|e| e.id() == id)
+        // Store::addons returns a BTreeMap keyed by id, so entries stay sorted.
+        self.entries
+            .binary_search_by(|e| e.id().cmp(id))
+            .ok()
+            .map(|i| &self.entries[i])
     }
 
     pub fn set_enabled(&self, p: &mut Profile, id: &str, on: bool) -> Result<()> {

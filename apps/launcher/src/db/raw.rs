@@ -15,7 +15,7 @@ use super::{ADDABLE, Nav, hex, type_name};
 use crate::library::plural;
 use crate::pages::label;
 use crate::shell::Shell;
-use crate::theme::{Palette, ScrollArea, palette, scrollbar_y};
+use crate::theme::{Palette, ScrollArea, palette};
 
 const LIST_H: f32 = 44.;
 const GRID_COL: f32 = 150.;
@@ -257,8 +257,7 @@ impl Shell {
                     .border_1()
                     .border_color(p.border_variant)
                     .overflow_hidden()
-                    .child(list)
-                    .child(scrollbar_y(&self.db.list_scroll))
+                    .child(self.db.list_motion.wrap(list, &self.db.list_scroll, cx))
                     .into_any_element()
             }
         };
@@ -526,7 +525,7 @@ impl Shell {
                     .bottom_0()
                     .left_0()
                     .right_0()
-                    .child(scrollbar_y(&self.db.list_scroll).viewport_from_layout()),
+                    .child(self.db.list_motion.overlay(&self.db.list_scroll, cx)),
             )
             .into_any_element()
     }
@@ -663,8 +662,7 @@ impl Shell {
                 .border_1()
                 .border_color(p.border_variant)
                 .overflow_hidden()
-                .child(list)
-                .child(scrollbar_y(&self.db.list_scroll))
+                .child(self.db.list_motion.wrap(list, &self.db.list_scroll, cx))
                 .into_any_element()
         };
         let detail = self.db.key.map(|k| self.db_key_detail(k, p, cx));
@@ -709,7 +707,15 @@ impl Shell {
                     .min_h_0()
                     .gap(px(16.))
                     .items_start()
-                    .child(div().flex_1().min_w_0().h_full().flex().flex_col().child(list))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .h_full()
+                            .flex()
+                            .flex_col()
+                            .child(self.db.list_motion.wrap(list, &self.db.list_scroll, cx)),
+                    )
                     .children(detail),
             )
             .into_any_element()
@@ -875,21 +881,24 @@ impl Shell {
                     .border_color(p.border_variant)
                     .overflow_hidden()
                     .child(
-                        uniform_list(
-                            "db-changes",
-                            items.len(),
-                            cx.processor(move |this, range: Range<usize>, _, cx| {
-                                let p = palette(cx);
-                                range
-                                    .filter_map(|i| shown.get(i).map(|it| (i, it)))
-                                    .map(|(i, it)| this.db_change_row(i, it, p, cx))
-                                    .collect::<Vec<_>>()
-                            }),
-                        )
-                        .flex_1()
-                        .track_scroll(&self.db.list_scroll),
-                    )
-                    .child(scrollbar_y(&self.db.list_scroll)),
+                        self.db.list_motion.wrap(
+                            uniform_list(
+                                "db-changes",
+                                items.len(),
+                                cx.processor(move |this, range: Range<usize>, _, cx| {
+                                    let p = palette(cx);
+                                    range
+                                        .filter_map(|i| shown.get(i).map(|it| (i, it)))
+                                        .map(|(i, it)| this.db_change_row(i, it, p, cx))
+                                        .collect::<Vec<_>>()
+                                }),
+                            )
+                            .flex_1()
+                            .track_scroll(&self.db.list_scroll),
+                            &self.db.list_scroll,
+                            cx,
+                        ),
+                    ),
             )
             .into_any_element()
     }

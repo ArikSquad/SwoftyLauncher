@@ -144,12 +144,6 @@ pub trait ScrollArea: ScrollableElement + Sized {
 
 impl<E: ScrollableElement> ScrollArea for E {}
 
-/// The launcher's scrollbar for a list that tracks its own scroll handle.
-#[track_caller]
-pub fn scrollbar_y(handle: &(impl ScrollbarHandle + Clone)) -> Scrollbar {
-    Scrollbar::vertical(handle)
-}
-
 #[track_caller]
 pub fn scrollbar_x(handle: &(impl ScrollbarHandle + Clone)) -> Scrollbar {
     Scrollbar::horizontal(handle)

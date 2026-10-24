@@ -256,14 +256,11 @@ impl Library {
             note(e);
             Profile::vanilla()
         });
-        let manifests = store.addons().unwrap_or_else(|e| {
-            note(e);
-            Default::default()
-        });
         let registry = store.registry().unwrap_or_else(|e| {
             note(e);
             Registry::default()
         });
+        let manifests = registry.manifests();
         let enabled: Vec<&str> = profile.enabled().collect();
         let mut addons: Vec<AddonItem> = manifests
             .values()
@@ -288,7 +285,7 @@ impl Library {
                 }
             })
             .collect();
-        addons.sort_by_key(|m| {
+        addons.sort_by_cached_key(|m| {
             let declared = registry.get(&m.manifest.id).is_none_or(|e| e.declared);
             (!m.manifest.is_builtin(), declared, m.manifest.name.to_lowercase())
         });

@@ -11,7 +11,6 @@ use std::time::{Duration, Instant};
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants};
-use gpui_kit::component::scroll::ScrollableElement;
 use gpui_kit::component::{ActiveTheme, Disableable, Sizable, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
@@ -230,11 +229,150 @@ fn fetch(root: &Path, shown: Vec<Post>) -> Fetched {
 pub struct News {
     pub posts: Vec<Post>,
     images: HashMap<String, Arc<Image>>,
+    blocks: Vec<Vec<Block>>,
+    revision: u64,
     checked: Option<Instant>,
     live: bool,
     saved: bool,
     fetching: bool,
     trouble: Option<Trouble>,
+}
+
+#[derive(Clone, Copy)]
+enum NewsRow {
+    Header(usize, bool),
+    Block(usize, usize),
+    Link(usize),
+    Separator,
+}
+
+#[derive(Clone, Copy)]
+enum StackedRow {
+    Banner,
+    ArticlesTop,
+    Article(usize),
+    ArticlesBottom,
+    ReleasesHeader,
+    Release(usize),
+    ReleasesBottom,
+}
+
+#[derive(Clone, Copy)]
+enum NewsPane {
+    Articles,
+    Releases,
+    Stacked,
+}
+
+pub(crate) struct NewsScroll {
+    articles: ListState,
+    releases: ListState,
+    stacked: ListState,
+    rows: Vec<NewsRow>,
+    stacked_rows: Vec<StackedRow>,
+    release_indices: Vec<usize>,
+    revision: Option<u64>,
+    short: bool,
+    stacked_layout: bool,
+    motion: [crate::scroll::SmoothScroll; 3],
+}
+
+impl Default for NewsScroll {
+    fn default() -> Self {
+        Self {
+            articles: ListState::new(0, ListAlignment::Top, px(200.)),
+            releases: ListState::new(0, ListAlignment::Top, px(100.)),
+            stacked: ListState::new(0, ListAlignment::Top, px(200.)),
+            rows: Vec::new(),
+            stacked_rows: Vec::new(),
+            release_indices: Vec::new(),
+            revision: None,
+            short: false,
+            stacked_layout: false,
+            motion: Default::default(),
+        }
+    }
+}
+
+impl NewsScroll {
+    pub(crate) fn cancel(&self) {
+        for motion in &self.motion {
+            motion.cancel();
+        }
+    }
+
+    fn list(&self, pane: NewsPane) -> &ListState {
+        match pane {
+            NewsPane::Articles => &self.articles,
+            NewsPane::Releases => &self.releases,
+            NewsPane::Stacked => &self.stacked,
+        }
+    }
+
+    fn sync(&mut self, news: &News, short: bool, stacked: bool) {
+        if self.stacked_layout != stacked {
+            self.stacked_layout = stacked;
+            self.cancel();
+        }
+        if self.short != short {
+            self.short = short;
+            if self.stacked.item_count() > 0 {
+                self.stacked.remeasure_items(0..1);
+            }
+        }
+        if self.revision == Some(news.revision) {
+            return;
+        }
+        self.cancel();
+        let first = self.revision.is_none();
+        self.revision = Some(news.revision);
+        self.rows.clear();
+        self.release_indices.clear();
+        for (i, post) in news.posts.iter().enumerate() {
+            if post.release() {
+                self.release_indices.push(i);
+                continue;
+            }
+            let first = self.rows.is_empty();
+            if !first {
+                self.rows.push(NewsRow::Separator);
+            }
+            self.rows.push(NewsRow::Header(i, first));
+            self.rows
+                .extend((0..news.blocks[i].len()).map(|b| NewsRow::Block(i, b)));
+            if post.url.as_deref().and_then(safe_url).is_some() {
+                self.rows.push(NewsRow::Link(i));
+            }
+        }
+        self.stacked_rows.clear();
+        self.stacked_rows
+            .extend([StackedRow::Banner, StackedRow::ArticlesTop]);
+        self.stacked_rows
+            .extend((0..self.rows.len()).map(StackedRow::Article));
+        self.stacked_rows
+            .extend([StackedRow::ArticlesBottom, StackedRow::ReleasesHeader]);
+        self.stacked_rows
+            .extend((0..self.release_indices.len()).map(StackedRow::Release));
+        self.stacked_rows.push(StackedRow::ReleasesBottom);
+        // Preserve the current item and its offset while remeasuring refreshed content.
+        for (state, count) in [
+            (&self.articles, self.rows.len()),
+            (&self.releases, self.release_indices.len()),
+            (&self.stacked, self.stacked_rows.len()),
+        ] {
+            if first {
+                state.reset_with_uniform_height(count, px(64.));
+                continue;
+            }
+            let old = state.item_count();
+            if count > old {
+                state.splice(old..old, count - old);
+            } else if count < old {
+                state.splice(count..old, 0);
+            }
+            state.remeasure_items(0..count);
+        }
+    }
 }
 
 impl News {
@@ -243,9 +381,14 @@ impl News {
             .ok()
             .and_then(|t| parse(&t))
             .unwrap_or_default();
+        let saved = !cached.is_empty();
+        let posts = merge(embedded(), cached);
+        let blocks = posts.iter().map(parsed_body).collect();
         Self {
-            saved: !cached.is_empty(),
-            posts: merge(embedded(), cached),
+            saved,
+            posts,
+            blocks,
+            revision: 0,
             images: HashMap::new(),
             checked: None,
             live: false,
@@ -345,13 +488,12 @@ fn rich(id: String, spans: &[Span], p: Palette, mono: &SharedString) -> AnyEleme
         .into_any_element()
 }
 
-fn body(post: &Post, p: Palette, mono: &SharedString) -> Vec<AnyElement> {
-    let blocks = if post.body.trim().is_empty() {
+fn parsed_body(post: &Post) -> Vec<Block> {
+    if post.body.trim().is_empty() {
         vec![Block::Paragraph(markdown::inline(&post.summary))]
     } else {
         markdown::parse(&post.body)
-    };
-    blocks_view(&format!("news-{}", post.id), &blocks, p, mono)
+    }
 }
 
 pub(crate) fn render_markdown(id: &str, text: &str, p: Palette, mono: &SharedString) -> Vec<AnyElement> {
@@ -359,87 +501,120 @@ pub(crate) fn render_markdown(id: &str, text: &str, p: Palette, mono: &SharedStr
 }
 
 fn blocks_view(prefix: &str, blocks: &[Block], p: Palette, mono: &SharedString) -> Vec<AnyElement> {
+    blocks
+        .iter()
+        .enumerate()
+        .map(|(i, block)| block_view(prefix, i, block, i.checked_sub(1).map(|j| &blocks[j]), p, mono))
+        .collect()
+}
+
+fn block_view(
+    prefix: &str,
+    i: usize,
+    block: &Block,
+    previous: Option<&Block>,
+    p: Palette,
+    mono: &SharedString,
+) -> AnyElement {
     let text = p.text.opacity(0.84);
-    let mut previous: Option<&Block> = None;
-    let mut out = Vec::with_capacity(blocks.len());
-    for (i, block) in blocks.iter().enumerate() {
-        let id = format!("{prefix}-{i}");
-        let top = match (previous, block) {
-            (None, _) => 0.,
-            (_, Block::Heading(..)) => 26.,
-            (Some(Block::Heading(..)), _) => 8.,
-            (Some(Block::Item { .. }), Block::Item { .. }) => 8.,
-            (_, Block::Rule) | (Some(Block::Rule), _) => 22.,
-            _ => 12.,
-        };
-        let el = match block {
-            Block::Heading(level, spans) => div()
-                .text_size(px(match level {
-                    1 => 21.,
-                    2 => 18.,
-                    _ => 15.5,
-                }))
-                .line_height(px(if *level <= 2 { 26. } else { 22. }))
-                .font_weight(FontWeight::BOLD)
-                .text_color(p.text)
-                .child(rich(id, spans, p, mono))
-                .into_any_element(),
-            Block::Paragraph(spans) => div()
-                .text_color(text)
-                .child(rich(id, spans, p, mono))
-                .into_any_element(),
-            Block::Item { depth, number, spans } => h_flex()
-                .items_start()
-                .gap(px(12.))
-                .pl(px(2. + 22. * *depth as f32))
-                .child(match number {
-                    Some(n) => div()
-                        .min_w(px(18.))
-                        .flex_shrink_0()
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(p.accent_hover)
-                        .child(format!("{n}.")),
-                    None => div()
-                        .mt(px((LINE - 6.) / 2.))
-                        .size(px(6.))
-                        .flex_shrink_0()
-                        .rounded_full()
-                        .bg(if *depth == 0 { p.accent } else { p.text_placeholder }),
-                })
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .text_color(text)
-                        .child(rich(id, spans, p, mono)),
-                )
-                .into_any_element(),
-            Block::Quote(spans) => div()
-                .pl(px(14.))
-                .border_l_2()
-                .border_color(p.accent)
-                .text_color(p.text_muted)
-                .child(rich(id, spans, p, mono))
-                .into_any_element(),
-            Block::Code(code) => div()
-                .px(px(14.))
-                .py(px(10.))
-                .rounded(px(6.))
-                .bg(p.chrome)
-                .border_1()
-                .border_color(p.border_variant)
-                .font_family(mono.clone())
-                .text_size(px(13.))
-                .line_height(px(20.))
-                .text_color(p.text)
-                .child(code.clone())
-                .into_any_element(),
-            Block::Rule => div().h(px(1.)).bg(p.border_variant).into_any_element(),
-        };
-        out.push(div().pt(px(top)).child(el).into_any_element());
-        previous = Some(block);
-    }
-    out
+    let id = format!("{prefix}-{i}");
+    let top = match (previous, block) {
+        (None, _) => 0.,
+        (_, Block::Heading(..)) => 26.,
+        (Some(Block::Heading(..)), _) => 8.,
+        (Some(Block::Item { .. }), Block::Item { .. }) => 8.,
+        (_, Block::Rule) | (Some(Block::Rule), _) => 22.,
+        _ => 12.,
+    };
+    let el = match block {
+        Block::Heading(level, spans) => div()
+            .text_size(px(match level {
+                1 => 21.,
+                2 => 18.,
+                _ => 15.5,
+            }))
+            .line_height(px(if *level <= 2 { 26. } else { 22. }))
+            .font_weight(FontWeight::BOLD)
+            .text_color(p.text)
+            .child(rich(id, spans, p, mono))
+            .into_any_element(),
+        Block::Paragraph(spans) => div()
+            .text_color(text)
+            .child(rich(id, spans, p, mono))
+            .into_any_element(),
+        Block::Item { depth, number, spans } => h_flex()
+            .items_start()
+            .gap(px(12.))
+            .pl(px(2. + 22. * *depth as f32))
+            .child(match number {
+                Some(n) => div()
+                    .min_w(px(18.))
+                    .flex_shrink_0()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(p.accent_hover)
+                    .child(format!("{n}.")),
+                None => div()
+                    .mt(px((LINE - 6.) / 2.))
+                    .size(px(6.))
+                    .flex_shrink_0()
+                    .rounded_full()
+                    .bg(if *depth == 0 { p.accent } else { p.text_placeholder }),
+            })
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .text_color(text)
+                    .child(rich(id, spans, p, mono)),
+            )
+            .into_any_element(),
+        Block::Quote(spans) => div()
+            .pl(px(14.))
+            .border_l_2()
+            .border_color(p.accent)
+            .text_color(p.text_muted)
+            .child(rich(id, spans, p, mono))
+            .into_any_element(),
+        Block::Code(code) => div()
+            .px(px(14.))
+            .py(px(10.))
+            .rounded(px(6.))
+            .bg(p.chrome)
+            .border_1()
+            .border_color(p.border_variant)
+            .font_family(mono.clone())
+            .text_size(px(13.))
+            .line_height(px(20.))
+            .text_color(p.text)
+            .child(code.clone())
+            .into_any_element(),
+        Block::Rule => div().h(px(1.)).bg(p.border_variant).into_any_element(),
+    };
+    div().pt(px(top)).child(el).into_any_element()
+}
+
+fn changelog_header(count: usize, p: Palette) -> Div {
+    h_flex()
+        .flex_shrink_0()
+        .px(px(16.))
+        .h(px(46.))
+        .gap(px(8.))
+        .items_center()
+        .border_b_1()
+        .border_color(p.border)
+        .child(
+            div()
+                .text_size(px(14.))
+                .font_weight(FontWeight::SEMIBOLD)
+                .child("Changelogs"),
+        )
+        .child(div().flex_1())
+        .child(
+            div()
+                .text_size(px(12.))
+                .text_color(p.text_placeholder)
+                .child(format!("{count} releases")),
+        )
 }
 
 fn changelog_row(post: &Post, first: bool, p: Palette) -> AnyElement {
@@ -538,11 +713,19 @@ impl Shell {
                 if let Some((_, e)) = &fetched.error {
                     eprintln!("swofty-launcher: could not check for news: {e}");
                 }
+                let mut changed = !fetched.images.is_empty();
                 if let Some(posts) = fetched.posts {
-                    news.posts = posts;
+                    if news.posts != posts {
+                        changed = true;
+                        news.blocks = posts.iter().map(parsed_body).collect();
+                        news.posts = posts;
+                    }
                     news.live = true;
                 }
                 news.images.extend(fetched.images);
+                if changed {
+                    news.revision = news.revision.wrapping_add(1);
+                }
                 cx.notify();
             })
             .ok();
@@ -562,26 +745,25 @@ impl Shell {
             .label("Refresh")
             .disabled(self.news.fetching)
             .on_click(cx.listener(|this, _, _, cx| this.fetch_news(cx)));
-        let mono = cx.theme().mono_font_family.clone();
         let stacked = self.content_width < STACK_BELOW;
         let side = (self.content_width * 0.32).clamp(260., 380.);
-        let posts = self.news_posts(p, &mono, stacked);
-        let changelogs = self.changelogs(p, stacked);
-        let columns = if stacked {
-            v_flex()
-                .flex_shrink_0()
-                .gap(px(16.))
-                .child(posts)
-                .child(changelogs)
-        } else {
-            h_flex()
-                .flex_1()
-                .min_h_0()
-                .items_stretch()
-                .gap(px(16.))
-                .child(posts)
-                .child(v_flex().w(px(side)).flex_shrink_0().min_h_0().child(changelogs))
-        };
+        self.news_scroll.sync(&self.news, short, stacked);
+        if stacked {
+            return v_flex()
+                .size_full()
+                .child(self.header(Page::News.label(), self.news.subtitle(), refresh, p))
+                .child(self.stacked_news(short, cx))
+                .into_any_element();
+        }
+        let posts = self.news_posts(p, cx);
+        let changelogs = self.changelogs(p, cx);
+        let columns = h_flex()
+            .flex_1()
+            .min_h_0()
+            .items_stretch()
+            .gap(px(16.))
+            .child(posts)
+            .child(v_flex().w(px(side)).flex_shrink_0().min_h_0().child(changelogs));
         let content = v_flex()
             .flex_1()
             .min_h_0()
@@ -604,29 +786,11 @@ impl Shell {
             .into_any_element()
     }
 
-    fn news_posts(&self, p: Palette, mono: &SharedString, stacked: bool) -> AnyElement {
-        let posts: Vec<&Post> = self.news.posts.iter().filter(|p| !p.release()).collect();
-        let mut articles = Vec::with_capacity(posts.len() * 2);
-        for (i, post) in posts.iter().enumerate() {
-            if i > 0 {
-                articles.push(
-                    div()
-                        .flex_shrink_0()
-                        .my(px(34.))
-                        .h(px(1.))
-                        .bg(p.border)
-                        .into_any_element(),
-                );
-            }
-            articles.push(self.article(post, i == 0, p, mono));
-        }
-        let inner = v_flex()
-            .id("news-posts")
-            .px(px(32.))
-            .pt(px(28.))
-            .pb(px(36.))
-            .when(posts.is_empty(), |d| d.child(empty("No news yet.", p)))
-            .children(articles);
+    fn news_scrollbar(&self, pane: NewsPane, cx: &Context<Self>) -> Div {
+        self.news_scroll.motion[pane as usize].overlay(self.news_scroll.list(pane), cx)
+    }
+
+    fn news_posts(&self, p: Palette, cx: &mut Context<Self>) -> AnyElement {
         let frame = v_flex()
             .relative()
             .rounded(px(10.))
@@ -634,35 +798,78 @@ impl Shell {
             .border_color(p.border)
             .bg(p.surface)
             .overflow_hidden();
-        if stacked {
-            return frame.flex_shrink_0().child(inner).into_any_element();
+        if self.news_scroll.rows.is_empty() {
+            return frame
+                .flex_1()
+                .child(empty("No news yet.", p).p(px(32.)))
+                .into_any_element();
         }
+        let scroll = &self.news_scroll.articles;
         frame
             .flex_1()
             .min_w_0()
             .min_h_0()
-            .child(inner.flex_1().min_h_0().overflow_y_scrollbar())
             .child(
-                div()
-                    .absolute()
-                    .left_0()
-                    .right(px(12.))
-                    .bottom_0()
-                    .h(px(32.))
-                    .rounded_b(px(10.))
-                    .bg(linear_gradient(
-                        180.,
-                        linear_color_stop(p.surface.opacity(0.), 0.),
-                        linear_color_stop(p.surface, 1.),
-                    )),
+                list(
+                    scroll.clone(),
+                    cx.processor(|this, i, _, cx| {
+                        let p = crate::theme::palette(cx);
+                        let mono = cx.theme().mono_font_family.clone();
+                        div()
+                            .w_full()
+                            .px(px(32.))
+                            // Include edge spacing in row measurements so virtualization
+                            // keeps partially visible rows until they leave the viewport.
+                            .when(i == 0, |d| d.pt(px(28.)))
+                            .when(i + 1 == this.news_scroll.rows.len(), |d| d.pb(px(36.)))
+                            .child(this.news_row(i, p, &mono))
+                            .into_any_element()
+                    }),
+                )
+                .flex_1()
+                .min_h_0(),
             )
+            .child(self.news_scrollbar(NewsPane::Articles, cx))
             .into_any_element()
     }
 
-    fn article(&self, post: &Post, first: bool, p: Palette, mono: &SharedString) -> AnyElement {
+    fn news_row(&self, i: usize, p: Palette, mono: &SharedString) -> AnyElement {
+        let Some(row) = self.news_scroll.rows.get(i) else {
+            return div().into_any_element();
+        };
+        let content = match *row {
+            NewsRow::Header(pi, first) => self.article_header(&self.news.posts[pi], first, p),
+            NewsRow::Block(pi, bi) => {
+                let blocks = &self.news.blocks[pi];
+                div()
+                    .text_size(px(TEXT))
+                    .line_height(px(LINE))
+                    .when(bi == 0, |d| d.pt(px(14.)))
+                    .child(block_view(
+                        &format!("news-{}", self.news.posts[pi].id),
+                        bi,
+                        &blocks[bi],
+                        bi.checked_sub(1).map(|j| &blocks[j]),
+                        p,
+                        mono,
+                    ))
+                    .into_any_element()
+            }
+            NewsRow::Link(pi) => self
+                .article_link(&self.news.posts[pi])
+                .unwrap_or_else(|| div().into_any_element()),
+            NewsRow::Separator => {
+                return div()
+                    .py(px(34.))
+                    .child(div().h(px(1.)).bg(p.border))
+                    .into_any_element();
+            }
+        };
+        div().w_full().max_w(px(780.)).child(content).into_any_element()
+    }
+
+    fn article_header(&self, post: &Post, first: bool, p: Palette) -> AnyElement {
         let image = post.image.as_ref().and_then(|u| self.news.images.get(u)).cloned();
-        let url = post.url.as_deref().and_then(safe_url);
-        let on_site = url.as_deref().is_some_and(|u| u.starts_with(SITE));
         v_flex()
             .flex_shrink_0()
             .w_full()
@@ -692,15 +899,16 @@ impl Shell {
                     .font_weight(FontWeight::BOLD)
                     .child(post.title.clone()),
             )
-            .child(
-                v_flex()
-                    .pt(px(14.))
-                    .text_size(px(TEXT))
-                    .line_height(px(LINE))
-                    .children(body(post, p, mono)),
-            )
-            .children(url.map(|url| {
-                h_flex().pt(px(24.)).child(
+            .into_any_element()
+    }
+
+    fn article_link(&self, post: &Post) -> Option<AnyElement> {
+        let url = post.url.as_deref().and_then(safe_url)?;
+        let on_site = url.starts_with(SITE);
+        Some(
+            h_flex()
+                .pt(px(24.))
+                .child(
                     Button::new(SharedString::from(format!("news-open-{}", post.id)))
                         .outline()
                         .small()
@@ -712,61 +920,123 @@ impl Shell {
                         })
                         .on_click(move |_, _, cx| cx.open_url(&url)),
                 )
-            }))
-            .into_any_element()
+                .into_any_element(),
+        )
     }
 
-    fn changelogs(&self, p: Palette, stacked: bool) -> AnyElement {
-        let releases: Vec<&Post> = self.news.posts.iter().filter(|p| p.release()).collect();
-        let count = releases.len();
-        let rows: Vec<AnyElement> = releases
-            .into_iter()
-            .enumerate()
-            .map(|(i, post)| changelog_row(post, i == 0, p))
-            .collect();
-        let list = v_flex()
-            .id("news-changelogs")
-            .when(rows.is_empty(), |d| {
-                d.child(empty("No release notes yet.", p).px(px(16.)).py(px(12.)))
-            })
-            .children(rows);
+    fn changelogs(&self, p: Palette, cx: &mut Context<Self>) -> AnyElement {
+        let scroll = &self.news_scroll.releases;
+        let count = self.news_scroll.release_indices.len();
         v_flex()
             .rounded(px(10.))
             .border_1()
             .border_color(p.border)
             .bg(p.surface)
             .overflow_hidden()
-            .when(!stacked, |d| d.flex_1().min_h_0())
+            .flex_1()
+            .min_h_0()
+            .child(changelog_header(count, p))
             .child(
-                h_flex()
-                    .flex_shrink_0()
-                    .px(px(16.))
-                    .h(px(46.))
-                    .gap(px(8.))
-                    .items_center()
-                    .border_b_1()
-                    .border_color(p.border)
+                div()
+                    .relative()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_h_0()
+                    .when(count == 0, |d| {
+                        d.child(empty("No release notes yet.", p).px(px(16.)).py(px(12.)))
+                    })
                     .child(
-                        div()
-                            .text_size(px(14.))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child("Changelogs"),
+                        list(
+                            scroll.clone(),
+                            cx.processor(|this, i, _, cx| {
+                                let p = crate::theme::palette(cx);
+                                this.news_scroll
+                                    .release_indices
+                                    .get(i)
+                                    .map(|&pi| changelog_row(&this.news.posts[pi], i == 0, p))
+                                    .unwrap_or_else(|| div().into_any_element())
+                            }),
+                        )
+                        .flex_1()
+                        .min_h_0(),
                     )
-                    .child(div().flex_1())
-                    .child(
-                        div()
-                            .text_size(px(12.))
-                            .text_color(p.text_placeholder)
-                            .child(format!("{count} releases")),
-                    ),
+                    .child(self.news_scrollbar(NewsPane::Releases, cx)),
             )
-            .map(|d| {
-                if stacked {
-                    d.child(list)
-                } else {
-                    d.child(list.flex_1().min_h_0().overflow_y_scrollbar())
-                }
-            })
+            .into_any_element()
+    }
+
+    fn stacked_news(&self, short: bool, cx: &mut Context<Self>) -> AnyElement {
+        let scroll = &self.news_scroll.stacked;
+        div()
+            .relative()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_h_0()
+            .child(
+                list(
+                    scroll.clone(),
+                    cx.processor(move |this, i, _, cx| {
+                        let p = crate::theme::palette(cx);
+                        let mono = cx.theme().mono_font_family.clone();
+                        let news = this.news_scroll.rows.len();
+                        let releases = this.news_scroll.release_indices.len();
+                        let panel = || div().bg(p.surface).border_x_1().border_color(p.border);
+                        let row = match this.news_scroll.stacked_rows[i] {
+                            StackedRow::Banner => div()
+                                .pb(px(16.))
+                                .child(crate::discord::banner(short))
+                                .into_any_element(),
+                            StackedRow::ArticlesTop => panel()
+                                .rounded_t(px(10.))
+                                .border_t_1()
+                                .pt(px(28.))
+                                .when(news == 0, |d| d.child(empty("No news yet.", p).px(px(32.))))
+                                .into_any_element(),
+                            StackedRow::Article(row) => panel()
+                                .px(px(32.))
+                                .child(this.news_row(row, p, &mono))
+                                .into_any_element(),
+                            StackedRow::ArticlesBottom => panel()
+                                .rounded_b(px(10.))
+                                .border_b_1()
+                                .h(px(36.))
+                                .mb(px(16.))
+                                .into_any_element(),
+                            StackedRow::ReleasesHeader => panel()
+                                .rounded_t(px(10.))
+                                .border_t_1()
+                                .child(changelog_header(releases, p))
+                                .when(releases == 0, |d| {
+                                    d.child(empty("No release notes yet.", p).px(px(16.)).py(px(12.)))
+                                })
+                                .into_any_element(),
+                            StackedRow::Release(ri) => {
+                                let pi = this.news_scroll.release_indices[ri];
+                                panel()
+                                    .child(changelog_row(&this.news.posts[pi], ri == 0, p))
+                                    .into_any_element()
+                            }
+                            StackedRow::ReleasesBottom => panel()
+                                .rounded_b(px(10.))
+                                .border_b_1()
+                                .h(px(1.))
+                                .into_any_element(),
+                        };
+                        div()
+                            .w_full()
+                            .px(px(GUTTER))
+                            .when(i == 0, |d| d.pt(px(4.)))
+                            .when(i + 1 == this.news_scroll.stacked_rows.len(), |d| d.pb(px(20.)))
+                            .child(row)
+                            .into_any_element()
+                    }),
+                )
+                .flex_1()
+                .min_h_0(),
+            )
+            .child(self.news_scrollbar(NewsPane::Stacked, cx))
             .into_any_element()
     }
 }

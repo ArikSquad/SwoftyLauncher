@@ -119,7 +119,7 @@ pub struct Shell {
     pub(crate) sliders: HashMap<String, SliderSlot>,
     pub(crate) requests: Option<SystemTime>,
     pub(crate) console: Option<AnyWindowHandle>,
-    pub(crate) views: HashMap<String, Result<View, String>>,
+    pub(crate) views: HashMap<String, Result<Arc<View>, String>>,
     pub(crate) views_profile: String,
     pub(crate) view_gen: u64,
     pub(crate) view_gens: HashMap<String, u64>,
@@ -146,6 +146,7 @@ pub struct Shell {
     pub(crate) addons: crate::addons::AddonsPage,
     pub(crate) db: crate::db::Db,
     pub(crate) news: crate::news::News,
+    pub(crate) news_scroll: crate::news::NewsScroll,
     pub(crate) browser: crate::browser::Browser,
     pub(crate) tools: crate::tools::Carousel,
     _console_closed: Subscription,
@@ -153,6 +154,49 @@ pub struct Shell {
     _live: Task<()>,
     _updates: Task<()>,
     _catalog: Task<()>,
+}
+
+pub(crate) struct Prepared {
+    store: Store,
+    library: Library,
+    news: crate::news::News,
+    config: swofty_core::session::Config,
+    recovered_seen: f64,
+    mods_blocked_seen: f64,
+    not_stock_seen: f64,
+    blocked_seen: f64,
+    launch_failed_seen: f64,
+}
+
+impl Prepared {
+    pub(crate) fn load() -> Self {
+        let store = Store::open_default().with_builtins(swofty_builtins::all());
+        let migrated = store.migrate();
+        swofty_core::usage::launcher_heartbeats(store.root.clone());
+        let recovered_seen = Notice::read(&store.root).map_or(0.0, |n| n.at);
+        let mods_blocked_seen = quarantine::Report::read(&store.root).map_or(0.0, |r| r.at);
+        let not_stock_seen = stock::Report::read(&store.root).map_or(0.0, |r| r.at);
+        let blocked_seen = game::blocked_at(&store.root).unwrap_or(0.0);
+        let launch_failed_seen = launch::Failure::read(&store.root).map_or(0.0, |f| f.at);
+        let mut library = Library::load(&store);
+        match migrated {
+            Ok(notes) => notes.iter().for_each(|n| eprintln!("swofty-launcher: {n}")),
+            Err(e) => library.error = Some(e.to_string()),
+        }
+        let config = store.config();
+        let news = crate::news::News::load(&store.root);
+        Self {
+            store,
+            library,
+            news,
+            config,
+            recovered_seen,
+            mods_blocked_seen,
+            not_stock_seen,
+            blocked_seen,
+            launch_failed_seen,
+        }
+    }
 }
 
 pub struct SliderSlot {
@@ -266,15 +310,20 @@ fn offline_terms(p: Palette) -> impl IntoElement {
 const REPAINT: Duration = Duration::from_secs(30);
 
 impl Shell {
-    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let store = Store::open_default().with_builtins(swofty_builtins::all());
-        let migrated = store.migrate();
-        swofty_core::usage::launcher_heartbeats(store.root.clone());
-        let recovered_seen = Notice::read(&store.root).map_or(0.0, |n| n.at);
-        let mods_blocked_seen = quarantine::Report::read(&store.root).map_or(0.0, |r| r.at);
-        let not_stock_seen = stock::Report::read(&store.root).map_or(0.0, |r| r.at);
-        let blocked_seen = game::blocked_at(&store.root).unwrap_or(0.0);
-        let launch_failed_seen = launch::Failure::read(&store.root).map_or(0.0, |f| f.at);
+    pub fn new(prepared: Prepared, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let Prepared {
+            store,
+            library,
+            news,
+            config,
+            recovered_seen,
+            mods_blocked_seen,
+            not_stock_seen,
+            blocked_seen,
+            launch_failed_seen,
+        } = prepared;
+        let vr_profiles = config.vr_profiles;
+        let start_store = config.launch.start_store;
         let stale = store.clone();
         cx.background_executor()
             .spawn(async move {
@@ -327,15 +376,6 @@ impl Shell {
         let console_closed = cx.on_window_closed(move |cx, id| {
             shell.update(cx, |s, cx| s.console_closed(id, cx)).ok();
         });
-        let mut library = Library::load(&store);
-        match migrated {
-            Ok(notes) => notes.iter().for_each(|n| eprintln!("swofty-launcher: {n}")),
-            Err(e) => library.error = Some(e.to_string()),
-        }
-        let config = store.config();
-        let vr_profiles = config.vr_profiles;
-        let start_store = config.launch.start_store;
-        let news = crate::news::News::load(&store.root);
         let browser = crate::browser::Browser::new(&store.root, window, cx);
         let catalog = Self::watch_catalog(cx);
         let mut shell = Self {
@@ -392,6 +432,7 @@ impl Shell {
             addons: crate::addons::AddonsPage::new(window, cx),
             db: crate::db::Db::new(cx),
             news,
+            news_scroll: Default::default(),
             browser,
             tools: Default::default(),
             _console_closed: console_closed,
@@ -1051,7 +1092,18 @@ impl Shell {
         )
     }
 
+    pub(crate) fn cancel_scroll(&self) {
+        self.news_scroll.cancel();
+        self.addons.cancel_scroll();
+        self.browser.smooth.cancel();
+        self.db.rows_motion.cancel();
+        self.db.list_motion.cancel();
+    }
+
     pub(crate) fn open_page(&mut self, page: Page, cx: &mut Context<Self>) {
+        if self.page != page {
+            self.cancel_scroll();
+        }
         self.db_leaving(page, cx);
         self.page = page;
         if let Some(i) = self.open_section().filter(|i| !self.section_loaded(*i)) {
