@@ -3491,6 +3491,1095 @@
     "colour_3_default": "-4129275",
     "colour_4_default": "0"
    }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.suits",
+   "from": "customisation.custom_avatar.suits.Suit[_metadata_=2025-mercedes]",
+   "set": {
+    "_metadata_": "cs17-mercedes",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/team_livery/cs17-mercedes/cs17-mercedes.assetgroup",
+    "feet_model": "eaid://[CHARACTER_PACKAGE]/team_livery/cs17-mercedes/idf/cs17-mercedes_male",
+    "logos_model_override_pattern": "eaid://[CHARACTER_PACKAGE]/team_livery/cs17-mercedes/idf/cs17-mercedes_body_logos_[GENDER]",
+    "material_override": "cs17-mercedes",
+    "id": "1108",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.gloves",
+   "from": "customisation.custom_avatar.gloves.Gloves[_metadata_=2025-mercedes]",
+   "set": {
+    "_metadata_": "cs17-mercedes",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/team_livery/cs17-mercedes/cs17-mercedes.assetgroup",
+    "logos_model": "eaid://[CHARACTER_PACKAGE]/team_livery/cs17-mercedes/idf/cs17-mercedes_glove_logos_[GENDER]",
+    "material_override": "cs17-mercedes",
+    "id": "1108",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.suits",
+   "from": "customisation.custom_avatar.suits.Suit[_metadata_=2025-mercedes_andrea-kimi_antonelli]",
+   "set": {
+    "_metadata_": "cs17-mercedes_andrea-kimi_antonelli",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-mercedes_andrea-kimi_antonelli/andrea-kimi_antonelli.assetgroup",
+    "feet_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-mercedes_andrea-kimi_antonelli/idf/andrea-kimi_antonelli",
+    "logos_model_override_pattern": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-mercedes_andrea-kimi_antonelli/idf/andrea-kimi_antonelli_body_logos",
+    "material_override": "cs17-mercedes_andrea-kimi_antonelli",
+    "id": "1109",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.gloves",
+   "from": "customisation.custom_avatar.gloves.Gloves[_metadata_=2025-mercedes_andrea-kimi_antonelli]",
+   "set": {
+    "_metadata_": "cs17-mercedes_andrea-kimi_antonelli",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-mercedes_andrea-kimi_antonelli/andrea-kimi_antonelli.assetgroup",
+    "logos_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-mercedes_andrea-kimi_antonelli/idf/andrea-kimi_antonelli_glove_logos",
+    "material_override": "cs17-mercedes_andrea-kimi_antonelli",
+    "id": "1109",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.suits",
+   "from": "customisation.custom_avatar.suits.Suit[_metadata_=2025-mercedes_george_russell]",
+   "set": {
+    "_metadata_": "cs17-mercedes_george_russell",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-mercedes_george_russell/george_russell.assetgroup",
+    "feet_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-mercedes_george_russell/idf/george_russell",
+    "logos_model_override_pattern": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-mercedes_george_russell/idf/george_russell_body_logos",
+    "material_override": "cs17-mercedes_george_russell",
+    "id": "1110",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.gloves",
+   "from": "customisation.custom_avatar.gloves.Gloves[_metadata_=2025-mercedes_george_russell]",
+   "set": {
+    "_metadata_": "cs17-mercedes_george_russell",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-mercedes_george_russell/george_russell.assetgroup",
+    "logos_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-mercedes_george_russell/idf/george_russell_glove_logos",
+    "material_override": "cs17-mercedes_george_russell",
+    "id": "1110",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.suits",
+   "from": "customisation.custom_avatar.suits.Suit[_metadata_=2025-redbull]",
+   "set": {
+    "_metadata_": "cs17-redbull",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/team_livery/cs17-redbull/cs17-redbull.assetgroup",
+    "feet_model": "eaid://[CHARACTER_PACKAGE]/team_livery/cs17-redbull/idf/cs17-redbull_male",
+    "logos_model_override_pattern": "eaid://[CHARACTER_PACKAGE]/team_livery/cs17-redbull/idf/cs17-redbull_body_logos_[GENDER]",
+    "material_override": "cs17-redbull",
+    "id": "1111",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.gloves",
+   "from": "customisation.custom_avatar.gloves.Gloves[_metadata_=2025-redbull]",
+   "set": {
+    "_metadata_": "cs17-redbull",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/team_livery/cs17-redbull/cs17-redbull.assetgroup",
+    "logos_model": "eaid://[CHARACTER_PACKAGE]/team_livery/cs17-redbull/idf/cs17-redbull_glove_logos_[GENDER]",
+    "material_override": "cs17-redbull",
+    "id": "1111",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.suits",
+   "from": "customisation.custom_avatar.suits.Suit[_metadata_=2025-redbull_liam_lawson]",
+   "set": {
+    "_metadata_": "cs17-redbull_liam_lawson",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-redbull_liam_lawson/liam_lawson.assetgroup",
+    "feet_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-redbull_liam_lawson/idf/liam_lawson",
+    "logos_model_override_pattern": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-redbull_liam_lawson/idf/liam_lawson_body_logos",
+    "material_override": "cs17-redbull_liam_lawson",
+    "id": "1112",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.gloves",
+   "from": "customisation.custom_avatar.gloves.Gloves[_metadata_=2025-redbull_liam_lawson]",
+   "set": {
+    "_metadata_": "cs17-redbull_liam_lawson",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-redbull_liam_lawson/liam_lawson.assetgroup",
+    "logos_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-redbull_liam_lawson/idf/liam_lawson_glove_logos",
+    "material_override": "cs17-redbull_liam_lawson",
+    "id": "1112",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.suits",
+   "from": "customisation.custom_avatar.suits.Suit[_metadata_=2025-redbull_max_verstappen]",
+   "set": {
+    "_metadata_": "cs17-redbull_max_verstappen",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-redbull_max_verstappen/max_verstappen.assetgroup",
+    "feet_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-redbull_max_verstappen/idf/max_verstappen",
+    "logos_model_override_pattern": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-redbull_max_verstappen/idf/max_verstappen_body_logos",
+    "material_override": "cs17-redbull_max_verstappen",
+    "id": "1113",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.gloves",
+   "from": "customisation.custom_avatar.gloves.Gloves[_metadata_=2025-redbull_max_verstappen]",
+   "set": {
+    "_metadata_": "cs17-redbull_max_verstappen",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-redbull_max_verstappen/max_verstappen.assetgroup",
+    "logos_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-redbull_max_verstappen/idf/max_verstappen_glove_logos",
+    "material_override": "cs17-redbull_max_verstappen",
+    "id": "1113",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.suits",
+   "from": "customisation.custom_avatar.suits.Suit[_metadata_=2025-ferrari]",
+   "set": {
+    "_metadata_": "cs17-ferrari",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/team_livery/cs17-ferrari/cs17-ferrari.assetgroup",
+    "feet_model": "eaid://[CHARACTER_PACKAGE]/team_livery/cs17-ferrari/idf/cs17-ferrari_male",
+    "logos_model_override_pattern": "eaid://[CHARACTER_PACKAGE]/team_livery/cs17-ferrari/idf/cs17-ferrari_body_logos_[GENDER]",
+    "material_override": "cs17-ferrari",
+    "id": "1114",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.gloves",
+   "from": "customisation.custom_avatar.gloves.Gloves[_metadata_=2025-ferrari]",
+   "set": {
+    "_metadata_": "cs17-ferrari",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/team_livery/cs17-ferrari/cs17-ferrari.assetgroup",
+    "logos_model": "eaid://[CHARACTER_PACKAGE]/team_livery/cs17-ferrari/idf/cs17-ferrari_glove_logos_[GENDER]",
+    "material_override": "cs17-ferrari",
+    "id": "1114",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.suits",
+   "from": "customisation.custom_avatar.suits.Suit[_metadata_=2025-ferrari_charles_leclerc]",
+   "set": {
+    "_metadata_": "cs17-ferrari_charles_leclerc",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-ferrari_charles_leclerc/charles_leclerc.assetgroup",
+    "feet_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-ferrari_charles_leclerc/idf/charles_leclerc",
+    "logos_model_override_pattern": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-ferrari_charles_leclerc/idf/charles_leclerc_body_logos",
+    "material_override": "cs17-ferrari_charles_leclerc",
+    "id": "1115",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.gloves",
+   "from": "customisation.custom_avatar.gloves.Gloves[_metadata_=2025-ferrari_charles_leclerc]",
+   "set": {
+    "_metadata_": "cs17-ferrari_charles_leclerc",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-ferrari_charles_leclerc/charles_leclerc.assetgroup",
+    "logos_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-ferrari_charles_leclerc/idf/charles_leclerc_glove_logos",
+    "material_override": "cs17-ferrari_charles_leclerc",
+    "id": "1115",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.suits",
+   "from": "customisation.custom_avatar.suits.Suit[_metadata_=2025-ferrari_lewis_hamilton]",
+   "set": {
+    "_metadata_": "cs17-ferrari_lewis_hamilton",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-ferrari_lewis_hamilton/lewis_hamilton.assetgroup",
+    "feet_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-ferrari_lewis_hamilton/idf/lewis_hamilton",
+    "logos_model_override_pattern": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-ferrari_lewis_hamilton/idf/lewis_hamilton_body_logos",
+    "material_override": "cs17-ferrari_lewis_hamilton",
+    "id": "1116",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.gloves",
+   "from": "customisation.custom_avatar.gloves.Gloves[_metadata_=2025-ferrari_lewis_hamilton]",
+   "set": {
+    "_metadata_": "cs17-ferrari_lewis_hamilton",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-ferrari_lewis_hamilton/lewis_hamilton.assetgroup",
+    "logos_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-ferrari_lewis_hamilton/idf/lewis_hamilton_glove_logos",
+    "material_override": "cs17-ferrari_lewis_hamilton",
+    "id": "1116",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.suits",
+   "from": "customisation.custom_avatar.suits.Suit[_metadata_=2025-williams]",
+   "set": {
+    "_metadata_": "cs17-williams",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/team_livery/cs17-williams/cs17-williams.assetgroup",
+    "feet_model": "eaid://[CHARACTER_PACKAGE]/team_livery/cs17-williams/idf/cs17-williams_male",
+    "logos_model_override_pattern": "eaid://[CHARACTER_PACKAGE]/team_livery/cs17-williams/idf/cs17-williams_body_logos_[GENDER]",
+    "material_override": "cs17-williams",
+    "id": "1117",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.gloves",
+   "from": "customisation.custom_avatar.gloves.Gloves[_metadata_=2025-williams]",
+   "set": {
+    "_metadata_": "cs17-williams",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/team_livery/cs17-williams/cs17-williams.assetgroup",
+    "logos_model": "eaid://[CHARACTER_PACKAGE]/team_livery/cs17-williams/idf/cs17-williams_glove_logos_[GENDER]",
+    "material_override": "cs17-williams",
+    "id": "1117",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.suits",
+   "from": "customisation.custom_avatar.suits.Suit[_metadata_=2025-williams_alex_albon]",
+   "set": {
+    "_metadata_": "cs17-williams_alex_albon",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-williams_alex_albon/alex_albon.assetgroup",
+    "feet_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-williams_alex_albon/idf/alex_albon",
+    "logos_model_override_pattern": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-williams_alex_albon/idf/alex_albon_body_logos",
+    "material_override": "cs17-williams_alex_albon",
+    "id": "1118",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.gloves",
+   "from": "customisation.custom_avatar.gloves.Gloves[_metadata_=2025-williams_alex_albon]",
+   "set": {
+    "_metadata_": "cs17-williams_alex_albon",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-williams_alex_albon/alex_albon.assetgroup",
+    "logos_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-williams_alex_albon/idf/alex_albon_glove_logos",
+    "material_override": "cs17-williams_alex_albon",
+    "id": "1118",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.suits",
+   "from": "customisation.custom_avatar.suits.Suit[_metadata_=2025-williams_carlos_sainz-jr]",
+   "set": {
+    "_metadata_": "cs17-williams_carlos_sainz-jr",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-williams_carlos_sainz-jr/carlos_sainz-jr.assetgroup",
+    "feet_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-williams_carlos_sainz-jr/idf/carlos_sainz-jr",
+    "logos_model_override_pattern": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-williams_carlos_sainz-jr/idf/carlos_sainz-jr_body_logos",
+    "material_override": "cs17-williams_carlos_sainz-jr",
+    "id": "1119",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.gloves",
+   "from": "customisation.custom_avatar.gloves.Gloves[_metadata_=2025-williams_carlos_sainz-jr]",
+   "set": {
+    "_metadata_": "cs17-williams_carlos_sainz-jr",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-williams_carlos_sainz-jr/carlos_sainz-jr.assetgroup",
+    "logos_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-williams_carlos_sainz-jr/idf/carlos_sainz-jr_glove_logos",
+    "material_override": "cs17-williams_carlos_sainz-jr",
+    "id": "1119",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.suits",
+   "from": "customisation.custom_avatar.suits.Suit[_metadata_=2025-forceindia]",
+   "set": {
+    "_metadata_": "cs17-forceindia",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/team_livery/cs17-forceindia/cs17-forceindia.assetgroup",
+    "feet_model": "eaid://[CHARACTER_PACKAGE]/team_livery/cs17-forceindia/idf/cs17-forceindia_male",
+    "logos_model_override_pattern": "eaid://[CHARACTER_PACKAGE]/team_livery/cs17-forceindia/idf/cs17-forceindia_body_logos_[GENDER]",
+    "material_override": "cs17-forceindia",
+    "id": "1120",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.gloves",
+   "from": "customisation.custom_avatar.gloves.Gloves[_metadata_=2025-forceindia]",
+   "set": {
+    "_metadata_": "cs17-forceindia",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/team_livery/cs17-forceindia/cs17-forceindia.assetgroup",
+    "logos_model": "eaid://[CHARACTER_PACKAGE]/team_livery/cs17-forceindia/idf/cs17-forceindia_glove_logos_[GENDER]",
+    "material_override": "cs17-forceindia",
+    "id": "1120",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.suits",
+   "from": "customisation.custom_avatar.suits.Suit[_metadata_=2025-forceindia_fernando_alonso]",
+   "set": {
+    "_metadata_": "cs17-forceindia_fernando_alonso",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-forceindia_fernando_alonso/fernando_alonso.assetgroup",
+    "feet_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-forceindia_fernando_alonso/idf/fernando_alonso",
+    "logos_model_override_pattern": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-forceindia_fernando_alonso/idf/fernando_alonso_body_logos",
+    "material_override": "cs17-forceindia_fernando_alonso",
+    "id": "1121",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.gloves",
+   "from": "customisation.custom_avatar.gloves.Gloves[_metadata_=2025-forceindia_fernando_alonso]",
+   "set": {
+    "_metadata_": "cs17-forceindia_fernando_alonso",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-forceindia_fernando_alonso/fernando_alonso.assetgroup",
+    "logos_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-forceindia_fernando_alonso/idf/fernando_alonso_glove_logos",
+    "material_override": "cs17-forceindia_fernando_alonso",
+    "id": "1121",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.suits",
+   "from": "customisation.custom_avatar.suits.Suit[_metadata_=2025-forceindia_lance_stroll]",
+   "set": {
+    "_metadata_": "cs17-forceindia_lance_stroll",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-forceindia_lance_stroll/lance_stroll.assetgroup",
+    "feet_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-forceindia_lance_stroll/idf/lance_stroll",
+    "logos_model_override_pattern": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-forceindia_lance_stroll/idf/lance_stroll_body_logos",
+    "material_override": "cs17-forceindia_lance_stroll",
+    "id": "1122",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.gloves",
+   "from": "customisation.custom_avatar.gloves.Gloves[_metadata_=2025-forceindia_lance_stroll]",
+   "set": {
+    "_metadata_": "cs17-forceindia_lance_stroll",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-forceindia_lance_stroll/lance_stroll.assetgroup",
+    "logos_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-forceindia_lance_stroll/idf/lance_stroll_glove_logos",
+    "material_override": "cs17-forceindia_lance_stroll",
+    "id": "1122",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.suits",
+   "from": "customisation.custom_avatar.suits.Suit[_metadata_=2025-renault]",
+   "set": {
+    "_metadata_": "cs17-renault",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/team_livery/cs17-renault/cs17-renault.assetgroup",
+    "feet_model": "eaid://[CHARACTER_PACKAGE]/team_livery/cs17-renault/idf/cs17-renault_male",
+    "logos_model_override_pattern": "eaid://[CHARACTER_PACKAGE]/team_livery/cs17-renault/idf/cs17-renault_body_logos_[GENDER]",
+    "material_override": "cs17-renault",
+    "id": "1123",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.gloves",
+   "from": "customisation.custom_avatar.gloves.Gloves[_metadata_=2025-renault]",
+   "set": {
+    "_metadata_": "cs17-renault",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/team_livery/cs17-renault/cs17-renault.assetgroup",
+    "logos_model": "eaid://[CHARACTER_PACKAGE]/team_livery/cs17-renault/idf/cs17-renault_glove_logos_[GENDER]",
+    "material_override": "cs17-renault",
+    "id": "1123",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.suits",
+   "from": "customisation.custom_avatar.suits.Suit[_metadata_=2025-renault_franco_colapinto]",
+   "set": {
+    "_metadata_": "cs17-renault_franco_colapinto",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-renault_franco_colapinto/franco_colapinto.assetgroup",
+    "feet_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-renault_franco_colapinto/idf/franco_colapinto",
+    "logos_model_override_pattern": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-renault_franco_colapinto/idf/franco_colapinto_body_logos",
+    "material_override": "cs17-renault_franco_colapinto",
+    "id": "1124",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.gloves",
+   "from": "customisation.custom_avatar.gloves.Gloves[_metadata_=2025-renault_franco_colapinto]",
+   "set": {
+    "_metadata_": "cs17-renault_franco_colapinto",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-renault_franco_colapinto/franco_colapinto.assetgroup",
+    "logos_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-renault_franco_colapinto/idf/franco_colapinto_glove_logos",
+    "material_override": "cs17-renault_franco_colapinto",
+    "id": "1124",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.suits",
+   "from": "customisation.custom_avatar.suits.Suit[_metadata_=2025-renault_jack_doohan]",
+   "set": {
+    "_metadata_": "cs17-renault_jack_doohan",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-renault_jack_doohan/jack_doohan.assetgroup",
+    "feet_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-renault_jack_doohan/idf/jack_doohan",
+    "logos_model_override_pattern": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-renault_jack_doohan/idf/jack_doohan_body_logos",
+    "material_override": "cs17-renault_jack_doohan",
+    "id": "1125",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.gloves",
+   "from": "customisation.custom_avatar.gloves.Gloves[_metadata_=2025-renault_jack_doohan]",
+   "set": {
+    "_metadata_": "cs17-renault_jack_doohan",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-renault_jack_doohan/jack_doohan.assetgroup",
+    "logos_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-renault_jack_doohan/idf/jack_doohan_glove_logos",
+    "material_override": "cs17-renault_jack_doohan",
+    "id": "1125",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.suits",
+   "from": "customisation.custom_avatar.suits.Suit[_metadata_=2025-tororosso]",
+   "set": {
+    "_metadata_": "cs17-tororosso",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/team_livery/cs17-tororosso/cs17-tororosso.assetgroup",
+    "feet_model": "eaid://[CHARACTER_PACKAGE]/team_livery/cs17-tororosso/idf/cs17-tororosso_male",
+    "logos_model_override_pattern": "eaid://[CHARACTER_PACKAGE]/team_livery/cs17-tororosso/idf/cs17-tororosso_body_logos_[GENDER]",
+    "material_override": "cs17-tororosso",
+    "id": "1126",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.gloves",
+   "from": "customisation.custom_avatar.gloves.Gloves[_metadata_=2025-tororosso]",
+   "set": {
+    "_metadata_": "cs17-tororosso",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/team_livery/cs17-tororosso/cs17-tororosso.assetgroup",
+    "logos_model": "eaid://[CHARACTER_PACKAGE]/team_livery/cs17-tororosso/idf/cs17-tororosso_glove_logos_[GENDER]",
+    "material_override": "cs17-tororosso",
+    "id": "1126",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.suits",
+   "from": "customisation.custom_avatar.suits.Suit[_metadata_=2025-tororosso_isack_hadjar]",
+   "set": {
+    "_metadata_": "cs17-tororosso_isack_hadjar",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-tororosso_isack_hadjar/isack_hadjar.assetgroup",
+    "feet_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-tororosso_isack_hadjar/idf/isack_hadjar",
+    "logos_model_override_pattern": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-tororosso_isack_hadjar/idf/isack_hadjar_body_logos",
+    "material_override": "cs17-tororosso_isack_hadjar",
+    "id": "1127",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.gloves",
+   "from": "customisation.custom_avatar.gloves.Gloves[_metadata_=2025-tororosso_isack_hadjar]",
+   "set": {
+    "_metadata_": "cs17-tororosso_isack_hadjar",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-tororosso_isack_hadjar/isack_hadjar.assetgroup",
+    "logos_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-tororosso_isack_hadjar/idf/isack_hadjar_glove_logos",
+    "material_override": "cs17-tororosso_isack_hadjar",
+    "id": "1127",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.suits",
+   "from": "customisation.custom_avatar.suits.Suit[_metadata_=2025-tororosso_liam_lawson]",
+   "set": {
+    "_metadata_": "cs17-tororosso_liam_lawson",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-tororosso_liam_lawson/liam_lawson.assetgroup",
+    "feet_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-tororosso_liam_lawson/idf/liam_lawson",
+    "logos_model_override_pattern": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-tororosso_liam_lawson/idf/liam_lawson_body_logos",
+    "material_override": "cs17-tororosso_liam_lawson",
+    "id": "1128",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.gloves",
+   "from": "customisation.custom_avatar.gloves.Gloves[_metadata_=2025-tororosso_liam_lawson]",
+   "set": {
+    "_metadata_": "cs17-tororosso_liam_lawson",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-tororosso_liam_lawson/liam_lawson.assetgroup",
+    "logos_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-tororosso_liam_lawson/idf/liam_lawson_glove_logos",
+    "material_override": "cs17-tororosso_liam_lawson",
+    "id": "1128",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.suits",
+   "from": "customisation.custom_avatar.suits.Suit[_metadata_=2025-sauber]",
+   "set": {
+    "_metadata_": "cs17-sauber",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/team_livery/cs17-sauber/cs17-sauber.assetgroup",
+    "feet_model": "eaid://[CHARACTER_PACKAGE]/team_livery/cs17-sauber/idf/cs17-sauber_male",
+    "logos_model_override_pattern": "eaid://[CHARACTER_PACKAGE]/team_livery/cs17-sauber/idf/cs17-sauber_body_logos_[GENDER]",
+    "material_override": "cs17-sauber",
+    "id": "1129",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.gloves",
+   "from": "customisation.custom_avatar.gloves.Gloves[_metadata_=2025-sauber]",
+   "set": {
+    "_metadata_": "cs17-sauber",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/team_livery/cs17-sauber/cs17-sauber.assetgroup",
+    "logos_model": "eaid://[CHARACTER_PACKAGE]/team_livery/cs17-sauber/idf/cs17-sauber_glove_logos_[GENDER]",
+    "material_override": "cs17-sauber",
+    "id": "1129",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.suits",
+   "from": "customisation.custom_avatar.suits.Suit[_metadata_=2025-sauber_gabriel_bortoleto]",
+   "set": {
+    "_metadata_": "cs17-sauber_gabriel_bortoleto",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-sauber_gabriel_bortoleto/gabriel_bortoleto.assetgroup",
+    "feet_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-sauber_gabriel_bortoleto/idf/gabriel_bortoleto",
+    "logos_model_override_pattern": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-sauber_gabriel_bortoleto/idf/gabriel_bortoleto_body_logos",
+    "material_override": "cs17-sauber_gabriel_bortoleto",
+    "id": "1130",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.gloves",
+   "from": "customisation.custom_avatar.gloves.Gloves[_metadata_=2025-sauber_gabriel_bortoleto]",
+   "set": {
+    "_metadata_": "cs17-sauber_gabriel_bortoleto",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-sauber_gabriel_bortoleto/gabriel_bortoleto.assetgroup",
+    "logos_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-sauber_gabriel_bortoleto/idf/gabriel_bortoleto_glove_logos",
+    "material_override": "cs17-sauber_gabriel_bortoleto",
+    "id": "1130",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.suits",
+   "from": "customisation.custom_avatar.suits.Suit[_metadata_=2025-sauber_nico_hulkenberg]",
+   "set": {
+    "_metadata_": "cs17-sauber_nico_hulkenberg",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-sauber_nico_hulkenberg/nico_hulkenberg.assetgroup",
+    "feet_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-sauber_nico_hulkenberg/idf/nico_hulkenberg",
+    "logos_model_override_pattern": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-sauber_nico_hulkenberg/idf/nico_hulkenberg_body_logos",
+    "material_override": "cs17-sauber_nico_hulkenberg",
+    "id": "1131",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.gloves",
+   "from": "customisation.custom_avatar.gloves.Gloves[_metadata_=2025-sauber_nico_hulkenberg]",
+   "set": {
+    "_metadata_": "cs17-sauber_nico_hulkenberg",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-sauber_nico_hulkenberg/nico_hulkenberg.assetgroup",
+    "logos_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-sauber_nico_hulkenberg/idf/nico_hulkenberg_glove_logos",
+    "material_override": "cs17-sauber_nico_hulkenberg",
+    "id": "1131",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.suits",
+   "from": "customisation.custom_avatar.suits.Suit[_metadata_=2025-mclaren]",
+   "set": {
+    "_metadata_": "cs17-mclaren",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/team_livery/cs17-mclaren/cs17-mclaren.assetgroup",
+    "feet_model": "eaid://[CHARACTER_PACKAGE]/team_livery/cs17-mclaren/idf/cs17-mclaren_male",
+    "logos_model_override_pattern": "eaid://[CHARACTER_PACKAGE]/team_livery/cs17-mclaren/idf/cs17-mclaren_body_logos_[GENDER]",
+    "material_override": "cs17-mclaren",
+    "id": "1132",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.gloves",
+   "from": "customisation.custom_avatar.gloves.Gloves[_metadata_=2025-mclaren]",
+   "set": {
+    "_metadata_": "cs17-mclaren",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/team_livery/cs17-mclaren/cs17-mclaren.assetgroup",
+    "logos_model": "eaid://[CHARACTER_PACKAGE]/team_livery/cs17-mclaren/idf/cs17-mclaren_glove_logos_[GENDER]",
+    "material_override": "cs17-mclaren",
+    "id": "1132",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.suits",
+   "from": "customisation.custom_avatar.suits.Suit[_metadata_=2025-mclaren_lando_norris]",
+   "set": {
+    "_metadata_": "cs17-mclaren_lando_norris",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-mclaren_lando_norris/lando_norris.assetgroup",
+    "feet_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-mclaren_lando_norris/idf/lando_norris",
+    "logos_model_override_pattern": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-mclaren_lando_norris/idf/lando_norris_body_logos",
+    "material_override": "cs17-mclaren_lando_norris",
+    "id": "1133",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.gloves",
+   "from": "customisation.custom_avatar.gloves.Gloves[_metadata_=2025-mclaren_lando_norris]",
+   "set": {
+    "_metadata_": "cs17-mclaren_lando_norris",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-mclaren_lando_norris/lando_norris.assetgroup",
+    "logos_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-mclaren_lando_norris/idf/lando_norris_glove_logos",
+    "material_override": "cs17-mclaren_lando_norris",
+    "id": "1133",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.suits",
+   "from": "customisation.custom_avatar.suits.Suit[_metadata_=2025-mclaren_oscar_piastri]",
+   "set": {
+    "_metadata_": "cs17-mclaren_oscar_piastri",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-mclaren_oscar_piastri/oscar_piastri.assetgroup",
+    "feet_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-mclaren_oscar_piastri/idf/oscar_piastri",
+    "logos_model_override_pattern": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-mclaren_oscar_piastri/idf/oscar_piastri_body_logos",
+    "material_override": "cs17-mclaren_oscar_piastri",
+    "id": "1134",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.gloves",
+   "from": "customisation.custom_avatar.gloves.Gloves[_metadata_=2025-mclaren_oscar_piastri]",
+   "set": {
+    "_metadata_": "cs17-mclaren_oscar_piastri",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-mclaren_oscar_piastri/oscar_piastri.assetgroup",
+    "logos_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-mclaren_oscar_piastri/idf/oscar_piastri_glove_logos",
+    "material_override": "cs17-mclaren_oscar_piastri",
+    "id": "1134",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.suits",
+   "from": "customisation.custom_avatar.suits.Suit[_metadata_=2025-haas]",
+   "set": {
+    "_metadata_": "cs17-haas",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/team_livery/cs17-haas/cs17-haas.assetgroup",
+    "feet_model": "eaid://[CHARACTER_PACKAGE]/team_livery/cs17-haas/idf/cs17-haas_male",
+    "logos_model_override_pattern": "eaid://[CHARACTER_PACKAGE]/team_livery/cs17-haas/idf/cs17-haas_body_logos_[GENDER]",
+    "material_override": "cs17-haas",
+    "id": "1135",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.gloves",
+   "from": "customisation.custom_avatar.gloves.Gloves[_metadata_=2025-haas]",
+   "set": {
+    "_metadata_": "cs17-haas",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/team_livery/cs17-haas/cs17-haas.assetgroup",
+    "logos_model": "eaid://[CHARACTER_PACKAGE]/team_livery/cs17-haas/idf/cs17-haas_glove_logos_[GENDER]",
+    "material_override": "cs17-haas",
+    "id": "1135",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.suits",
+   "from": "customisation.custom_avatar.suits.Suit[_metadata_=2025-haas_esteban_ocon]",
+   "set": {
+    "_metadata_": "cs17-haas_esteban_ocon",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-haas_esteban_ocon/esteban_ocon.assetgroup",
+    "feet_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-haas_esteban_ocon/idf/esteban_ocon",
+    "logos_model_override_pattern": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-haas_esteban_ocon/idf/esteban_ocon_body_logos",
+    "material_override": "cs17-haas_esteban_ocon",
+    "id": "1136",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.gloves",
+   "from": "customisation.custom_avatar.gloves.Gloves[_metadata_=2025-haas_esteban_ocon]",
+   "set": {
+    "_metadata_": "cs17-haas_esteban_ocon",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-haas_esteban_ocon/esteban_ocon.assetgroup",
+    "logos_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-haas_esteban_ocon/idf/esteban_ocon_glove_logos",
+    "material_override": "cs17-haas_esteban_ocon",
+    "id": "1136",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.suits",
+   "from": "customisation.custom_avatar.suits.Suit[_metadata_=2025-haas_oliver_bearman]",
+   "set": {
+    "_metadata_": "cs17-haas_oliver_bearman",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-haas_oliver_bearman/oliver_bearman.assetgroup",
+    "feet_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-haas_oliver_bearman/idf/oliver_bearman",
+    "logos_model_override_pattern": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-haas_oliver_bearman/idf/oliver_bearman_body_logos",
+    "material_override": "cs17-haas_oliver_bearman",
+    "id": "1137",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.gloves",
+   "from": "customisation.custom_avatar.gloves.Gloves[_metadata_=2025-haas_oliver_bearman]",
+   "set": {
+    "_metadata_": "cs17-haas_oliver_bearman",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs17-haas_oliver_bearman/oliver_bearman.assetgroup",
+    "logos_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs17-haas_oliver_bearman/idf/oliver_bearman_glove_logos",
+    "material_override": "cs17-haas_oliver_bearman",
+    "id": "1137",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.suits",
+   "from": "customisation.custom_avatar.suits.Suit[_metadata_=2025-mercedes]",
+   "set": {
+    "_metadata_": "cs19-mercedes",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/team_livery/cs19-mercedes/cs19-mercedes.assetgroup",
+    "feet_model": "eaid://[CHARACTER_PACKAGE]/team_livery/cs19-mercedes/idf/cs19-mercedes_male",
+    "logos_model_override_pattern": "eaid://[CHARACTER_PACKAGE]/team_livery/cs19-mercedes/idf/cs19-mercedes_body_logos_[GENDER]",
+    "material_override": "cs19-mercedes",
+    "id": "1138",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.gloves",
+   "from": "customisation.custom_avatar.gloves.Gloves[_metadata_=2025-mercedes]",
+   "set": {
+    "_metadata_": "cs19-mercedes",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/team_livery/cs19-mercedes/cs19-mercedes.assetgroup",
+    "logos_model": "eaid://[CHARACTER_PACKAGE]/team_livery/cs19-mercedes/idf/cs19-mercedes_glove_logos_[GENDER]",
+    "material_override": "cs19-mercedes",
+    "id": "1138",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.suits",
+   "from": "customisation.custom_avatar.suits.Suit[_metadata_=2025-mercedes_andrea-kimi_antonelli]",
+   "set": {
+    "_metadata_": "cs19-mercedes_andrea-kimi_antonelli",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs19-mercedes_andrea-kimi_antonelli/andrea-kimi_antonelli.assetgroup",
+    "feet_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs19-mercedes_andrea-kimi_antonelli/idf/andrea-kimi_antonelli",
+    "logos_model_override_pattern": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs19-mercedes_andrea-kimi_antonelli/idf/andrea-kimi_antonelli_body_logos",
+    "material_override": "cs19-mercedes_andrea-kimi_antonelli",
+    "id": "1139",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.gloves",
+   "from": "customisation.custom_avatar.gloves.Gloves[_metadata_=2025-mercedes_andrea-kimi_antonelli]",
+   "set": {
+    "_metadata_": "cs19-mercedes_andrea-kimi_antonelli",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs19-mercedes_andrea-kimi_antonelli/andrea-kimi_antonelli.assetgroup",
+    "logos_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs19-mercedes_andrea-kimi_antonelli/idf/andrea-kimi_antonelli_glove_logos",
+    "material_override": "cs19-mercedes_andrea-kimi_antonelli",
+    "id": "1139",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.suits",
+   "from": "customisation.custom_avatar.suits.Suit[_metadata_=2025-mercedes_george_russell]",
+   "set": {
+    "_metadata_": "cs19-mercedes_george_russell",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs19-mercedes_george_russell/george_russell.assetgroup",
+    "feet_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs19-mercedes_george_russell/idf/george_russell",
+    "logos_model_override_pattern": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs19-mercedes_george_russell/idf/george_russell_body_logos",
+    "material_override": "cs19-mercedes_george_russell",
+    "id": "1140",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
+  },
+  {
+   "op": "add-row",
+   "table": "customisation.custom_avatar.gloves",
+   "from": "customisation.custom_avatar.gloves.Gloves[_metadata_=2025-mercedes_george_russell]",
+   "set": {
+    "_metadata_": "cs19-mercedes_george_russell",
+    "asset_group": "asset_groups/[CHARACTER_PACKAGE]/drivers/male/cs19-mercedes_george_russell/george_russell.assetgroup",
+    "logos_model": "eaid://[CHARACTER_PACKAGE]/drivers/male/cs19-mercedes_george_russell/idf/george_russell_glove_logos",
+    "material_override": "cs19-mercedes_george_russell",
+    "id": "1140",
+    "colour_1_default": "0",
+    "colour_2_default": "0",
+    "colour_3_default": "0",
+    "colour_4_default": "0"
+   }
   }
  ]
 }
