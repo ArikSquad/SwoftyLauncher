@@ -71,10 +71,14 @@ At load it registers one box per season with `swofty::era::add_box` (`swofty/era
 | Driver | Head | Seasons | Mod |
 |---|---|---|---|
 | Kimi Räikkönen | `kimi_raikkonen` | 2016 to 2021 | More Driver Models |
+| Sebastian Vettel | `sebastian_vettel` | 2016 to 2022 | More Driver Models |
 | Romain Grosjean | `romain_grosjean` | 2016 to 2020 | More Driver Models |
 | Daniil Kvyat | `daniil_kvyat` | 2016, 2017, 2019, 2020 | More Driver Models |
 | Antonio Giovinazzi | `antonio_giovinazzi` | 2019 to 2021 | More Driver Models |
+| Nicholas Latifi | `nicholas_latifi` | 2020 to 2022 | More Driver Models |
+| Mick Schumacher | `mick_schumacher` | 2021, 2022 | More Driver Models |
 | Nikita Mazepin | `nikita_mazepin` | 2021 | More Driver Models |
+| Nyck de Vries | `nyck_de-vries` | 2023 | More Driver Models |
 | Robert Kubica | `robert_kubica` | 2019 | F1 25 Kubica Face Mod (Cap On) |
 
 The stock database has an `entrants.animation.driver_heads.driver_head` row for each of these heads. The row's `model_path` is `eaid://[CHARACTER_PACKAGE]/heads/male_driver/<head>/idf/<head>_rig_head_morph_v1`, and its asset group path formats give two groups named after the row's label. The stock manifest lists the groups of the stock labels, so the core never registers an addon's group under them, and a player's game folder can hold other files at their archive paths. Each head ships under its own label `cs_<head>`:
@@ -91,7 +95,7 @@ Kubica's head also has three `.2025.mipmaps` textures in `character_package/head
 python3 tools/heads.py --downloads ~/Downloads --game <F1 25>
 ```
 
-More Driver Models' Sebastian Vettel, Mick Schumacher, Nicholas Latifi and Nyck de Vries name `.sampler` resources and head textures they do not hold, so they keep generic heads.
+More Driver Models' Sebastian Vettel, Mick Schumacher, Nicholas Latifi and Nyck de Vries archives have materials in an older format (`.sampler` resources, head textures under the driver's name). `tools/heads.py` replaces each such material with Kimi Räikkönen's of the same name, its texture folder code renamed (`repair_from` in `data/heads.json`).
 
 A suit entry in `data/real_suits.json` with `"off": true` is left out. The 18 converted 2017 driver suits whose F1 25 base wears its team's glove, livery and boots textures crash the Grand Prix team picker, so those drivers wear their team's converted 2017 suit.
 
@@ -113,7 +117,7 @@ python3 tools/build_helmets.py --downloads ~/Downloads --game <F1 25>
 - Moves the `.mipmaps` sidecars the zip ships to the season's folder.
 - Rebuilds every shadow caster over 20,000 triangles from a lower LOD of the same part, and fails a car with a caster over 40,000.
 - Caps every non-livery texture and shipped sidecar at 1024 px.
-- Moves the cockpit camera of a season with `cockpit_camera` (`up` and `forward`, in metres) in `data/seasons.json`, and sets the TV pod cameras' near clip of a season with `pod_camera` (`near_clip`, in metres) (tools/cameras.py).
+- Moves the cockpit camera of a season with `cockpit_camera` (`up` and `forward`, in metres) in `data/seasons.json` (tools/cameras.py).
 - Turns off `UseModelPositions` in every handling file, so the wheels sit at the handling file's positions instead of the model's (tools/handling.py).
 - Renames the tyre set (`shared/tyres/`) of a season with its own `common.erp` with the rest, and adds a `Tyres` override naming it (`tyre model`, `tyre wet model`, `material`, `wet material`) to every car and showroom model layer (tools/tyres.py). The car templates in `eaid://wote/types` name the stock tyre set.
 
