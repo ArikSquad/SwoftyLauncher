@@ -92,6 +92,8 @@ These environment variables change what swofty_core and the loader log. Set them
 | `SWOFTY_OVERLAY_KILL=<list>` | Turns overlay parts off: `all`, `paint`, `capture` or `hdr`, comma-separated. `"overlay_kill"` in `swofty/assets.json` does the same |
 | `SWOFTY_OVERLAY_NITS=<nits>` | The overlay's paper white on HDR10 and scRGB output, 80 to 1000. Default 350, the level of the game's own HUD white |
 | `SWOFTY_KEEP_FOCUS=1` | Keeps the game running when its window loses focus: swofty_core drops `WM_KILLFOCUS`, `WM_ACTIVATE(WA_INACTIVE)` and `WM_ACTIVATEAPP(FALSE)` before the game's window procedure sees them, and hands a window that starts without focus one `WM_SETFOCUS`. A race in a parked or hidden window then runs instead of stopping at the pause menu. For test runs only |
+| `SWOFTY_POSTFX_CAPTURE=<folder>` | For developing [post-process passes](/reference/addons/postfx). Writes the picture just before and just after the passes to `<folder>\postfx-NN-before.ppm` and `postfx-NN-after.ppm`, at most six pairs, ten seconds apart, the first thirty seconds after the passes start. The pictures have no HUD. Under Proton, give a Windows path |
+| `SWOFTY_POSTFX=0` | Turns every post-process pass off for the session |
 | `SWOFTY_PERF_HITCH_MS=<ms>` | The frame time the performance report counts as a hitch. Default 50 |
 | `SWOFTY_PERF_SLOW_CALL_MS=<ms>` | The time a single hook or callback takes before the performance report lists it as a slow call. Default 8 |
 

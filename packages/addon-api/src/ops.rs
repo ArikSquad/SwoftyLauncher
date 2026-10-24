@@ -200,6 +200,62 @@ pub enum ErpOp {
         resource: String,
         source: Source,
     },
+    /// Sets constants of a `.material` resource in place: a number for a scalar, a list for a
+    /// vector, written as the material declares them.
+    SetMaterial {
+        erp: String,
+        resource: String,
+        params: BTreeMap<String, MaterialValue>,
+    },
+}
+
+/// A material constant's value: a number, a list, or text from a `{{option}}` placeholder holding
+/// one or more numbers separated by spaces or commas (`true` and `false` read as 1 and 0).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum MaterialValue {
+    Scalar(f64),
+    Vector(Vec<MaterialNumber>),
+    Text(String),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum MaterialNumber {
+    Number(f64),
+    Text(String),
+}
+
+fn material_number(text: &str) -> std::result::Result<f64, String> {
+    match text.trim() {
+        "true" => Ok(1.0),
+        "false" => Ok(0.0),
+        t => t
+            .parse::<f64>()
+            .ok()
+            .filter(|v| v.is_finite())
+            .ok_or_else(|| format!("{t:?} is not a number")),
+    }
+}
+
+impl MaterialValue {
+    pub fn values(&self) -> std::result::Result<Vec<f64>, String> {
+        match self {
+            Self::Scalar(v) => Ok(vec![*v]),
+            Self::Vector(v) => v
+                .iter()
+                .map(|n| match n {
+                    MaterialNumber::Number(v) => Ok(*v),
+                    MaterialNumber::Text(t) => material_number(t),
+                })
+                .collect(),
+            Self::Text(t) => t
+                .split(|c: char| c == ',' || c.is_whitespace())
+                .filter(|s| !s.is_empty())
+                .map(material_number)
+                .collect(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
