@@ -102,6 +102,32 @@ impl Resource {
         Ok(res)
     }
 
+    pub fn has_stats(&self) -> bool {
+        matches!(&self.fragments[..], [_, s, ..] if s.size == crate::bxml::STATS_LEN as u64)
+    }
+
+    pub fn stale_stats(&self) -> Result<bool> {
+        match &self.fragments[..] {
+            [data, stats, ..] if self.has_stats() => {
+                Ok(crate::bxml::stale_stats(&data.data()?, &stats.data()?))
+            }
+            _ => Ok(false),
+        }
+    }
+
+    // Rewrites stale TSMD stats from fragment 0, as the game's own tools write them;
+    // true when it did. Fails when fragment 0 starts as binary XML but does not parse.
+    pub fn repair_stats(&mut self) -> Result<bool> {
+        if !self.stale_stats()? {
+            return Ok(false);
+        }
+        let stats = self.fragments[1].data()?;
+        let version = u32::from_le_bytes(stats[4..8].try_into().expect("4 bytes"));
+        let doc = crate::bxml::Document::parse(&self.fragments[0].data()?)?;
+        self.set_fragment(1, &doc.string_stats(version))?;
+        Ok(true)
+    }
+
     pub fn set_fragment(&mut self, index: usize, data: &[u8]) -> Result<()> {
         let f = self
             .fragments
@@ -546,6 +572,52 @@ mod tests {
         let res = &back.resources[0];
         assert_eq!(res.fragments[0].data().unwrap(), b"changed");
         assert_eq!(res.content_hash().unwrap(), hash);
+    }
+
+    #[test]
+    fn stale_stats_compares_a_bxml_fragment_with_its_tsmd() {
+        use crate::bxml::{Document, Element, Kind};
+        let doc = |v: &[u8]| Document {
+            root: Element {
+                kind: Kind::Element,
+                pad: 0,
+                name: b"track".to_vec(),
+                attrs: vec![(b"name".to_vec(), v.to_vec())],
+                children: Vec::new(),
+                end_pad: 0,
+            },
+            tail: Vec::new(),
+        };
+        let stock = doc(b"default");
+        let t = &sample().resources[0];
+        let spline = |data: &Document| {
+            Resource::like(
+                "eaid://environment_package/tracks/x/ai/x_ai_track.aispline",
+                t,
+                &[data.to_bytes(), stock.string_stats(1)],
+            )
+            .unwrap()
+        };
+        assert!(spline(&stock).has_stats() && !spline(&stock).stale_stats().unwrap());
+        assert!(spline(&doc(b"a longer name")).stale_stats().unwrap());
+        assert!(!sample().resources[0].has_stats() && !sample().resources[0].stale_stats().unwrap());
+
+        let mut unchanged = spline(&stock);
+        let before = unchanged.fragments[1].data().unwrap();
+        assert!(!unchanged.repair_stats().unwrap());
+        assert_eq!(unchanged.fragments[1].data().unwrap(), before);
+
+        let edited = doc(b"a longer name");
+        let mut res = spline(&edited);
+        assert!(res.repair_stats().unwrap());
+        assert_eq!(res.fragments[1].data().unwrap(), edited.string_stats(1));
+        assert!(!res.stale_stats().unwrap() && !res.repair_stats().unwrap());
+        assert_eq!(res.content_hash().unwrap(), res.hash);
+
+        let mut broken = spline(&stock);
+        let bytes = stock.to_bytes();
+        broken.set_fragment(0, &bytes[..bytes.len() - 3]).unwrap();
+        assert!(broken.repair_stats().is_err());
     }
 
     #[test]

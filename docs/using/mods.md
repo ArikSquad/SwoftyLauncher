@@ -48,6 +48,8 @@ A track whose package doesn't say which track it replaces or copies can't be use
 
 [How tracks are installed](/reference/installing-tracks) covers what turning a track on changes.
 
+When a track, or an addon that changes a track's AI racing line, ships files with size headers that don't match them, the launcher fixes the headers as it builds the profile. If it can't read a file to fix it, **Play** stops with a message that names the track or addon, such as `Test Ring would crash F1 25: …`. Turn it off in the profile to play. If a career's [Race weekends](/using/db-editor) entry uses that track, set the weekend back to another track first.
+
 ## Mods from an earlier version
 
 Before 1.3.0, mods lived in a library on a **Mods** page. The first time 1.3.0 starts, the Simplified Importer converts every mod in that library into an addon, in each profile's order and with the same switches. A dialog lists each mod with a tick when it converts or a cross and the reason when it can't. A large library may convert over more than one start; **Convert now** on the Simplified Importer page converts the rest.
