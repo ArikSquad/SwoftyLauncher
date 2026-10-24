@@ -196,7 +196,7 @@ Put your data edits in `operations`: the build applies them to the game's files,
 
 A **NativePlugin** is `{ dll, early, files }`. Give it the DLL path, use `early` to load it before the menu, and list the `files` it reads in game.
 
-A **ScreenOp** is `{ name, file, flow, anchor?, view_model }`. Choose `name` and `flow` values that use `[a-z0-9_]` and are unique across the profile's addons. Supply raw `.ui` data in `file`; it gets installed as `swofty/ui/<name>.ui`.
+A **ScreenOp** is `{ name, file, page?, flow, anchor?, view_model }`. Choose `name` and `flow` values that use `[a-z0-9_]` and are unique across the profile's addons. Supply raw `.ui` data in `file`; it gets installed as `swofty/ui/<name>.ui`. Or leave `file` out and set `page` to `options`, and the launcher builds your addon's options page as the screen ([Use your options page](./in-game-ui#use-your-options-page)).
 
 The `flow` defaults to `flow_frontend`. To register after another screen in the same flow, name that screen in `anchor`. Use `view_model` to ask core for a native view model. The names `swofty_settings`, `swofty_addon_<n>` and `swofty_map_<n>` belong to ADDON SETTINGS.
 

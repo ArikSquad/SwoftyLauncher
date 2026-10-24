@@ -100,9 +100,11 @@ pub fn track_packages(store: &Store, ops: Vec<Op>) -> Result<TrackPackages> {
     Ok((out, left_out))
 }
 
+// Page screens have no file: the ui build generates them.
 pub fn screen_files(order: &[&AddonManifest], addons_dir: &Path) -> Result<BTreeMap<String, PathBuf>> {
     Ok(screens(order.iter().copied())?
         .into_iter()
+        .filter(|(_, s)| s.page.is_none())
         .map(|(m, s)| {
             (
                 format!("{LOADER_DIR}/{}", screen_file(&s.name)),
@@ -624,7 +626,7 @@ pub(crate) fn build_as(store: &Store, profile: &str, game: &Game, checking: bool
                 planner.push(op);
             }
         }
-        for s in &m.operations.screens {
+        for s in m.operations.screens.iter().filter(|s| s.page.is_none()) {
             let path = dir.join(&s.file);
             let data = std::fs::read(&path).map_err(io_err(&path))?;
             if swofty_formats::pkg::is_pkg(&data) {
@@ -1665,6 +1667,7 @@ pub fn build_menus(
             s.name
         )));
     }
+    ui.screens.retain(|s| s.page.is_none());
     ui.screens.splice(0..0, menus.session);
     Ok(menus.strings)
 }
@@ -3158,7 +3161,8 @@ mod tests {
         let m = AddonManifest::parse(
             r#"{ "schema_version": 1, "id": "a.pages", "name": "S", "version": "1.0.0", "author": "a",
                  "compat": { "game": "f1_25" },
-                 "operations": { "screens": [{ "name": "swofty_addon_0", "file": "ui/page0.ui" }] } }"#,
+                 "operations": { "screens": [{ "name": "swofty_addon_0", "file": "ui/page0.ui" },
+                   { "name": "generated", "page": "options", "flow": "flow_options", "anchor": "settings_container" }] } }"#,
         )
         .unwrap();
         let files = screen_files(&[&m], Path::new("/addons")).unwrap();

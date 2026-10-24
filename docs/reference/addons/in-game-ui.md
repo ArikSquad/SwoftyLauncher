@@ -36,7 +36,8 @@ Declare your screens in `swofty.json`. Two steps need that list before your plug
 | Field | Default | Meaning |
 |---|---|---|
 | `name` | | `[a-z0-9_]`, unique across the profile's addons. The screen's name and route |
-| `file` | | The `.ui` file, relative to the addon folder |
+| `file` | | The `.ui` file, relative to the addon folder. Leave it out with `page` |
+| `page` | | `options` has the launcher build the screen from your addon's options ([Use your options page](#use-your-options-page)) |
 | `flow` | `flow_frontend` | The flow the screen belongs to |
 | `anchor` | | A game screen in the same flow. The screen registers after that screen's resource loads |
 | `view_model` | `false` | `true` asks swofty_core for a native view model |
@@ -44,6 +45,26 @@ Declare your screens in `swofty.json`. Two steps need that list before your plug
 ### 2. Build and launch
 
 Run `swofty build` to install the file as `swofty/ui/my_page.ui` and list it in the `ui` block of `swofty/settings.json`. When the flow loads, swofty_core registers your screen through the engine's own screen loader. Check `swofty/loader.log` if the engine rejects any nodes: it names each one and gives the reason. If you route to an addon screen that didn't register, the route is cancelled and the last screen reopens.
+
+A screen in `flow_options` gets the flow entry, loading region and route group an ADDON SETTINGS page gets. Its group has the routes `open`, `open_no_input`, `close` and `back`, and `back` closes the screen and opens its `anchor` again (`settings_container` when you give none).
+
+### Use your options page
+
+To show your addon's options on a screen of their own, declare a screen with `"page": "options"` and no `file`:
+
+```json [swofty.json]
+"screens": [
+  { "name": "ai_liveries", "page": "options", "flow": "flow_options", "anchor": "settings_container" }
+]
+```
+
+The build makes the page ADDON SETTINGS shows for your addon, with its rows and native view model, and names it `swofty_addon_<name>_<n>`. It also adds the route `open_<name>` to the anchor's route group, which closes the anchor and opens the page, as ADDON SETTINGS opens its pages. Open it from the anchor with that route, for example from an event in the anchor's `.ui`:
+
+```text
+settings_container.Action.route { key: open_ai_liveries }
+```
+
+Back on the page returns to the anchor. The screen needs your addon on in the profile and works only in `flow_options`.
 
 ::: warning Reserved names
 `swofty_settings`, `swofty_addon_<n>`, `swofty_map_<n>` and `swofty_mod_<n>` belong to ADDON SETTINGS.

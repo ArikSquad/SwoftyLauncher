@@ -54,6 +54,12 @@ pub struct SessionUi {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SessionScreen {
     pub name: String,
+    /// `options` for a screen the launcher generates from its addon's options page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page: Option<String>,
+    /// The addon a generated page shows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub addon: Option<String>,
     pub file: String,
     pub flow: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -194,8 +200,10 @@ impl SessionSettings {
         let screens: Vec<SessionScreen> =
             screens(order.iter().copied().filter(|m| enabled.contains(&m.id.as_str())))?
                 .into_iter()
-                .map(|(_, s)| SessionScreen {
+                .map(|(m, s)| SessionScreen {
                     name: s.name.clone(),
+                    page: s.page.clone(),
+                    addon: s.page.as_ref().map(|_| m.id.clone()),
                     file: screen_file(&s.name),
                     flow: s.flow.clone(),
                     anchor: s.anchor.clone(),

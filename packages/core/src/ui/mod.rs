@@ -26,6 +26,7 @@ const FE_HOME: &str = "eaid://ui_package/screens/fe_home.ui";
 const FE_CAREER: &str = "eaid://ui_package/screens/fe_career.ui";
 const CONTAINER: &str = "eaid://ui_package/screens/settings_container.ui";
 const ROUTES: &str = "eaid://ui_package/routes/routes_frontend_general.uir";
+const GAME_ROUTES: &str = "eaid://ui_package/routes/routes.uir";
 const FLOWS: &str = "eaid://ui_package/flows.ui";
 const REGIONS: &str = "eaid://ui_package/region_loading.uiconfig";
 const TOOLTIPS: &str = "eaid://ui_package/databases/tool_tips.uidb";
@@ -175,8 +176,53 @@ pub fn build(
         &read_frag(&flow_options, CONTAINER, 0)?,
     )?;
     let flow = pages::entries(&settings.addons, &settings.maps, &settings.mods);
-    let built = pages::build_all(&src, &TILES, &flow)?;
+    let mut built = pages::build_all(&src, &TILES, &flow)?;
+    // Addon screens with page: options are their addon's options page under the name
+    // swofty_addon_<name>_<addon index>; the view model reads the index after the last '_'.
+    let mut generated: Vec<(String, String, String)> = Vec::new();
+    for s in settings.ui.iter().flat_map(|u| &u.screens) {
+        if s.page.as_deref() != Some("options") {
+            continue;
+        }
+        let e = flow
+            .iter()
+            .find(|e| e.kind == pages::Kind::Addon && Some(e.id) == s.addon.as_deref())
+            .ok_or_else(|| err(format!("screen {}: its addon is not on", s.name)))?;
+        let full = e.screen.trim_start_matches("swofty_addon_");
+        let screen = format!("swofty_addon_{}_{full}", s.name);
+        let anchor = s.anchor.clone().unwrap_or_else(|| ANCHOR.to_owned());
+        built
+            .order
+            .push((screen.clone(), pages::build_options_page(&src, e, &screen)?));
+        if !e.options.is_empty() {
+            built.view_models.push(screen.clone());
+        }
+        generated.push((s.name.clone(), anchor, screen));
+    }
     let names: Vec<String> = built.order.iter().map(|(n, _)| n.clone()).collect();
+    // Addon screens in the options flow get the flow entry, region and route group an ADDON
+    // SETTINGS page gets, so routes and signals to them open them.
+    let addon_routes: Vec<(String, String)> = settings
+        .ui
+        .iter()
+        .flat_map(|u| &u.screens)
+        .filter(|s| s.flow == FLOW && s.page.is_none() && !names.contains(&s.name))
+        .map(|s| {
+            (
+                s.name.clone(),
+                s.anchor.clone().unwrap_or_else(|| ANCHOR.to_owned()),
+            )
+        })
+        .collect();
+    let addon_screens: Vec<String> = addon_routes.iter().map(|(n, _)| n.clone()).collect();
+    let mut opened: Vec<(String, String, String)> = addon_routes
+        .iter()
+        .map(|(n, a)| (n.clone(), a.clone(), n.clone()))
+        .collect();
+    opened.extend(generated.iter().cloned());
+    let mut addon_groups = addon_routes.clone();
+    addon_groups.extend(generated.iter().map(|(_, a, s)| (s.clone(), a.clone())));
+    let listed: Vec<String> = names.iter().chain(&addon_screens).cloned().collect();
     let mut problems = check::screens(&built.order, &built.view_models)?;
     let no_scenes = catalog::Scenes::default();
     for (name, data) in &built.order {
@@ -211,7 +257,11 @@ pub fn build(
             (
                 ROUTES,
                 Box::new(|d| {
-                    let b = patch::routes(d, patch::route_groups(&pages))?;
+                    let b = patch::routes(
+                        d,
+                        patch::route_groups(&pages),
+                        patch::screen_route_groups(&addon_groups),
+                    )?;
                     *routes_out.borrow_mut() = b.clone();
                     Ok(b)
                 }),
@@ -219,15 +269,16 @@ pub fn build(
             (
                 FLOWS,
                 Box::new(|d| {
-                    let b = patch::flow_entries(d, OPTIONS_FLOW, &names)?;
+                    let b = patch::flow_entries(d, OPTIONS_FLOW, &listed)?;
                     *flows_out.borrow_mut() = b.clone();
                     Ok(b)
                 }),
             ),
-            (REGIONS, Box::new(|d| patch::regions(d, &names))),
+            (REGIONS, Box::new(|d| patch::regions(d, &listed))),
+            (GAME_ROUTES, Box::new(|d| patch::anchor_routes(d, &opened))),
         ],
     )?;
-    let registered: BTreeMap<String, String> = names.iter().map(|n| (n.clone(), FLOW.to_owned())).collect();
+    let registered: BTreeMap<String, String> = listed.iter().map(|n| (n.clone(), FLOW.to_owned())).collect();
     problems.extend(check::routes(
         &routes_out.borrow(),
         &flows_out.borrow(),
@@ -305,6 +356,8 @@ pub fn build(
         build.screens.insert(rel, path);
         build.session.push(SessionScreen {
             name: name.clone(),
+            page: None,
+            addon: None,
             file: screen_file(name),
             flow: FLOW.into(),
             anchor: Some(ANCHOR.into()),

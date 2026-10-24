@@ -873,6 +873,38 @@ pub struct Screens {
     pub view_models: Vec<String>,
 }
 
+/// An addon's options page under another screen name, for an addon screen with `page: options`.
+pub fn build_options_page(src: &Sources, e: &Entry, screen: &str) -> Result<Vec<u8>> {
+    let e = Entry {
+        kind: e.kind,
+        index: e.index,
+        screen: screen.to_owned(),
+        name: e.name,
+        author: e.author,
+        version: e.version,
+        description: e.description,
+        id: e.id,
+        options: e
+            .options
+            .iter()
+            .map(|o| Opt {
+                k: o.k,
+                local: o.local,
+                o: o.o,
+            })
+            .collect(),
+    };
+    let rows = addon_rows(&e);
+    let mut scr = build_page(src, &e, &rows, !e.options.is_empty())?;
+    retitle(&mut scr, &e)?;
+    if !e.options.is_empty() {
+        vm_page(&mut scr, &e)?;
+    }
+    settings_state_matrix(src, &mut scr)?;
+    literal_tooltips(&mut scr)?;
+    ui_bytes(vec![scr])
+}
+
 pub fn build_all(src: &Sources, style: &TileStyle, flow: &[Entry]) -> Result<Screens> {
     let mut nodes = vec![(HOME.to_owned(), build_home(src, style, flow)?)];
     let mut view_models = Vec::new();

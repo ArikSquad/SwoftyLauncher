@@ -370,6 +370,39 @@ pub fn route_groups(pages: &[(String, String)]) -> Vec<Node> {
     groups
 }
 
+/// Route groups for addon screens, as ADDON SETTINGS pages have: open, open_no_input and close,
+/// and back, which closes the screen and opens its anchor again.
+pub fn screen_route_groups(screens: &[(String, String)]) -> Vec<Node> {
+    screens
+        .iter()
+        .map(|(s, anchor)| {
+            let mut r = screen_routes(s);
+            r.push(subpage_route("back", s, anchor, 2));
+            route_group(s, r)
+        })
+        .collect()
+}
+
+/// Adds open_<name> to each anchor's route group in these routes, when they hold it: the route
+/// closes the anchor and opens the addon screen, as ADDON SETTINGS opens its pages. Each entry is
+/// (name, anchor, screen).
+pub fn anchor_routes(data: &[u8], screens: &[(String, String, String)]) -> Result<Vec<u8>> {
+    edit(data, |p| {
+        let gs = root_obj(p)?.at_mut("RouteGroupings")?.a_mut()?;
+        for (name, anchor, s) in screens {
+            let Some(g) = gs.iter_mut().find(|g| id_of(g) == Some(anchor)) else {
+                continue;
+            };
+            let id = format!("open_{name}");
+            let routes = g.o_mut()?.at_mut("Routes")?.a_mut()?;
+            if !routes.iter().any(|r| id_of(r) == Some(&id)) {
+                routes.push(subpage_route(&id, anchor, s, 1));
+            }
+        }
+        Ok(())
+    })
+}
+
 fn id_of(n: &Node) -> Option<&str> {
     n.as_obj()?.get("Id")?.as_val()?.as_str()
 }
@@ -396,10 +429,17 @@ fn mod_menu_route(groupings: &[Node]) -> Result<Node> {
     Ok(r)
 }
 
-pub fn routes(data: &[u8], groups: Vec<Node>) -> Result<Vec<u8>> {
+/// Adds ADDON SETTINGS' route groups, which must be new, and each of `optional` whose group the
+/// routes don't have yet.
+pub fn routes(data: &[u8], groups: Vec<Node>, optional: Vec<Node>) -> Result<Vec<u8>> {
     edit(data, |p| {
         let gs = root_obj(p)?.at_mut("RouteGroupings")?.a_mut()?;
         let replace = mod_menu_route(gs)?;
+        for g in optional {
+            if !gs.iter().any(|x| id_of(x) == id_of(&g)) {
+                gs.push(g);
+            }
+        }
         for g in groups {
             if gs.iter().any(|x| id_of(x) == id_of(&g)) {
                 return Err(err(format!(
@@ -1004,5 +1044,85 @@ mod tests {
         assert_eq!(options[0].o().unwrap().str_at("response").unwrap(), "ok");
         let twice = by_id(&messages(&messages(&messages_file(), false).unwrap(), false).unwrap());
         assert_eq!(twice.iter().filter(|(id, _)| id == MESSAGE_ID).count(), 1);
+    }
+
+    fn routes_file() -> Vec<u8> {
+        let options = route("options", vec![], "", 0, None);
+        Pkg {
+            name: [0; 4],
+            root: obj(vec![(
+                "RouteGroupings",
+                arr(vec![
+                    route_group("fe_home", vec![options]),
+                    route_group("settings_container", vec![]),
+                ]),
+            )]),
+            vca: Vec::new(),
+            layout: None,
+        }
+        .to_bytes()
+        .unwrap()
+    }
+
+    fn group<'a>(p: &'a Pkg, id: &str) -> Option<&'a Node> {
+        p.root
+            .o()
+            .unwrap()
+            .at("RouteGroupings")
+            .unwrap()
+            .a()
+            .unwrap()
+            .iter()
+            .find(|g| id_of(g) == Some(id))
+    }
+
+    fn route_ids(g: &Node) -> Vec<String> {
+        g.o()
+            .unwrap()
+            .at("Routes")
+            .unwrap()
+            .a()
+            .unwrap()
+            .iter()
+            .map(|r| id_of(r).unwrap().to_owned())
+            .collect()
+    }
+
+    #[test]
+    fn addon_screens_get_route_groups_and_an_open_route_on_their_anchor() {
+        let screens = [("ai".to_owned(), "settings_container".to_owned())];
+        let d = routes(&routes_file(), route_groups(&[]), screen_route_groups(&screens)).unwrap();
+        // a group already there is kept, not added twice
+        let d = routes(&d, Vec::new(), screen_route_groups(&screens)).unwrap();
+        let opened = [
+            (
+                "ai".to_owned(),
+                "settings_container".to_owned(),
+                "swofty_addon_ai_3".to_owned(),
+            ),
+            ("x".to_owned(), "no_such_anchor".to_owned(), "x".to_owned()),
+        ];
+        let d = anchor_routes(&anchor_routes(&d, &opened).unwrap(), &opened).unwrap();
+        let p = Pkg::parse(&d).unwrap();
+        let ai: Vec<&Node> = p
+            .root
+            .o()
+            .unwrap()
+            .at("RouteGroupings")
+            .unwrap()
+            .a()
+            .unwrap()
+            .iter()
+            .filter(|g| id_of(g) == Some("ai"))
+            .collect();
+        assert_eq!(ai.len(), 1);
+        assert_eq!(route_ids(ai[0]), ["open", "open_no_input", "close", "back"]);
+        let back = canonical(&ai[0].o().unwrap().at("Routes").unwrap().a().unwrap()[3]);
+        assert_eq!(
+            back,
+            canonical(&subpage_route("back", "ai", "settings_container", 2))
+        );
+        assert_eq!(route_ids(group(&p, "settings_container").unwrap()), ["open_ai"]);
+        assert!(group(&p, "no_such_anchor").is_none());
     }
 }
