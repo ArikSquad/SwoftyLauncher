@@ -6,9 +6,11 @@ use std::time::{Duration, Instant, SystemTime};
 
 use anyhow::{Context, Result, bail};
 use clap::Args;
+use swofty_core::app_control::Block;
 use swofty_core::crash::{Event, LogScan, Symbols, fatal_name};
 use swofty_core::install::{Game, Installer, PROXY, Source};
 use swofty_core::launch;
+use swofty_core::loader_check;
 use swofty_core::process::{
     descends_from, game_processes, game_running_in, games_in, steamvr_running, stop_game_in, stop_process,
 };
@@ -16,7 +18,8 @@ use swofty_core::quarantine::{self, Attach, AttachWatch, Stage};
 use swofty_core::recovery::{Scope, SessionLock};
 use swofty_core::session::{
     Config, DEFAULT_WINEDEBUG, LOADER_LOG, LOADER_MARK, LaunchMode, LaunchRequest, LogMark, PERF_LOG,
-    RUNTIME_LIBS_DIR, game_args, parse_cpu_list, parse_steam_command, written_since,
+    RUNTIME_LIBS_DIR, STOP_FILE, SessionEnd, SessionRecord, game_args, parse_cpu_list, parse_steam_command,
+    request_stop, written_since,
 };
 use swofty_core::steam_client::{self, Ready, Report, State, Wait};
 use swofty_core::store::Store;
@@ -75,7 +78,7 @@ pub fn run(store: &Store, profile: &str, args: RunArgs) -> Result<ExitCode> {
         .or_else(|| wrapped.then(|| std::env::current_dir().ok()).flatten());
     let g = crate::build::game(store, explicit)?;
     if wrapped {
-        return wrapper(store, profile, &args, &g);
+        return wrapper(store, profile, &args, &g).inspect_err(|e| note_blocked(store, e));
     }
     crate::build::supported(&g)?;
     let game = g.dir.clone();
@@ -98,6 +101,7 @@ pub fn run(store: &Store, profile: &str, args: RunArgs) -> Result<ExitCode> {
                 ),
             ));
         }
+        request_stop(&store.root);
         stop_game_in(&game).ok();
         while game_running_in(&game) {
             std::thread::sleep(Duration::from_millis(500));
@@ -110,8 +114,22 @@ pub fn run(store: &Store, profile: &str, args: RunArgs) -> Result<ExitCode> {
     // Modded sessions run without EA AntiCheat: the terms are accepted once,
     // and declining means the game is not launched.
     crate::offline::gate(store, std::io::stdin().is_terminal())?;
+    if args.apply {
+        crate::setup::gate(store)?;
+    }
+    if let Some(state) = swofty_core::steam::find_game()
+        .filter(|i| swofty_core::copies::same_dir(&i.dir, &game))
+        .and_then(|i| swofty_core::steam::busy(&i))
+    {
+        bail!("Steam is {state} F1 25; wait for it to finish, then press Play again");
+    }
     match crate::ea::store_start(Source::detect(&game), args.direct) {
-        crate::ea::StoreStart::EaApp => crate::ea::ensure(store, args.no_start_store)?,
+        crate::ea::StoreStart::EaApp => {
+            if args.apply {
+                crate::ea::dll_setting(store, &g, args.no_start_store)?;
+            }
+            crate::ea::ensure(store, args.no_start_store)?
+        }
         crate::ea::StoreStart::Steam => ensure_steam(store, &game, args.no_start_store)?,
     }
     let id = format!("{:x}{:x}", std::process::id(), (now_secs() * 1e6) as u64);
@@ -133,7 +151,7 @@ pub fn run(store: &Store, profile: &str, args: RunArgs) -> Result<ExitCode> {
     let loader = game.join(LOADER_LOG);
     let before = LogMark::read(&loader);
     let asked = now_secs();
-    let mut wrapper = launch(store, &game, args.direct, mode)?;
+    let mut wrapper = launch(store, &game, args.direct, mode).inspect_err(|e| note_blocked(store, e))?;
     let started = Instant::now();
     let dir = loop {
         if let Some(d) = store
@@ -518,7 +536,7 @@ fn run_loop(
             return Ok(ExitCode::FAILURE);
         }
         rebuild_if_needed(store, &profile, &game);
-        let code = play(store, args, config, request, &game, installed, restarted)?;
+        let code = play(store, args, config, request, g, installed, restarted)?;
         let relaunch = match store.merge_requests(&profile, true) {
             Ok(Some(m)) => {
                 for c in &m.changed {
@@ -570,10 +588,11 @@ fn play(
     args: &RunArgs,
     config: &Config,
     request: &LaunchRequest,
-    game: &Path,
+    g: &Game,
     installed: Option<Instant>,
     restarted: bool,
 ) -> Result<i32> {
+    let game = g.dir.as_path();
     let placed_loader = check_loader(store, game, installed).map_err(Refused)?;
     // The profile build and the offline play download before the first
     // start can take minutes, time enough for F1 25 to be started from
@@ -698,7 +717,7 @@ fn play(
         if let Some(path) = &library_path {
             c.env("LD_LIBRARY_PATH", path);
         }
-        Ok(c.spawn()?)
+        start(&mut c)
     };
     let copies_before: Vec<u32> = game_processes().iter().map(|g| g.pid).collect();
     let launched = SystemTime::now();
@@ -720,11 +739,23 @@ fn play(
     }
     let usage = swofty_core::usage::Session::start(&store.root);
     let mut watch = placed_loader.then(|| AttachWatch::new(loader.clone(), before.clone(), Instant::now()));
-    // The antivirus explanation is a Windows one; under Proton a loader
-    // that does not attach is a prefix or override problem instead.
+    let placed = quarantine::placed_dlls(&store.root)
+        .unwrap_or_default()
+        .into_iter()
+        .find_map(|(rel, sha)| rel.eq_ignore_ascii_case(PROXY).then_some(sha));
     let missed = || {
+        let found = loader_check::collect(game, placed.as_deref(), launched, g.user_reg.as_deref());
+        say(
+            "loader",
+            "version.dll did not attach to F1 25; what the session found:",
+        );
+        for line in found.lines(game) {
+            say("loader", &format!("  {line}"));
+        }
+        // The antivirus explanation is a Windows one; under Proton a loader
+        // that does not attach is a prefix or override problem instead.
         if cfg!(windows) {
-            loader_missed(store, game);
+            loader_missed(store, game, found.cause(game));
         }
     };
     let ea = match args.via_ea {
@@ -742,12 +773,15 @@ fn play(
             missed();
         }
     };
-    let code = if let Some(started) = ea {
-        crate::ea::wait(game, &copies_before, started, tick)
-    } else {
-        wait_game(&mut spawn(target, "game_stdout.log")?, tick)?
-            .code()
-            .unwrap_or(-1)
+    let (code, unread) = match ea {
+        Some(started) => {
+            crate::ea::wait(game, &copies_before, started, tick);
+            (None, EA_UNREAD.to_owned())
+        }
+        None => {
+            let status = wait_game(&mut spawn(target, "game_stdout.log")?, tick)?;
+            (status.code(), why_no_code(status))
+        }
     };
     if let Some(w) = watch.as_mut()
         && w.state() == Attach::Waiting
@@ -756,20 +790,49 @@ fn play(
         missed();
     }
     wait_relaunched(game, &copies_before, code, launched.elapsed().unwrap_or_default());
+    keep_game_logs(game, &dir, before.as_ref(), launched);
+    let loader = std::fs::read(dir.join("loader.log"))
+        .ok()
+        .map(|b| launch::LoaderSeen::scan(&String::from_utf8_lossy(&b)));
+    let stopped = if dir.join(STOP_FILE).exists() {
+        Some("Stop in the launcher closed F1 25")
+    } else if ending() {
+        Some("the wrapper was asked to stop and closed F1 25")
+    } else {
+        None
+    };
+    let end = SessionEnd::resolve(code, &unread, stopped, loader.as_ref());
+    say(
+        "info",
+        &format!("session end: {}, {}", end.end.as_str(), end.reason),
+    );
     if let Some(usage) = usage {
-        usage.end(code);
+        usage.end(&end);
     }
+    let code = end.exit_code.unwrap_or(-1);
+    end.write(&dir)?;
     std::fs::write(dir.join("exit_code"), format!("{code}\n"))?;
     std::fs::write(dir.join("game_end"), format!("{}\n", now_secs()))?;
-    keep_game_logs(game, &dir, before.as_ref(), launched);
     for g in game_processes()
         .into_iter()
         .filter(|g| descends_from(g.pid, std::process::id()))
     {
         stop_process(g.pid).ok();
     }
-    note_failed_launch(store, &dir, code, launched.elapsed().unwrap_or_default());
+    note_failed_launch(store, loader, code, launched.elapsed().unwrap_or_default());
     Ok(code)
+}
+
+const EA_UNREAD: &str =
+    "the EA app started F1 25, so the session has no handle on the game to read its exit code";
+
+/// Why an exit status carries no code.
+fn why_no_code(status: ExitStatus) -> String {
+    #[cfg(unix)]
+    if let Some(signal) = std::os::unix::process::ExitStatusExt::signal(&status) {
+        return format!("the game's process was ended by signal {signal}, which leaves no exit code");
+    }
+    format!("the game's process ended without an exit code ({status})")
 }
 
 const RESTART_WAIT: Duration = Duration::from_secs(15);
@@ -786,8 +849,8 @@ const RELAUNCH_CAP: Duration = Duration::from_secs(12 * 3600);
 /// game files are rolled back. A launch that failed quickly gets longer for
 /// the relaunch to appear. Another copy's game is not waited for, and only
 /// a game that is this copy's is closed.
-fn wait_relaunched(game: &Path, before: &[u32], code: i32, ran: Duration) {
-    let settle = if code != 0 && ran < SHORT_RUN {
+fn wait_relaunched(game: &Path, before: &[u32], code: Option<i32>, ran: Duration) {
+    let settle = if code.is_some_and(|c| c != 0) && ran < SHORT_RUN {
         RELAUNCH_AFTER_FAILURE
     } else {
         RELAUNCH_SETTLE
@@ -864,10 +927,7 @@ fn already_running(store: &Store, pid: u32, then: &str) -> anyhow::Error {
 /// After the game exits: a clean exit before its window is a launch that
 /// failed, which the session says and records instead of passing it off as
 /// a normal quit.
-fn note_failed_launch(store: &Store, dir: &Path, code: i32, ran: Duration) {
-    let loader = std::fs::read(dir.join("loader.log"))
-        .ok()
-        .map(|b| launch::LoaderSeen::scan(&String::from_utf8_lossy(&b)));
+fn note_failed_launch(store: &Store, loader: Option<launch::LoaderSeen>, code: i32, ran: Duration) {
     let ours = loader.and_then(|l| l.pid).filter(|_| cfg!(windows));
     let Some(cause) = launch::classify(code, ran, loader.as_ref(), || other_copies(ours)) else {
         return;
@@ -929,10 +989,23 @@ fn check_loader(
 }
 
 /// The game is running but the loader never attached: say so, and whether
-/// version.dll is gone from the game folder by now.
-fn loader_missed(store: &Store, game: &Path) {
+/// version.dll is gone from the game folder by now or what else the session
+/// found keeping it out.
+fn loader_missed(store: &Store, game: &Path, cause: Option<quarantine::Cause>) {
     let mut report = quarantine::Report::new(Stage::InGame, vec![PROXY.to_owned()], game);
     report.removed = !game.join(PROXY).is_file();
+    report.cause = cause.filter(|_| !report.removed).map(Box::new);
+    say(
+        "loader",
+        &format!(
+            "  found: {}",
+            match &report.cause {
+                Some(c) => c.what(),
+                None if report.removed => format!("{PROXY} was removed from the game folder"),
+                None => "nothing that explains it".into(),
+            }
+        ),
+    );
     report_blocked(store, &report);
 }
 
@@ -1035,10 +1108,36 @@ fn spawn_logged(c: &mut Command, log: &Path) -> Result<Child> {
         std::fs::create_dir_all(dir)?;
     }
     let out = std::fs::File::create(log).with_context(|| log.display().to_string())?;
-    Ok(c.stdin(Stdio::null())
-        .stdout(out.try_clone()?)
-        .stderr(out)
-        .spawn()?)
+    start(c.stdin(Stdio::null()).stdout(out.try_clone()?).stderr(out))
+}
+
+/// Start `c`; a program Windows refused to start is an error that says what
+/// blocked it.
+fn start(c: &mut Command) -> Result<Child> {
+    c.spawn()
+        .map_err(|e| match Block::of(Path::new(c.get_program()), &e) {
+            Some(b) => swofty_core::Error::Blocked(b).into(),
+            None => e.into(),
+        })
+}
+
+/// A program Windows refused to start: the log names it and the code, and
+/// the launcher and Send Logs get it as the launch's failure.
+fn note_blocked(store: &Store, e: &anyhow::Error) {
+    let Some(swofty_core::Error::Blocked(b)) = e.downcast_ref::<swofty_core::Error>() else {
+        return;
+    };
+    say(
+        "warning",
+        &format!(
+            "Windows refused to start {} (os error {})",
+            b.program.display(),
+            b.code
+        ),
+    );
+    if let Err(e) = launch::Failure::new(launch::Cause::Blocked(b.clone())).write(&store.root) {
+        info(&format!("could not record it for the launcher: {e}"));
+    }
 }
 
 const STEAMVR_START_TIMEOUT: Duration = Duration::from_secs(90);
@@ -1216,6 +1315,15 @@ pub fn steam_check(store: &Store, start: bool) -> Result<ExitCode> {
     }
     let status = steam_client::status();
     say("steam", &format!("detected: {status}"));
+    if let Some(g) = swofty_core::steam::find_game() {
+        say(
+            "steam",
+            &match swofty_core::steam::busy(&g) {
+                Some(state) => format!("F1 25: Steam is {state} its files"),
+                None => "F1 25: Steam isn't changing its files".to_owned(),
+            },
+        );
+    }
     Ok(if status.state.usable() {
         ExitCode::SUCCESS
     } else {
@@ -1511,11 +1619,15 @@ impl Follow {
             (Some(a), Some(b)) => format!("{:.1}s", b - a),
             _ => "?".into(),
         };
+        let end = SessionRecord::read(&self.dir)
+            .end
+            .map(|e| format!(" ({})", e.end.as_str()))
+            .unwrap_or_default();
         println!();
         say(
             "info",
             &format!(
-                "game exited with code {code} after {dur}; logs in {}",
+                "game exited with code {code} after {dur}{end}; logs in {}",
                 self.dir.display()
             ),
         );
@@ -1731,6 +1843,25 @@ mod tests {
     }
 
     #[test]
+    fn a_blocked_start_is_recorded_for_the_launcher() {
+        let root = std::env::temp_dir().join(format!("swofty-run-{}-blocked", std::process::id()));
+        let store = Store::new(&root);
+        let missing = start(&mut Command::new(root.join("no-such-program"))).unwrap_err();
+        assert!(missing.downcast_ref::<std::io::Error>().is_some(), "{missing}");
+        note_blocked(&store, &missing);
+        assert_eq!(launch::Failure::read(&root), None);
+        let block = Block::from_code(&root.join("f1op-probe.exe"), 4551).unwrap();
+        let blocked = anyhow::Error::from(swofty_core::Error::Blocked(block.clone()));
+        assert_eq!(blocked.to_string(), block.text());
+        note_blocked(&store, &blocked.context("staging offline play"));
+        assert_eq!(
+            launch::Failure::read(&root).map(|f| f.cause),
+            Some(launch::Cause::Blocked(block))
+        );
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
     fn names_the_log_when_the_wrapper_says_nothing() {
         let log = temp_log("silent");
         let child = spawn_logged(Command::new("sh").args(["-c", "exit 1"]), &log).unwrap();
@@ -1927,6 +2058,22 @@ mod tests {
         assert!(Cli::parse_from(["swofty", "--no-start-store"]).run.no_start_store);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn a_game_ended_by_a_signal_has_no_exit_code_and_says_why() {
+        let status = Command::new("sh").args(["-c", "kill -9 $$"]).status().unwrap();
+        assert_eq!(status.code(), None);
+        let end = SessionEnd::resolve(status.code(), &why_no_code(status), None, None);
+        assert_eq!(
+            (end.end, end.exit_code),
+            (swofty_core::session::Ending::Unknown, None)
+        );
+        assert_eq!(
+            end.reason,
+            "the game's process was ended by signal 9, which leaves no exit code"
+        );
+    }
+
     #[test]
     fn keeps_the_last_lines() {
         let log = temp_log("tail");
@@ -2048,10 +2195,22 @@ mod tests {
         assert_eq!(report.game, m.game.dir);
         assert_eq!(refused(&m.store, report.at - 1.0), Some(report.clone()));
         assert_eq!(refused(&m.store, report.at + 1.0), None);
-        loader_missed(&m.store, &m.game.dir);
+        loader_missed(&m.store, &m.game.dir, Some(quarantine::Cause::Defender));
         let report = quarantine::Report::read(&m.store.root).unwrap();
         assert!(report.stage == Stage::InGame && report.removed);
+        assert_eq!(report.cause, None);
         assert_eq!(refused(&m.store, 0.0), None);
+        std::fs::write(m.game.dir.join(PROXY), "proxy").unwrap();
+        loader_missed(&m.store, &m.game.dir, Some(quarantine::Cause::Defender));
+        let report = quarantine::Report::read(&m.store.root).unwrap();
+        assert!(!report.removed && report.cause.as_deref() == Some(&quarantine::Cause::Defender));
+        assert!(
+            report
+                .text()
+                .starts_with("F1 25 is running without mods: Microsoft Defender blocked version.dll."),
+            "{}",
+            report.text()
+        );
     }
 
     #[test]

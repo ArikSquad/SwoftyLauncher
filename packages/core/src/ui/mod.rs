@@ -26,6 +26,7 @@ const FE_HOME: &str = "eaid://ui_package/screens/fe_home.ui";
 const FE_CAREER: &str = "eaid://ui_package/screens/fe_career.ui";
 const CONTAINER: &str = "eaid://ui_package/screens/settings_container.ui";
 const ROUTES: &str = "eaid://ui_package/routes/routes_frontend_general.uir";
+const GAME_ROUTES: &str = "eaid://ui_package/routes/routes.uir";
 const FLOWS: &str = "eaid://ui_package/flows.ui";
 const REGIONS: &str = "eaid://ui_package/region_loading.uiconfig";
 const TOOLTIPS: &str = "eaid://ui_package/databases/tool_tips.uidb";
@@ -54,7 +55,12 @@ pub struct MenuBuild {
     pub session: Vec<SessionScreen>,
     pub strings: Vec<(String, String)>,
     pub lines: Vec<String>,
+    pub warnings: Vec<String>,
 }
+
+/// The addon whose copy of a resource (second) in a game archive (first)
+/// the build reads; `None` for the game's own copy.
+pub type Writer<'a> = dyn Fn(&str, &str) -> Option<String> + 'a;
 
 type Patch<'a> = Box<dyn FnOnce(&[u8]) -> Result<Vec<u8>> + 'a>;
 
@@ -157,6 +163,7 @@ fn core_version(settings: &SessionSettings) -> String {
 pub fn build(
     settings: &SessionSettings,
     input: &dyn Fn(&str) -> PathBuf,
+    writer: &Writer,
     out: &Path,
     lang: bool,
 ) -> Result<MenuBuild> {
@@ -169,8 +176,53 @@ pub fn build(
         &read_frag(&flow_options, CONTAINER, 0)?,
     )?;
     let flow = pages::entries(&settings.addons, &settings.maps, &settings.mods);
-    let built = pages::build_all(&src, &TILES, &flow)?;
+    let mut built = pages::build_all(&src, &TILES, &flow)?;
+    // Addon screens with page: options are their addon's options page under the name
+    // swofty_addon_<name>_<addon index>; the view model reads the index after the last '_'.
+    let mut generated: Vec<(String, String, String)> = Vec::new();
+    for s in settings.ui.iter().flat_map(|u| &u.screens) {
+        if s.page.as_deref() != Some("options") {
+            continue;
+        }
+        let e = flow
+            .iter()
+            .find(|e| e.kind == pages::Kind::Addon && Some(e.id) == s.addon.as_deref())
+            .ok_or_else(|| err(format!("screen {}: its addon is not on", s.name)))?;
+        let full = e.screen.trim_start_matches("swofty_addon_");
+        let screen = format!("swofty_addon_{}_{full}", s.name);
+        let anchor = s.anchor.clone().unwrap_or_else(|| ANCHOR.to_owned());
+        built
+            .order
+            .push((screen.clone(), pages::build_options_page(&src, e, &screen)?));
+        if !e.options.is_empty() {
+            built.view_models.push(screen.clone());
+        }
+        generated.push((s.name.clone(), anchor, screen));
+    }
     let names: Vec<String> = built.order.iter().map(|(n, _)| n.clone()).collect();
+    // Addon screens in the options flow get the flow entry, region and route group an ADDON
+    // SETTINGS page gets, so routes and signals to them open them.
+    let addon_routes: Vec<(String, String)> = settings
+        .ui
+        .iter()
+        .flat_map(|u| &u.screens)
+        .filter(|s| s.flow == FLOW && s.page.is_none() && !names.contains(&s.name))
+        .map(|s| {
+            (
+                s.name.clone(),
+                s.anchor.clone().unwrap_or_else(|| ANCHOR.to_owned()),
+            )
+        })
+        .collect();
+    let addon_screens: Vec<String> = addon_routes.iter().map(|(n, _)| n.clone()).collect();
+    let mut opened: Vec<(String, String, String)> = addon_routes
+        .iter()
+        .map(|(n, a)| (n.clone(), a.clone(), n.clone()))
+        .collect();
+    opened.extend(generated.iter().cloned());
+    let mut addon_groups = addon_routes.clone();
+    addon_groups.extend(generated.iter().map(|(_, a, s)| (s.clone(), a.clone())));
+    let listed: Vec<String> = names.iter().chain(&addon_screens).cloned().collect();
     let mut problems = check::screens(&built.order, &built.view_models)?;
     let no_scenes = catalog::Scenes::default();
     for (name, data) in &built.order {
@@ -205,7 +257,11 @@ pub fn build(
             (
                 ROUTES,
                 Box::new(|d| {
-                    let b = patch::routes(d, patch::route_groups(&pages))?;
+                    let b = patch::routes(
+                        d,
+                        patch::route_groups(&pages),
+                        patch::screen_route_groups(&addon_groups),
+                    )?;
                     *routes_out.borrow_mut() = b.clone();
                     Ok(b)
                 }),
@@ -213,15 +269,16 @@ pub fn build(
             (
                 FLOWS,
                 Box::new(|d| {
-                    let b = patch::flow_entries(d, OPTIONS_FLOW, &names)?;
+                    let b = patch::flow_entries(d, OPTIONS_FLOW, &listed)?;
                     *flows_out.borrow_mut() = b.clone();
                     Ok(b)
                 }),
             ),
-            (REGIONS, Box::new(|d| patch::regions(d, &names))),
+            (REGIONS, Box::new(|d| patch::regions(d, &listed))),
+            (GAME_ROUTES, Box::new(|d| patch::anchor_routes(d, &opened))),
         ],
     )?;
-    let registered: BTreeMap<String, String> = names.iter().map(|n| (n.clone(), FLOW.to_owned())).collect();
+    let registered: BTreeMap<String, String> = listed.iter().map(|n| (n.clone(), FLOW.to_owned())).collect();
     problems.extend(check::routes(
         &routes_out.borrow(),
         &flows_out.borrow(),
@@ -280,7 +337,7 @@ pub fn build(
     )?;
 
     let mut build = MenuBuild::default();
-    let eras = era_rows(input, out, &mut build.lines)?;
+    let eras = era_rows(input, writer, out, &mut build.lines, &mut build.warnings)?;
     if lang {
         build.strings = popup.strings();
     }
@@ -299,6 +356,8 @@ pub fn build(
         build.screens.insert(rel, path);
         build.session.push(SessionScreen {
             name: name.clone(),
+            page: None,
+            addon: None,
             file: screen_file(name),
             flow: FLOW.into(),
             anchor: Some(ANCHOR.into()),
@@ -310,8 +369,10 @@ pub fn build(
 
 fn era_rows(
     input: &dyn Fn(&str) -> PathBuf,
+    writer: &Writer,
     out: &Path,
     lines: &mut Vec<String>,
+    warnings: &mut Vec<String>,
 ) -> Result<Vec<&'static str>> {
     let world = input(&ui_file(era::ARCHIVES[0]));
     let title = read_frag(&world, era::TITLE_SCENE, 0)?;
@@ -334,19 +395,40 @@ fn era_rows(
     for rel in era::ARCHIVES {
         let (src, dst) = (input(&ui_file(rel)), out.join(ui_file(rel)));
         let ui = read_frag(&src, era::UI, era::UI_FRAGMENT)?;
-        if era::taken(&ui, &read_frag(&src, era::SCENE, 0)?)? {
+        let scene = read_frag(&src, era::SCENE, 0)?;
+        let edit = era::taken(&ui, &scene).and_then(|taken| match taken {
+            true => Ok(None),
+            false => Ok(Some((era::build_ui(&ui)?, era::build_scene(&scene, &title)?))),
+        });
+        let edit = match edit {
+            Ok(edit) => edit,
+            Err(e) => {
+                let by = [
+                    (rel, era::UI),
+                    (rel, era::SCENE),
+                    (era::ARCHIVES[0], era::TITLE_SCENE),
+                ]
+                .into_iter()
+                .find_map(|(erp, res)| writer(&ui_file(erp), res));
+                let Some(addon) = by else { return Err(e) };
+                warnings.push(format!(
+                    "ui: {addon} has its own copy of the era picker in {rel}, which Swofty can't edit; the era picker boxes there are off while it's on ({e})"
+                ));
+                continue;
+            }
+        };
+        let Some((ui, scene)) = edit else {
             lines.push(format!(
                 "ui: the era picker in {rel} already has an Addons row from another addon; left as it is"
             ));
             continue;
-        }
-        let title = &title;
+        };
         write_archive(
             &src,
             &dst,
             vec![
-                (era::UI, era::UI_FRAGMENT, Box::new(era::build_ui)),
-                (era::SCENE, 0, Box::new(move |d| era::build_scene(d, title))),
+                (era::UI, era::UI_FRAGMENT, Box::new(move |_| Ok(ui))),
+                (era::SCENE, 0, Box::new(move |_| Ok(scene))),
             ],
             added.clone(),
         )?;
@@ -375,4 +457,190 @@ fn era_rows(
         ));
     }
     Ok(written)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use node::{arr, node, obj, s};
+    use swofty_formats::erp::{Erp, Fragment, HEADER_LEN, MAGIC, Resource, STORED, kind};
+    use swofty_formats::pkg::{Node, Pkg};
+
+    const MOD: &str = "F1 2012 Season";
+
+    fn pkg(root: Node) -> Vec<u8> {
+        Pkg {
+            name: *b"TEST",
+            root,
+            vca: Vec::new(),
+            layout: None,
+        }
+        .to_bytes()
+        .unwrap()
+    }
+
+    fn ui() -> Vec<u8> {
+        pkg(obj(vec![(
+            "Templates",
+            arr(vec![node("dynamic_era_select", "UIGR", vec![], vec![], &[], &[])]),
+        )]))
+    }
+
+    fn scene() -> Vec<u8> {
+        pkg(obj(vec![(
+            "scenelist",
+            arr(vec![obj(vec![(
+                "scene",
+                obj(vec![("name", s("root")), ("children", arr(vec![]))]),
+            )])]),
+        )]))
+    }
+
+    fn resource(name: &str, ty: &str, frags: &[&[u8]]) -> Resource {
+        let mut res = Resource {
+            name: name.into(),
+            kind: kind(ty).unwrap(),
+            unk: vec![0; 6],
+            fragments: frags
+                .iter()
+                .map(|d| Fragment {
+                    name: *b"temp",
+                    offset: 0,
+                    size: d.len() as u64,
+                    flags: 0,
+                    compression: STORED,
+                    packed: d.len() as u64,
+                    raw: d.to_vec(),
+                })
+                .collect(),
+            hash: [0; 16],
+        };
+        res.hash = res.content_hash().unwrap();
+        res
+    }
+
+    fn archive(root: &Path, rel: &str, ui: &[u8]) -> PathBuf {
+        let resources = vec![
+            resource(era::UI, "UIDF", &[b"head", ui]),
+            resource(era::SCENE, "UILayout", &[&scene()]),
+            resource(era::TITLE_SCENE, "UILayout", &[&scene()]),
+        ];
+        write(root, rel, resources)
+    }
+
+    fn write(root: &Path, rel: &str, resources: Vec<Resource>) -> PathBuf {
+        let mut header = [0u8; HEADER_LEN];
+        header[..4].copy_from_slice(MAGIC);
+        header[4..8].copy_from_slice(&4u32.to_le_bytes());
+        let mut erp = Erp {
+            header,
+            version: 4,
+            resources,
+        };
+        let path = root.join(ui_file(rel));
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, erp.to_bytes()).unwrap();
+        path
+    }
+
+    #[test]
+    fn an_addon_era_picker_that_cannot_be_read_is_left_as_it_is() {
+        let root = std::env::temp_dir().join(format!("swofty-era-skip-{}", std::process::id()));
+        std::fs::remove_dir_all(&root).ok();
+        let full = ui();
+        let odd = full[..full.len() / 2].to_vec();
+        let why = Pkg::parse(&odd).unwrap_err().to_string();
+        let game = root.join("game");
+        for rel in era::ARCHIVES {
+            archive(&game, rel, &odd);
+        }
+        let input = |rel: &str| game.join(rel);
+        let out = root.join("out");
+        let from_mod = |_: &str, res: &str| (res == era::UI).then(|| MOD.to_owned());
+        let (mut lines, mut warnings) = (Vec::new(), Vec::new());
+        let written = era_rows(&input, &from_mod, &out, &mut lines, &mut warnings).unwrap();
+        assert!(written.is_empty());
+        assert!(!out.exists(), "nothing is written");
+        assert!(lines.is_empty(), "{lines:?}");
+        assert_eq!(warnings.len(), 2, "{warnings:?}");
+        for (w, rel) in warnings.iter().zip(era::ARCHIVES) {
+            assert!(
+                w.starts_with(&format!("ui: {MOD} has its own copy of the era picker in {rel},")),
+                "{w}"
+            );
+            assert!(
+                w.contains("the era picker boxes there are off while it's on"),
+                "{w}"
+            );
+            assert!(w.contains(&why), "{w}");
+        }
+
+        let stock = |_: &str, _: &str| None;
+        let e = era_rows(&input, &stock, &out, &mut Vec::new(), &mut Vec::new()).unwrap_err();
+        assert!(e.to_string().contains(&why), "{e}");
+
+        let world_only = |erp: &str, res: &str| {
+            (erp.ends_with(era::ARCHIVES[0]) && res == era::UI).then(|| MOD.to_owned())
+        };
+        let mut warnings = Vec::new();
+        let e = era_rows(&input, &world_only, &out, &mut Vec::new(), &mut warnings).unwrap_err();
+        assert!(e.to_string().contains(&why), "{e}");
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(warnings[0].contains(era::ARCHIVES[0]), "{warnings:?}");
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn an_addon_era_picker_without_the_stock_templates_is_left_as_it_is() {
+        let root = std::env::temp_dir().join(format!("swofty-era-templates-{}", std::process::id()));
+        std::fs::remove_dir_all(&root).ok();
+        let game = root.join("game");
+        for rel in era::ARCHIVES {
+            archive(&game, rel, &ui());
+        }
+        let input = |rel: &str| game.join(rel);
+        let out = root.join("out");
+        let from_mod = |_: &str, _: &str| Some(MOD.to_owned());
+        let mut warnings = Vec::new();
+        let written = era_rows(&input, &from_mod, &out, &mut Vec::new(), &mut warnings).unwrap();
+        assert!(written.is_empty());
+        assert_eq!(warnings.len(), 2, "{warnings:?}");
+        assert!(
+            warnings.iter().all(|w| w.contains("time_trial_select not found")),
+            "{warnings:?}"
+        );
+        let stock = |_: &str, _: &str| None;
+        let e = era_rows(&input, &stock, &out, &mut Vec::new(), &mut Vec::new()).unwrap_err();
+        assert!(e.to_string().contains("time_trial_select not found"), "{e}");
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn a_missing_era_picker_resource_stays_an_error() {
+        let root = std::env::temp_dir().join(format!("swofty-era-missing-{}", std::process::id()));
+        std::fs::remove_dir_all(&root).ok();
+        let game = root.join("game");
+        let mut odd = ui();
+        odd.extend_from_slice(&[0; 4]);
+        archive(&game, era::ARCHIVES[0], &odd);
+        write(
+            &game,
+            era::ARCHIVES[1],
+            vec![resource(era::UI, "UIDF", &[b"head", &odd])],
+        );
+        let input = |rel: &str| game.join(rel);
+        let from_mod = |_: &str, _: &str| Some(MOD.to_owned());
+        let mut warnings = Vec::new();
+        let e = era_rows(
+            &input,
+            &from_mod,
+            &root.join("out"),
+            &mut Vec::new(),
+            &mut warnings,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains(era::SCENE), "{e}");
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        std::fs::remove_dir_all(&root).ok();
+    }
 }

@@ -1,6 +1,7 @@
 pub use swofty_addon::{GAME_ID, asset, builder, launcher, manifest, ops, view};
 
 pub mod activation;
+pub mod app_control;
 pub mod baseline;
 pub mod build;
 pub mod builtin;
@@ -19,6 +20,7 @@ pub mod import;
 pub mod install;
 pub mod journal;
 pub mod launch;
+pub mod loader_check;
 pub mod managed;
 pub mod map;
 pub mod offline;
@@ -40,6 +42,7 @@ pub mod saves;
 pub mod send_logs;
 pub mod session;
 pub mod settings;
+pub mod setup;
 pub mod steam;
 pub mod steam_client;
 pub mod stock;
@@ -82,11 +85,16 @@ pub enum Error {
     #[error("{}", leftovers(.0))]
     Leftovers(Vec<install::Conflict>),
     #[error(
-        "{} {} not the copy Steam installed; verify the game files in Steam (F1 25 > Properties > Installed Files > Verify integrity of game files), then try again; nothing in the game folder was changed",
+        "{} {} not the copy Steam installed, usually after a mod was copied into the game folder by hand; nothing in the game folder was changed; verify the game files in Steam to put them back (open {}, or F1 25 > Properties > Installed Files > Verify integrity of game files), then try again",
         stock::names(.0),
-        if .0.len() == 1 { "is" } else { "are" }
+        if .0.len() == 1 { "is" } else { "are" },
+        stock::STEAM_VERIFY_URL
     )]
     NotStock(Vec<String>),
+    #[error("{}", .0.text())]
+    Blocked(app_control::Block),
+    #[error("{0}")]
+    Requires(catalog::requires::Refusal),
     #[error("{0}")]
     Other(String),
 }

@@ -412,7 +412,13 @@ pub struct NativePlugin {
 #[serde(deny_unknown_fields)]
 pub struct ScreenOp {
     pub name: String,
+    /// The screen's `.ui`; empty when `page` has the launcher generate it.
+    #[serde(default)]
     pub file: String,
+    /// `options`: the launcher builds this addon's options page, as ADDON SETTINGS shows it, as
+    /// this screen, opened from `anchor` by the route `open_<name>`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page: Option<String>,
     #[serde(default = "default_flow")]
     pub flow: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -490,6 +496,15 @@ impl AddonManifest {
             if screens.insert(s.name.as_str(), ()).is_some() {
                 return fail(format!("screen {} is declared twice", s.name));
             }
+            match s.page.as_deref() {
+                None if s.file.is_empty() => {
+                    return fail(format!("screen {}: needs a file, or page: options", s.name));
+                }
+                Some(p) if p != "options" => {
+                    return fail(format!("screen {}: page must be options, not {p}", s.name));
+                }
+                _ => {}
+            }
         }
         let paths = self
             .operations
@@ -506,7 +521,13 @@ impl AddonManifest {
                     .iter()
                     .flat_map(|n| std::iter::once(&n.dll).chain(&n.files)),
             )
-            .chain(self.operations.screens.iter().map(|s| &s.file))
+            .chain(
+                self.operations
+                    .screens
+                    .iter()
+                    .filter(|s| s.page.is_none())
+                    .map(|s| &s.file),
+            )
             .chain(self.launcher.iter().flat_map(|l| l.program.values()))
             .chain(&self.icon);
         if let Some(p) = paths.into_iter().find(|p| !relative_inside(p)) {
@@ -703,7 +724,15 @@ mod tests {
             (s[1].flow.as_str(), s[1].anchor.as_deref(), s[1].view_model),
             ("flow_frontend", None, false)
         );
+        let m = AddonManifest::parse(&with(
+            r#"{ "name": "grid_options", "page": "options", "flow": "flow_options", "anchor": "settings_container" }"#,
+        ))
+        .unwrap();
+        let s = &m.operations.screens[0];
+        assert_eq!((s.page.as_deref(), s.file.as_str()), (Some("options"), ""));
         for bad in [
+            r#"{ "name": "a" }"#,
+            r#"{ "name": "a", "page": "about" }"#,
             r#"{ "name": "a", "file": "../a.ui" }"#,
             r#"{ "name": "Bad", "file": "ui/a.ui" }"#,
             r#"{ "name": "a", "file": "ui/a.ui", "anchor": "x.y" }"#,

@@ -25,7 +25,7 @@ use crate::game::Install;
 use crate::library::{AddonIcon, SectionItem, plural};
 use crate::pages::{GUTTER, badge, chevron, fact, label, monogram, names, stat, tag, tile};
 use crate::shell::{Page, Shell};
-use crate::theme::Palette;
+use crate::theme::{Palette, ScrollArea};
 
 pub(crate) type Shared = Arc<Mutex<Option<(f32, String)>>>;
 
@@ -425,17 +425,23 @@ impl Shell {
         let reporter = Reporter(shared.clone());
         self.follow_progress(shared, cx);
         cx.spawn_in(window, async move |this, cx| {
-            let (mut done, failed, unclaimed, fresh) = cx
+            let (mut done, failed, unclaimed, fresh, left_out) = cx
                 .background_executor()
                 .spawn(async move {
                     let before = installed(&store);
                     let (done, failed, unclaimed) =
                         import_all(&store, &registry, &profile, install.as_ref(), &paths, &reporter);
                     let fresh = installed_since(&before, &installed(&store));
+                    let addons = store.addons().unwrap_or_default();
+                    let left_out: Vec<String> = fresh
+                        .iter()
+                        .filter_map(|id| addons.get(id))
+                        .flat_map(|m| swofty_core::tracks::left_out_lines(&store, m))
+                        .collect();
                     if let Ok(mut p) = reporter.0.lock() {
                         *p = None;
                     }
-                    (done, failed, unclaimed, fresh)
+                    (done, failed, unclaimed, fresh, left_out)
                 })
                 .await;
             if fresh.len() > 1 {
@@ -453,6 +459,14 @@ impl Shell {
                 }
                 if !failed.is_empty() {
                     window.push_notification(Notification::error(failed.join("\n")), cx);
+                }
+                if !left_out.is_empty() {
+                    window.push_notification(
+                        Notification::warning(left_out.join("\n"))
+                            .title("Track can't be used")
+                            .autohide(false),
+                        cx,
+                    );
                 }
                 if !unclaimed.is_empty() {
                     s.show_not_addons(&unclaimed, window, cx);
@@ -708,10 +722,9 @@ impl Shell {
                 self.empty(section_icon, title.clone(), text.clone(), action, p)
             }
             Body::Blocks(blocks) => v_flex()
-                .id(SharedString::from(format!("section-{addon}-{id}")))
                 .flex_1()
                 .min_h_0()
-                .overflow_y_scroll()
+                .scroll_y(SharedString::from(format!("section-{addon}-{id}")))
                 .px(px(GUTTER))
                 .pt(px(4.))
                 .pb(px(24.))

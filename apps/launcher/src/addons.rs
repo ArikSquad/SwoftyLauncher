@@ -21,7 +21,7 @@ use swofty_core::profile::VANILLA;
 use crate::library::{AddonItem, Changes, Source, plural};
 use crate::pages::{GUTTER, addon_icon, badge, chevron, fact, label, logo, tag, track_badge};
 use crate::shell::{Page, Shell};
-use crate::theme::{Palette, palette};
+use crate::theme::{Palette, SCROLLBAR_GAP, ScrollArea, palette};
 
 const FADE: Duration = Duration::from_secs(4);
 pub(crate) const FILTERS_W: f32 = 226.;
@@ -701,10 +701,11 @@ impl Shell {
                                 || path.display().to_string(),
                                 |n| n.to_string_lossy().into_owned(),
                             );
-                            store
-                                .install_addons(path)
-                                .into_iter()
-                                .map(move |r| r.map_err(|e| format!("{name}: {e}")))
+                            let store = &store;
+                            store.install_addons(path).into_iter().map(move |r| match r {
+                                Ok(m) => Ok((swofty_core::tracks::left_out_lines(store, &m), m)),
+                                Err(e) => Err(format!("{name}: {e}")),
+                            })
                         })
                         .collect::<Vec<_>>()
                 })
@@ -713,9 +714,15 @@ impl Shell {
                 let mut last = None;
                 for r in results {
                     match r {
-                        Ok(m) => {
+                        Ok((left_out, m)) => {
                             let text = format!("Installed {} {}", m.name, m.version);
                             window.push_notification(Notification::success(text), cx);
+                            if !left_out.is_empty() {
+                                let note = Notification::warning(left_out.join("\n"))
+                                    .title("Track can't be used")
+                                    .autohide(false);
+                                window.push_notification(note, cx);
+                            }
                             last = Some(m.id);
                         }
                         Err(e) => window.push_notification(Notification::error(e), cx),
@@ -1248,11 +1255,11 @@ impl Shell {
             )
             .child(
                 v_flex()
-                    .id("addon-filters")
                     .flex_1()
                     .min_h_0()
-                    .overflow_y_scroll()
+                    .scroll_y("addon-filters")
                     .gap(px(16.))
+                    .pr(px(SCROLLBAR_GAP))
                     .pb(px(8.))
                     .child(group("CATEGORY", categories, cx))
                     .child(group("TYPE", types, cx))
@@ -1727,6 +1734,14 @@ impl Shell {
                                 }),
                         )
                     })
+                    .when(!m.left_out.is_empty(), |d| {
+                        let why = m.left_out.join("\n");
+                        d.child(
+                            pill(IconName::TriangleAlert, "Track left out", p.warning)
+                                .id(SharedString::from(format!("left-out-{id}")))
+                                .tooltip(move |window, cx| Tooltip::new(why.clone()).build(window, cx)),
+                        )
+                    })
                     .when(kept > 0, |d| {
                         d.child(
                             pill(
@@ -2029,7 +2044,21 @@ impl Shell {
                         .text_color(p.warning)
                         .child(format!("Could not read {}", changes.unreadable.join(", "))),
                 )
-            });
+            })
+            .children(m.left_out.iter().map(|why| {
+                h_flex()
+                    .gap(px(6.))
+                    .items_start()
+                    .text_size(px(13.))
+                    .text_color(p.text_muted)
+                    .child(
+                        Icon::new(IconName::TriangleAlert)
+                            .size(px(14.))
+                            .mt(px(2.))
+                            .text_color(p.warning),
+                    )
+                    .child(div().flex_1().min_w_0().child(why.clone()))
+            }));
         let mut actions: Vec<AnyElement> = Vec::new();
         if m.source == Source::DbEditor {
             let id = id.to_owned();
@@ -2059,30 +2088,8 @@ impl Shell {
             Some(self.settings(man, p, cx).into_any_element())
         };
         let conflicts = self.conflicts_block(id, p, cx).into_any_element();
-        v_flex()
-            .id(SharedString::from(format!("detail-{id}")))
+        let body = v_flex()
             .gap(px(18.))
-            .map(|d| {
-                if inline {
-                    d.flex_shrink_0()
-                        .px(px(20.))
-                        .pt(px(14.))
-                        .pb(px(18.))
-                        .bg(p.surface)
-                        .border_t_1()
-                        .border_color(p.border_variant)
-                } else {
-                    d.w(px(DETAIL_W))
-                        .flex_shrink_0()
-                        .h_full()
-                        .overflow_y_scroll()
-                        .p(px(18.))
-                        .rounded(px(8.))
-                        .border_1()
-                        .border_color(p.border)
-                        .bg(p.surface)
-                }
-            })
             .when(!inline, |d| d.child(head))
             .when_some(man.description.clone(), |d, text| {
                 d.child(
@@ -2107,7 +2114,30 @@ impl Shell {
             .child(what)
             .child(conflicts)
             .children(settings)
-            .child(advanced)
+            .child(advanced);
+        let key = SharedString::from(format!("detail-{id}"));
+        if inline {
+            return body
+                .id(key)
+                .flex_shrink_0()
+                .px(px(20.))
+                .pt(px(14.))
+                .pb(px(18.))
+                .bg(p.surface)
+                .border_t_1()
+                .border_color(p.border_variant)
+                .into_any_element();
+        }
+        div()
+            .w(px(DETAIL_W))
+            .flex_shrink_0()
+            .h_full()
+            .rounded(px(8.))
+            .border_1()
+            .border_color(p.border)
+            .bg(p.surface)
+            .overflow_hidden()
+            .child(body.size_full().p(px(18.)).scroll_y(key))
             .into_any_element()
     }
 

@@ -15,11 +15,12 @@ use super::{ADDABLE, Nav, hex, type_name};
 use crate::library::plural;
 use crate::pages::label;
 use crate::shell::Shell;
-use crate::theme::{Palette, palette};
+use crate::theme::{Palette, ScrollArea, palette};
 
 const LIST_H: f32 = 44.;
 const GRID_COL: f32 = 150.;
 const GRID_LABEL: f32 = 200.;
+const GRID_HEADER: f32 = 32.;
 
 fn kind_icon(kind: &NodeKind) -> IconName {
     match kind {
@@ -479,7 +480,7 @@ impl Shell {
         let rows = shown.len();
         let width = GRID_LABEL + GRID_COL * fields.len() as f32 + 24.;
         let header = h_flex()
-            .h(px(32.))
+            .h(px(GRID_HEADER))
             .px(px(12.))
             .flex_shrink_0()
             .border_b_1()
@@ -505,18 +506,26 @@ impl Shell {
         .flex_1()
         .track_scroll(&self.db.list_scroll);
         div()
-            .id("db-grid-scroll")
+            .relative()
             .size_full()
             .rounded(px(6.))
             .border_1()
             .border_color(p.border_variant)
-            .overflow_x_scroll()
+            .overflow_hidden()
             .child(
-                v_flex()
-                    .w(px(width))
-                    .h_full()
-                    .child(header)
-                    .child(self.db.list_motion.wrap(list, &self.db.list_scroll, cx)),
+                div()
+                    .size_full()
+                    .scroll_x("db-grid-scroll")
+                    .child(v_flex().w(px(width)).h_full().child(header).child(list)),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .top(px(GRID_HEADER))
+                    .bottom_0()
+                    .left_0()
+                    .right_0()
+                    .child(self.db.list_motion.overlay(&self.db.list_scroll, cx)),
             )
             .into_any_element()
     }
@@ -631,34 +640,29 @@ impl Shell {
             )
         } else {
             let shown = rows.clone();
+            let list = uniform_list(
+                "db-unnamed",
+                rows.len(),
+                cx.processor(move |this, range: Range<usize>, _, cx| {
+                    let p = palette(cx);
+                    let Some(catalog) = this.db.catalog().cloned() else {
+                        return Vec::new();
+                    };
+                    range
+                        .filter_map(|i| shown.get(i).map(|&n| (i, n)))
+                        .map(|(i, n)| this.db_entry(&catalog, i, n, false, p, cx))
+                        .collect::<Vec<_>>()
+                }),
+            )
+            .flex_1()
+            .track_scroll(&self.db.list_scroll);
             v_flex()
                 .size_full()
                 .rounded(px(6.))
                 .border_1()
                 .border_color(p.border_variant)
                 .overflow_hidden()
-                .child(
-                    self.db.list_motion.wrap(
-                        uniform_list(
-                            "db-unnamed",
-                            rows.len(),
-                            cx.processor(move |this, range: Range<usize>, _, cx| {
-                                let p = palette(cx);
-                                let Some(catalog) = this.db.catalog().cloned() else {
-                                    return Vec::new();
-                                };
-                                range
-                                    .filter_map(|i| shown.get(i).map(|&n| (i, n)))
-                                    .map(|(i, n)| this.db_entry(&catalog, i, n, false, p, cx))
-                                    .collect::<Vec<_>>()
-                            }),
-                        )
-                        .flex_1()
-                        .track_scroll(&self.db.list_scroll),
-                        &self.db.list_scroll,
-                        cx,
-                    ),
-                )
+                .child(self.db.list_motion.wrap(list, &self.db.list_scroll, cx))
                 .into_any_element()
         };
         let detail = self.db.key.map(|k| self.db_key_detail(k, p, cx));

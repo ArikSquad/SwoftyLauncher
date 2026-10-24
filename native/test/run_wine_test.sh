@@ -10,11 +10,13 @@ ITEMS=
 grep -qa '\[items\] ownership check hooked' ../dist/swofty/addons/core/swofty_core.dll && ITEMS=1
 export ZIG_GLOBAL_CACHE_DIR=$PWD/../build/zig-cache ZIG_LOCAL_CACHE_DIR=$PWD/../build/zig-cache
 PIN=(taskset -c 2-7,10,11,14-31 nice -n 10)
-rm -rf "$OUT/game" "$OUT/stages" "$OUT/packed"
-mkdir -p "$OUT/game" "$OUT/stages" "$OUT/packed"
+rm -rf "$OUT/game" "$OUT/stages" "$OUT/packed" "$OUT/filled"
+mkdir -p "$OUT/game" "$OUT/stages" "$OUT/packed" "$OUT/filled"
 "${PIN[@]}" zig cc -target x86_64-windows-gnu -O2 -o "$OUT/game/F1_25.exe" fake_game.c -lversion -luser32 &
 "${PIN[@]}" zig cc -target x86_64-windows-gnu -O2 -DPACKED_TEST -o "$OUT/packed/F1_25.exe" fake_game.c -lversion -luser32 &
+"${PIN[@]}" zig cc -target x86_64-windows-gnu -O2 -o "$OUT/filled/F1_25.exe" fake_filled_iat.c -luser32 &
 cp -r ../dist/. "$OUT/game/"
+cp -r ../dist/. "$OUT/filled/"
 mkdir -p "$OUT/game/swofty/mods/core"
 mv "$OUT/game/swofty/addons/core/swofty_gamelog.dll" "$OUT/game/swofty/addons/core/log_channels.tsv" "$OUT/game/swofty/mods/core/"
 for m in addons/t_*.cpp; do
@@ -102,7 +104,7 @@ count() {
     if [[ $n == "$2" ]]; then echo "ok  : $1"; else echo "FAIL: $1 (logged $n times, want $2)"; status=1; fi
 }
 CACHE=$OUT/game/swofty/cache/scan-cache.tsv
-for mode in trigger fallback vm settings settings_local session gamelog_off assets; do
+for mode in trigger fallback vm settings settings_local session gamelog_off assets nearfull nopool; do
     echo "==== $mode"
     stale=
     [[ $mode == vm ]] && stale=$(python3 - "$CACHE" <<'EOF'
@@ -196,6 +198,23 @@ EOF
     fi
     case $mode in
     trigger)
+        once "hook pool: the loader reserves it next to the image at attach" 'hook pool: 2048 KB reserved at [0-9A-Fa-f]+ \((above|below) the image\)'
+        once "hook pool: the core adopts it" '\[core\] hook pool: 2048 KB at 0x[0-9a-f]+ \(base[-+]0x[0-9a-f]+\), reserved at loader attach'
+        ;;
+    nearfull)
+        once "hook pool: the core adopts it with the space around the image taken" '\[core\] hook pool: 2048 KB at 0x[0-9a-f]+ \(base[-+]0x[0-9a-f]+\), reserved at loader attach'
+        check "hook pool: sites install from it" 'site site_FeHome_AfterCareerCall at 0x[0-9a-f]+ \(base\+0x[0-9a-f]+\) installed'
+        check "hook pool: redirects install from it" '\[core\] redirect [^ ]+ at 0x[0-9a-f]+ \(base\+0x[0-9a-f]+\) installed'
+        count "hook pool: no install misses memory" 0 'did not allocate'
+        ;;
+    nopool)
+        once "hook pool: the core says when the loader has none" '\[core\] hook pool: the loader reserved none at attach'
+        check "hook pool: without it an install names the missing memory and the bytes" '\[core\] (site|wrap|redirect) on [A-Za-z_]+ at 0x[0-9a-f]+: the (trampoline|stub|jump stub) did not allocate: no free memory within 2 GB of the target'
+        once "hook pool: the free-region map is logged once" '\[core\]   within 2 GB of 0x[0-9a-f]+: [0-9]+ free region\(s\), 0 whole 64 KB slot\(s\)'
+        ;;
+    esac
+    case $mode in
+    trigger)
         once "scan cache: the first run starts without one" '\[core\] scan cache: none yet for this exe \(key [0-9a-f]{16}\)'
         check "scan cache: the addresses the scans found are saved" '\[core\] scan cache: [1-9][0-9]* address\(es\) saved to swofty[\]cache[\]scan-cache\.tsv'
         count "resolve: an exe other than the KB build never uses the KB addresses" 0 'at the KB address'
@@ -228,7 +247,7 @@ EOF
     fi
     case $mode in
     trigger)
-        check "events: flow-tick hook installed" '\[events\] Vm_Update_FlowStateMachine hooked at base\+0x4423ce0'
+        check "events: flow-tick hook installed" '\[events\] Vm_Update_FlowStateMachine hooked at base\+0x[0-9a-f]+'
         check "events: setup reports the onFrame tick live" '\[events\] setup: live; onFrame armed'
         once "events: first flow tick fires with dt 0" '\[events\] flow tick 1 observed, dt 0\.0'
         once "events: second flow tick fires" '\[events\] flow tick 2 observed'
@@ -328,7 +347,7 @@ EOF
         once "items: key without 0x skipped" "\\[items\\] skipping owned_items entry key 'f01d03c7'"
         once "items: ownership check hooked" '\[items\] ownership check hooked at base\+0x[0-9a-f]+'
         once "items: mod key logged once" '\[items\] reporting mod item 0xf01d03c7 \(se_livery 22, rmdesigns\.alphatauri-orlen-livery\) as owned'
-    elif [[ $ITEMS ]]; then
+    elif [[ $ITEMS && $mode != nopool ]]; then
         check "items: no owned_items, nothing hooked" '\[items\] no "owned_items" in settings\.json'
         count "items: nothing reported" 0 '\[items\] reporting'
     fi
@@ -649,4 +668,19 @@ for mode in packed packed_never packed_plain; do
         ;;
     esac
 done
+echo "==== filled"
+LOG=$OUT/filled/swofty/loader.log
+SWOFTY_EARLY_STAGE=1 "${PIN[@]}" xvfb-run -a wine "$OUT/filled/F1_25.exe" || status=1
+echo "---- $LOG (filled)"
+grep -v '  section ' "$LOG"
+check "filled: the exe's import table lacks the early slot" "trigger: game IAT slot KERNEL32!CreateMutexW not found or not writable; the exe's import table is filled at load"
+once "filled: a breakpoint on the entry of KERNEL32!CreateMutexW" 'trigger armed: breakpoint on the entry of KERNEL32!CreateMutexW at [0-9A-Fa-f]+, early stage'
+once "filled: a breakpoint on the entry of KERNELBASE!CreateMutexW" 'trigger armed: breakpoint on the entry of KERNELBASE!CreateMutexW at [0-9A-Fa-f]+, early stage'
+count "filled: another mutex skips the early trigger" 2 "early trigger skipped: KERNEL32!CreateMutexW from [0-9A-Fa-f]+ \(\.text\) name 'swofty filled-iat test'"
+once "filled: the early trigger fires at the breakpoint" "trigger: KERNEL32!CreateMutexW from [0-9A-Fa-f]+ \(\.text\) name 'Codemasters F1 25' on thread .*loading addons now \(early stage\)"
+count "filled: both entries are restored" 2 'trigger disarmed: KERNEL(32|BASE)!CreateMutexW entry restored'
+once "filled: RegisterClassExW is found in the filled table" 'trigger armed: game IAT slot USER32!RegisterClassExW at [0-9A-Fa-f]+ \(was [0-9A-Fa-f]+\), in the import table the exe filled at load'
+once "filled: CreateWindowExW is found in the filled table" 'trigger armed: game IAT slot USER32!CreateWindowExW at [0-9A-Fa-f]+ \(was [0-9A-Fa-f]+\), in the import table the exe filled at load'
+once "filled: the window stage runs at RegisterClassExW" 'stage: window \(USER32!RegisterClassExW from [0-9A-Fa-f]+ \(\.text\)\), addons were loaded at the early stage'
+count "filled: the fallback watcher leaves the window stage to the armed slots" 0 'waiting for a visible main window for the window stage'
 exit $status

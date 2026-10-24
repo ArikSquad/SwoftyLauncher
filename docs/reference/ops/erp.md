@@ -145,6 +145,41 @@ The game reads a scene from whichever archive loads it first. When the build res
 warning: erp: eaid://ui_package/art/screens/career/rnd_overview.idf is resized, but 2025_asset_groups/ui_package/flow_team_hq.erp also carries it and keeps the stock copy; replace it there too, or the game may show either one
 ```
 
+## Binary XML with stats
+
+Some resources hold binary XML (`\x01BXML`) in fragment 0 and its string stats in fragment 1: 120 bytes that start with `TSMD`. AI racing lines (`.aispline`), AI brake settings and car handling files (`.vtf`) are among them. The game sizes the memory it reads fragment 0 into from those stats, so fragment 0 with more or longer strings than its stats count crashes F1 25 when it loads.
+
+When a resource the build writes has fragment 0 that its stats don't match, the build writes new stats from fragment 0, as the game's own tools do, and prints:
+
+```text
+erp: fixed the size headers of 20 AI racing line(s) in Example AI Pack so F1 25 reads them safely
+```
+
+A ready `overlay` archive with such a resource goes in resource by resource, and its resources get new stats the same way. The build prints:
+
+```text
+erp: example.pack: its overlay archive goes in resource by resource; 3 resource(s) in it need their size headers fixed
+```
+
+When fragment 0 starts as binary XML but doesn't parse, the build can't write its stats. It stops, and Play doesn't start:
+
+```text
+Example AI Pack would crash F1 25: its bahrain_ai_track.aispline doesn't match the size header the game reads with it, and the launcher can't read the file to fix the header. Turn Example AI Pack off in this profile.
+```
+
+To ship an edited fragment 0 that loads with other tools too, replace fragment 1 with stats made from it:
+
+```sh
+python3 -c "import sys; sys.path.insert(0, 'tools'); import vtf; d = open(sys.argv[1], 'rb').read(); open(sys.argv[2], 'wb').write(vtf.tsmd(vtf.parse(d)))" line.aispline line.tsmd
+```
+
+```json
+[
+  { "op": "replace-resource", "erp": "2025_asset_groups/environment_package/tracks/bahrain/wep/bahrain_common.erp", "resource": "eaid://environment_package/tracks/bahrain/ai/bahrain_ai_track.aispline", "fragment": 0, "source": "ai/line.aispline" },
+  { "op": "replace-resource", "erp": "2025_asset_groups/environment_package/tracks/bahrain/wep/bahrain_common.erp", "resource": "eaid://environment_package/tracks/bahrain/ai/bahrain_ai_track.aispline", "fragment": 1, "source": "ai/line.tsmd" }
+]
+```
+
 ## Mip files
 
 A texture (`GfxSurfaceRes`) with three fragments keeps the rest of its mip chain in a loose file. Fragment 2 starts with a length byte and that file's path, relative to the game folder, such as `f1_safetycar_package/safety_car_2/textures/safety_car_2_decal_da.tif.mipmaps`.

@@ -13,7 +13,7 @@
 #define HOST_EXE L"F1_25.exe"
 #define EXPECTED_SIZE 408063872ULL
 #define EXPECTED_STAMP 1789118616UL
-#define WINDOW_TIMEOUT_MS 300000
+#define WINDOW_TIMEOUT_MS 1800000
 #define POLL_MS 50
 
 static const char *const fwd_names[] = {
@@ -498,6 +498,8 @@ static struct {
 #define IAT_CREATE 1
 #define IAT_MUTEX 2
 
+static int late_pending;
+
 static int set_slot(void **slot, void *value)
 {
     DWORD old;
@@ -506,6 +508,70 @@ static int set_slot(void **slot, void *value)
     InterlockedExchangePointer(slot, value);
     VirtualProtect(slot, sizeof *slot, old, &old);
     return 1;
+}
+
+/* The EA App exe's import table lists only Activation64.dll; its packer fills the game's real imports at load,
+   after this attach. There the early trigger is a breakpoint on the entry of CreateMutexW itself, which this
+   handler turns into a call of entry_CreateMutexW from the same caller. */
+static HANDLE WINAPI entry_CreateMutexW(LPSECURITY_ATTRIBUTES sa, BOOL owner, LPCWSTR name);
+
+static struct {
+    const char *mod;
+    uint8_t *at, orig;
+} entry_bp[2];
+static volatile LONG entry_bps;
+
+static LONG CALLBACK entry_veh(EXCEPTION_POINTERS *e)
+{
+    if (e->ExceptionRecord->ExceptionCode == EXCEPTION_BREAKPOINT)
+        for (LONG i = 0; i < entry_bps; i++)
+            if (e->ExceptionRecord->ExceptionAddress == entry_bp[i].at) {
+                e->ContextRecord->Rip = (DWORD64)(uintptr_t)entry_CreateMutexW;
+                return EXCEPTION_CONTINUE_EXECUTION;
+            }
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
+static int poke(uint8_t *at, uint8_t value)
+{
+    DWORD old;
+    if (!VirtualProtect(at, 1, PAGE_EXECUTE_READWRITE, &old))
+        return 0;
+    *at = value;
+    VirtualProtect(at, 1, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), at, 1);
+    return 1;
+}
+
+static int arm_entry(void)
+{
+    static const char *const mods[] = {"KERNEL32", "KERNELBASE"};
+    PVOID veh = AddVectoredExceptionHandler(1, entry_veh);
+    int armed = 0;
+    for (int i = 0; veh && i < 2; i++) {
+        HMODULE m = GetModuleHandleA(mods[i]);
+        uint8_t *at = m ? (uint8_t *)(void *)GetProcAddress(m, "CreateMutexW") : NULL;
+        if (!at || *at == 0xCC || (entry_bps && entry_bp[0].at == at))
+            continue;
+        entry_bp[entry_bps].mod = mods[i];
+        entry_bp[entry_bps].at = at;
+        entry_bp[entry_bps].orig = *at;
+        InterlockedIncrement(&entry_bps);
+        if (poke(at, 0xCC)) {
+            armed++;
+            slog("trigger armed: breakpoint on the entry of %s!CreateMutexW at %p, early stage", mods[i], (void *)at);
+        }
+    }
+    if (veh && !entry_bps)
+        RemoveVectoredExceptionHandler(veh);
+    return armed;
+}
+
+static void disarm_entry(void)
+{
+    for (LONG i = 0; i < entry_bps; i++)
+        if (*entry_bp[i].at == 0xCC && poke(entry_bp[i].at, entry_bp[i].orig))
+            slog("trigger disarmed: %s!CreateMutexW entry restored", entry_bp[i].mod);
 }
 
 static void hook_iat(void)
@@ -536,21 +602,87 @@ static void hook_iat(void)
     for (size_t k = 0; k < NIAT; k++) {
         if (iat[k].stage == STAGE_EARLY && !early_enabled)
             continue;
-        if (iat[k].slot && iat[k].orig && set_slot(iat[k].slot, iat[k].hook))
+        if (iat[k].slot && iat[k].orig && set_slot(iat[k].slot, iat[k].hook)) {
             slog("trigger armed: game IAT slot %s!%s at %p (was %p)%s", iat[k].mod, iat[k].name, (void *)iat[k].slot,
                  iat[k].orig, iat[k].stage == STAGE_EARLY ? ", early stage" : "");
-        else
-            slog("trigger: game IAT slot %s!%s not found or not writable%s", iat[k].mod, iat[k].name,
-                 iat[k].stage == STAGE_EARLY ? "; the early stage cannot fire" : "");
+            continue;
+        }
+        iat[k].slot = NULL;
+        if (iat[k].stage == STAGE_LATE) {
+            late_pending = 1;
+            slog("trigger: game IAT slot %s!%s not found or not writable", iat[k].mod, iat[k].name);
+            continue;
+        }
+        slog("trigger: game IAT slot %s!%s not found or not writable; the exe's import table is filled at load, so "
+             "the early stage fires on the entry of the function",
+             iat[k].mod, iat[k].name);
+        if (!arm_entry())
+            slog("trigger: no breakpoint on the entry of CreateMutexW could be set; the early stage cannot fire");
+    }
+}
+
+/* Once the game's own code runs, the packer has filled its import table: the window-stage slots are the one
+   pointer in the image's data that holds each function's address. */
+static void arm_filled_iat(void)
+{
+    void *want[NIAT] = {0}, **at[NIAT] = {0};
+    int hits[NIAT] = {0}, pending = 0;
+    for (size_t k = 0; k < NIAT; k++)
+        if (iat[k].stage == STAGE_LATE && !iat[k].slot) {
+            HMODULE m = GetModuleHandleA(iat[k].mod);
+            want[k] = m ? (void *)GetProcAddress(m, iat[k].name) : NULL;
+            pending += want[k] != NULL;
+        }
+    if (!pending)
+        return;
+    for (int s = 0; s < section_count; s++) {
+        uintptr_t a = sections[s].start, end = a + sections[s].size;
+        MEMORY_BASIC_INFORMATION m;
+        if (sections[s].flags & IMAGE_SCN_MEM_EXECUTE)
+            continue;
+        for (; a < end && VirtualQuery((void *)a, &m, sizeof m); a = (uintptr_t)m.BaseAddress + m.RegionSize) {
+            uintptr_t stop = (uintptr_t)m.BaseAddress + m.RegionSize < end ? (uintptr_t)m.BaseAddress + m.RegionSize : end;
+            if (!is_readable(&m))
+                continue;
+            for (void **p = (void **)((a + 7) & ~(uintptr_t)7); (uintptr_t)(p + 1) <= stop; p++)
+                for (size_t k = 0; k < NIAT; k++)
+                    if (want[k] && *p == want[k] && !hits[k]++)
+                        at[k] = p;
+        }
+    }
+    for (size_t k = 0; k < NIAT; k++) {
+        if (!want[k])
+            continue;
+        iat[k].orig = want[k];
+        iat[k].slot = hits[k] == 1 ? at[k] : NULL;
+        if (iat[k].slot && set_slot(iat[k].slot, iat[k].hook)) {
+            slog("trigger armed: game IAT slot %s!%s at %p (was %p), in the import table the exe filled at load",
+                 iat[k].mod, iat[k].name, (void *)iat[k].slot, want[k]);
+            continue;
+        }
+        iat[k].slot = NULL;
+        slog("trigger: %s!%s is in %d place(s) of the exe's data, not in one import slot; the window stage waits for "
+             "the main window",
+             iat[k].mod, iat[k].name, hits[k]);
     }
 }
 
 static void unhook_iat(int stage)
 {
+    if (stage != STAGE_LATE)
+        disarm_entry();
     for (size_t k = 0; k < NIAT; k++)
         if ((!stage || iat[k].stage == stage) && iat[k].slot && *iat[k].slot == iat[k].hook &&
             set_slot(iat[k].slot, iat[k].orig))
             slog("trigger disarmed: %s!%s slot restored to %p", iat[k].mod, iat[k].name, iat[k].orig);
+}
+
+static int late_armed(void)
+{
+    for (size_t k = 0; k < NIAT; k++)
+        if (iat[k].stage == STAGE_LATE && iat[k].slot && *iat[k].slot == iat[k].hook)
+            return 1;
+    return 0;
 }
 
 static const Section *section_of(uintptr_t a)
@@ -569,8 +701,8 @@ static void open_diag_log(void)
     swprintf(path, MAX_PATH * 2, L"%ls\\ea-diagnostics.log", dir);
     swprintf(prev, MAX_PATH * 2, L"%ls\\ea-diagnostics.prev.log", dir);
     MoveFileExW(path, prev, MOVEFILE_REPLACE_EXISTING);
-    diag_file = CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, CREATE_ALWAYS,
-                            FILE_ATTRIBUTE_NORMAL, NULL);
+    diag_file = CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                            OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 }
 
 /* The engine's runtime code section: the first EXECUTE|READ, non-writable section (EA .rdata, Steam
@@ -922,6 +1054,8 @@ static void load_addons_once(const char *why, LPCWSTR detail, int stage)
     ea_stage_probe(loaded_early ? "early-stage trigger (core loading)" : "window-stage trigger (core loading)",
                    !loaded_early);
     unhook_iat(loaded_early ? STAGE_EARLY : STAGE_LATE);
+    if (loaded_early)
+        arm_filled_iat();
     load_dir(L"core", 1, PICK_ALL);
     load_plugins(loaded_early ? PICK_EARLY : PICK_ALL);
     load_dir(L"", 0, loaded_early ? PICK_EARLY : PICK_ALL);
@@ -998,34 +1132,51 @@ static HWND WINAPI trigger_CreateWindowExW(DWORD ex, LPCWSTR cls, LPCWSTR name, 
     return ((CreateWindowExWFn)iat[IAT_CREATE].orig)(ex, cls, name, style, x, y, w, h, parent, menu, inst, param);
 }
 
-static HANDLE WINAPI trigger_CreateMutexW(LPSECURITY_ATTRIBUTES sa, BOOL owner, LPCWSTR name)
+static int early_mutex(void *ret, LPCWSTR name)
 {
     static volatile LONG skips;
-    void *ret = __builtin_return_address(0);
-    int game_mutex = 0;
-    if (load_state != 2) {
-        const Section *sec = section_of((uintptr_t)ret);
-        int named = name && !wcscmp(name, EARLY_MUTEX);
-        if (named && plain_code(sec)) {
-            char why[160];
-            snprintf(why, sizeof why, "KERNEL32!CreateMutexW from %p (%s)", ret, sec->name);
-            load_addons_once(why, name, STAGE_EARLY);
-            wait_loaded("early trigger");
-            game_mutex = 1;
-        } else if (InterlockedIncrement(&skips) <= 8)
-            slog("early trigger skipped: KERNEL32!CreateMutexW from %p (%s) name '%ls' is not the game's single-instance "
-                 "mutex from plain game code",
-                 ret, sec ? sec->name : "outside the exe", name ? name : L"(none)");
+    if (load_state == 2)
+        return 0;
+    const Section *sec = section_of((uintptr_t)ret);
+    if (name && !wcscmp(name, EARLY_MUTEX) && plain_code(sec)) {
+        char why[160];
+        snprintf(why, sizeof why, "KERNEL32!CreateMutexW from %p (%s)", ret, sec->name);
+        load_addons_once(why, name, STAGE_EARLY);
+        wait_loaded("early trigger");
+        return 1;
     }
+    if (InterlockedIncrement(&skips) <= 8)
+        slog("early trigger skipped: KERNEL32!CreateMutexW from %p (%s) name '%ls' is not the game's single-instance "
+             "mutex from plain game code",
+             ret, sec ? sec->name : "outside the exe", name ? name : L"(none)");
+    return 0;
+}
+
+static void game_mutex_made(HANDLE h, LPCWSTR name)
+{
+    DWORD err = GetLastError();
+    if (h && err == ERROR_ALREADY_EXISTS)
+        slog(SECOND_COPY " the game's mutex '%ls' already exists, so another copy of F1 25 is running; F1 25 "
+                         "closes a second copy",
+             name);
+    SetLastError(err);
+}
+
+static HANDLE WINAPI trigger_CreateMutexW(LPSECURITY_ATTRIBUTES sa, BOOL owner, LPCWSTR name)
+{
+    int game_mutex = early_mutex(__builtin_return_address(0), name);
     HANDLE h = ((CreateMutexWFn)iat[IAT_MUTEX].orig)(sa, owner, name);
-    if (game_mutex) {
-        DWORD err = GetLastError();
-        if (h && err == ERROR_ALREADY_EXISTS)
-            slog(SECOND_COPY " the game's mutex '%ls' already exists, so another copy of F1 25 is running; F1 25 "
-                             "closes a second copy",
-                 name);
-        SetLastError(err);
-    }
+    if (game_mutex)
+        game_mutex_made(h, name);
+    return h;
+}
+
+static HANDLE WINAPI entry_CreateMutexW(LPSECURITY_ATTRIBUTES sa, BOOL owner, LPCWSTR name)
+{
+    int game_mutex = early_mutex(__builtin_return_address(0), name);
+    HANDLE h = CreateMutexExW(sa, name, owner ? CREATE_MUTEX_INITIAL_OWNER : 0, MUTEX_ALL_ACCESS);
+    if (game_mutex)
+        game_mutex_made(h, name);
     return h;
 }
 
@@ -1173,7 +1324,28 @@ static DWORD WINAPI worker(LPVOID unused)
         }
         Sleep(POLL_MS);
     }
-    slog("fallback watcher: trigger already fired, exiting");
+    while (late_pending && load_state == 1)
+        Sleep(POLL_MS);
+    if (!late_pending || !loaded_early || window_done || late_armed()) {
+        slog("fallback watcher: trigger already fired, exiting");
+        return 0;
+    }
+    slog("fallback watcher: addons loaded at the early stage and no window trigger is armed; waiting for a visible "
+         "main window for the window stage");
+    while (!window_done) {
+        HWND w = NULL;
+        EnumWindows(find_window, (LPARAM)&w);
+        if (w) {
+            stage_window("main window visible (fallback)");
+            return 0;
+        }
+        if (GetTickCount() - attach_tick > WINDOW_TIMEOUT_MS) {
+            slog("fallback watcher: no window after %d s, the window stage did not run", WINDOW_TIMEOUT_MS / 1000);
+            return 0;
+        }
+        Sleep(POLL_MS);
+    }
+    slog("fallback watcher: window stage already ran, exiting");
     return 0;
 }
 
@@ -1199,9 +1371,67 @@ static void open_log(void)
     CreateDirectoryW(dir, NULL);
     swprintf(path, MAX_PATH * 2, L"%ls\\loader.log", dir);
     swprintf(prev, MAX_PATH * 2, L"%ls\\loader.prev.log", dir);
+    /* The hook also appends to this file and may hold it open; a failed rotation is fine, we append in place.
+       FILE_SHARE_DELETE lets the next run rotate even while we hold it. */
     MoveFileExW(path, prev, MOVEFILE_REPLACE_EXISTING);
-    log_file = CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, CREATE_ALWAYS,
-                           FILE_ATTRIBUTE_NORMAL, NULL);
+    /* The hook appends to the same file and briefly holds it during its own startup; retry past that window. */
+    for (int tries = 0; tries < 20; tries++) {
+        log_file = CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                               OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (log_file != INVALID_HANDLE_VALUE)
+            break;
+        Sleep(100);
+    }
+}
+
+/* Hook trampolines must sit within 2 GB of the code they patch. On a build whose core loads at the window
+   stage the game has filled the address space around the image by then, so the pool is reserved here, at
+   attach, and the core takes it over (SwoftyLoaderHookPool). */
+#define HOOK_POOL_SIZE (2u << 20)
+#define HOOK_POOL_REACH 0x40000000ULL
+static uintptr_t hook_pool;
+
+static uintptr_t reserve_at(uintptr_t at)
+{
+    return (uintptr_t)VirtualAlloc((void *)at, HOOK_POOL_SIZE, MEM_RESERVE, PAGE_NOACCESS);
+}
+
+static void reserve_hook_pool(void)
+{
+    const IMAGE_NT_HEADERS *nt = (const IMAGE_NT_HEADERS *)(image_base + ((const IMAGE_DOS_HEADER *)image_base)->e_lfanew);
+    uintptr_t end = image_base + nt->OptionalHeader.SizeOfImage;
+    MEMORY_BASIC_INFORMATION m;
+    for (uintptr_t p = end; !hook_pool && p < end + HOOK_POOL_REACH && VirtualQuery((void *)p, &m, sizeof m);
+         p = (uintptr_t)m.BaseAddress + m.RegionSize) {
+        uintptr_t at = (p + 0xFFFF) & ~(uintptr_t)0xFFFF;
+        if (m.State == MEM_FREE && at + HOOK_POOL_SIZE <= (uintptr_t)m.BaseAddress + m.RegionSize)
+            hook_pool = reserve_at(at);
+    }
+    uintptr_t lo = image_base > HOOK_POOL_REACH + 0x10000 ? image_base - HOOK_POOL_REACH : 0x10000;
+    for (uintptr_t at = (image_base - HOOK_POOL_SIZE) & ~(uintptr_t)0xFFFF;
+         !hook_pool && at >= lo && at < image_base && VirtualQuery((void *)at, &m, sizeof m);) {
+        if (m.State == MEM_FREE && m.RegionSize >= HOOK_POOL_SIZE && (hook_pool = reserve_at(at)))
+            break;
+        uintptr_t next = ((m.State == MEM_FREE ? at + m.RegionSize : (uintptr_t)m.AllocationBase) - HOOK_POOL_SIZE) &
+                         ~(uintptr_t)0xFFFF;
+        at = next < at ? next : at - 0x10000;
+    }
+    if (hook_pool)
+        slog("hook pool: %u KB reserved at %p (%s the image) for the core's hook trampolines", HOOK_POOL_SIZE >> 10,
+             (void *)hook_pool, hook_pool >= end ? "above" : "below");
+    else
+        slog("hook pool: no free %u KB within 1 GB of the image at attach; the core searches for trampoline memory "
+             "itself", HOOK_POOL_SIZE >> 10);
+}
+
+__declspec(dllexport) int SwoftyLoaderHookPool(uintptr_t *at, size_t *size)
+{
+    uintptr_t p = (uintptr_t)InterlockedExchangePointer((void *volatile *)&hook_pool, NULL);
+    if (!p)
+        return 0;
+    *at = p;
+    *size = HOOK_POOL_SIZE;
+    return 1;
 }
 
 static void log_build(void)
@@ -1280,6 +1510,7 @@ BOOL WINAPI DllMain(HINSTANCE self, DWORD reason, LPVOID reserved)
         if (swofty_fwd[i] == (void *)fwd_missing)
             slog("  forward %s missing in the real dll (calls return 0)", fwd_names[i]);
     log_build();
+    reserve_hook_pool();
     attach_tick = GetTickCount();
     if (ea_diag) {
         SetEnvironmentVariableW(L"SWOFTY_EA_DIAG", L"1");

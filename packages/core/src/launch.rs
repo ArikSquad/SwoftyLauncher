@@ -12,6 +12,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
+use crate::app_control::Block;
 use crate::quarantine::ATTACHED;
 use crate::{Result, io_err, read_json, write_json};
 
@@ -28,6 +29,11 @@ const WINDOW: &[&str] = &[
     "trigger: main window visible",
 ];
 const PID: &str = "attached, pid ";
+/// The core's line for an exception no handler took, and the session
+/// launcher's line once the game it created has exited.
+const UNHANDLED: &str = "[crash] unhandled ";
+const TOP_LEVEL: &str = "reached the top-level filter";
+const STUB_EXIT: &str = "[stub] [offline] game exited with code ";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -41,6 +47,8 @@ pub enum Cause {
     },
     /// The game closed itself cleanly before its window, with no other copy.
     ClosedEarly { after: f64 },
+    /// Windows refused to start one of Swofty's programs.
+    Blocked(Block),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -80,19 +88,23 @@ impl Failure {
     }
 
     pub fn title(&self) -> &'static str {
-        match self.cause {
+        match &self.cause {
             Cause::AlreadyRunning { .. } => "F1 25 is already running",
             Cause::SecondCopy { .. } => "F1 25 was opened twice",
             Cause::ClosedEarly { .. } => "F1 25 closed as it started",
+            Cause::Blocked(b) => b.title(),
         }
     }
 
     /// One line for the launcher's status bar.
-    pub fn headline(&self) -> &'static str {
-        match self.cause {
-            Cause::AlreadyRunning { .. } => "F1 25 was already running, so the modded copy was not started",
-            Cause::SecondCopy { .. } => "another copy of F1 25 was running, so the modded copy closed",
-            Cause::ClosedEarly { .. } => "F1 25 closed itself before its window opened",
+    pub fn headline(&self) -> String {
+        match &self.cause {
+            Cause::AlreadyRunning { .. } => {
+                "F1 25 was already running, so the modded copy was not started".into()
+            }
+            Cause::SecondCopy { .. } => "another copy of F1 25 was running, so the modded copy closed".into(),
+            Cause::ClosedEarly { .. } => "F1 25 closed itself before its window opened".into(),
+            Cause::Blocked(b) => b.headline(),
         }
     }
 
@@ -102,7 +114,7 @@ impl Failure {
         } else {
             "Close F1 25 and check that no F1_25.exe process is left"
         };
-        match self.cause {
+        match &self.cause {
             Cause::AlreadyRunning { pid } => format!(
                 "The modded session was not started: another copy of F1 25 is running (process {pid}), \
                  and F1 25 runs one copy at a time. {close}, then press Play again."
@@ -119,11 +131,12 @@ impl Failure {
                  error. No other copy of F1 25 was running. Press Play again. If it keeps closing, use \
                  Send Logs to Developers right after it happens."
             ),
+            Cause::Blocked(b) => b.text(),
         }
     }
 }
 
-/// What the session's loader.log shows about the game's start.
+/// What the session's loader.log shows about the game's start and end.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct LoaderSeen {
     pub attached: bool,
@@ -131,6 +144,10 @@ pub struct LoaderSeen {
     pub pid: Option<u32>,
     pub window: bool,
     pub second_copy: bool,
+    /// The code of the first exception that reached the top-level filter.
+    pub unhandled: Option<u32>,
+    /// The game's exit code as the session launcher read it (its last line).
+    pub stub_exit: Option<u32>,
 }
 
 impl LoaderSeen {
@@ -145,6 +162,14 @@ impl LoaderSeen {
             }
             seen.window |= WINDOW.iter().any(|w| line.contains(w));
             seen.second_copy |= line.contains(SECOND_COPY);
+            if seen.unhandled.is_none() && line.contains(UNHANDLED) && line.contains(TOP_LEVEL) {
+                seen.unhandled = line.split_once("(0x").and_then(|(_, rest)| {
+                    u32::from_str_radix(rest.split(|c: char| !c.is_ascii_hexdigit()).next()?, 16).ok()
+                });
+            }
+            if let Some((_, code)) = line.split_once(STUB_EXIT) {
+                seen.stub_exit = code.trim().parse().ok().or(seen.stub_exit);
+            }
         }
         seen
     }
@@ -204,6 +229,8 @@ mod tests {
                 pid: Some(25512),
                 window: false,
                 second_copy: false,
+                unhandled: None,
+                stub_exit: None,
             }
         );
         let window = format!(
@@ -216,6 +243,32 @@ mod tests {
             "{EARLY_LOG}single instance: the game's mutex 'Codemasters F1 25' already exists, so another copy of F1 25 is running; F1 25 closes a second copy\n"
         );
         assert!(LoaderSeen::scan(&second).second_copy);
+    }
+
+    #[test]
+    fn reads_the_crash_and_the_session_launchers_exit_code() {
+        let crashed = "\
+11:52:12.282 [stub] [offline] session launcher invoked, args: <none>
+2026-10-23 19:09:16.184 [22104] [crash] #1 first-chance (the game may still handle it) ACCESS_VIOLATION (0xc0000005) on thread 22104, 500 s after load, at F1_25.exe+0xb9ae23 .xtls fn base+0xb9a810+0x613
+2026-10-23 19:09:16.185 [22104] [crash] unhandled ACCESS_VIOLATION (0xc0000005) at F1_25.exe+0xb9ae23 .xtls fn base+0xb9a810+0x613 reached the top-level filter; passing it to the game's filter
+2026-10-23 19:09:16.185 [39408] [crash] writing a crash report: unhandled ACCESS_VIOLATION (0xc0000005) reading 0x80 at F1_25.exe+0xb9ae23 .xtls fn base+0xb9a810+0x613
+2026-10-23 19:09:16.190 [22104] [crash] unhandled STACK_OVERFLOW (0xc00000fd) at F1_25.exe+0x10 reached the top-level filter; passing it to the game's filter
+2026-10-23 19:09:24.102 [22104] [crash] TerminateProcess(4294967295) on thread 22104, 508 s after load; caller stack:
+19:09:27.164 [stub] [offline] game exited with code 4294967295
+";
+        let seen = LoaderSeen::scan(crashed);
+        assert_eq!(seen.unhandled, Some(0xc000_0005));
+        assert_eq!(seen.stub_exit, Some(0xffff_ffff));
+        let quit = "\
+2026-10-22 22:36:34.564 [ 7928] [crash] TerminateProcess(0) on thread 7928, 4576 s after load
+22:36:36.278 [stub] [offline] game exited with code 0
+";
+        assert_eq!(LoaderSeen::scan(quit).unhandled, None);
+        assert_eq!(LoaderSeen::scan(quit).stub_exit, Some(0));
+        let relaunched = "15:44:16.470 [stub] [offline] game exited with code 1\n\
+                          15:50:02.001 [stub] [offline] game exited with code 0\n";
+        assert_eq!(LoaderSeen::scan(relaunched).stub_exit, Some(0));
+        assert_eq!(LoaderSeen::scan(EARLY_LOG).stub_exit, None);
     }
 
     #[test]
@@ -316,6 +369,26 @@ mod tests {
         Failure::clear(&root).unwrap();
         assert_eq!(Failure::read(&root), None);
         Failure::clear(&root).unwrap();
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn a_blocked_program_names_itself_and_round_trips() {
+        let root = std::env::temp_dir().join(format!("swofty-launch-blocked-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("state")).unwrap();
+        let block = Block::from_code(Path::new(r"C:\Swofty\bin\swofty.exe"), 4551).unwrap();
+        let f = Failure {
+            at: 1_792_594_036.5,
+            cause: Cause::Blocked(block.clone()),
+        };
+        assert_eq!(f.title(), "Windows blocked a Swofty program");
+        assert_eq!(f.headline(), block.headline());
+        assert_eq!(f.text(), block.text());
+        f.write(&root).unwrap();
+        assert_eq!(Failure::read(&root), Some(f));
+        let text = std::fs::read_to_string(Failure::path(&root)).unwrap();
+        assert!(text.contains("\"kind\": \"blocked\""), "{text}");
+        assert!(text.contains("\"code\": 4551"), "{text}");
         std::fs::remove_dir_all(&root).ok();
     }
 }

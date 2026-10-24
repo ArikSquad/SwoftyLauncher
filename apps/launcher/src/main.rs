@@ -18,6 +18,7 @@ mod reveal;
 mod scroll;
 mod sections;
 mod send_logs;
+mod setup;
 mod shell;
 mod tasks;
 mod theme;

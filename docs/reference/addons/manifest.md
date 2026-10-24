@@ -34,7 +34,7 @@ Your addon needs a `swofty.json` at its root. This is where you give it a name, 
 | `icon` | string? | A path inside your addon, shown on the Tools page and your addon's sidebar pages. Use an `.svg` for a one-colour glyph in the launcher's icon style, or a square `.png`, `.jpg` or `.webp` to show the image as it is. |
 | `kind` | string[] | What the addon touches: `database`, `erp`, `text`, `ui`, `files`, `native`, `simplified`. `text` needs launcher 1.3.0 or later and `simplified` 1.3.6 or later; an earlier launcher rejects the manifest. `simplified` marks a mod merged into the game's shader packages, as the Simplified Suite loads `.serps` mods. |
 | `category` | string? | What the addon is for ([category](#category)). |
-| `experimental_features` | string[]? | Experimental engines of the in-game core the addon uses: `overlay` ([Overlay](/reference/std/overlay)) and `shaders` ([Shader packs](./shader-packs)). While the addon is on, the build turns each one on, and the Addons page tags the addon **Uses experimental features**. Needs launcher 1.3.7 or later, and 1.3.8 or later for `shaders`; an earlier launcher rejects the manifest. |
+| `experimental_features` | string[]? | Experimental engines of the in-game core the addon uses: `overlay` ([Overlay](/reference/std/overlay)) and `shaders` ([Shader packs](./shader-packs)). While the addon is on, the build turns each one on, and the Addons page tags the addon **Uses experimental features**. Needs launcher 1.3.7 or later, and 1.4.0 or later for `shaders`; an earlier launcher rejects the manifest. |
 | `origin` | object? | The tool and file the addon was made from ([origin](#origin)). |
 | `shader` | object? | A colour look for the game's picture ([shader](#shader)). |
 
@@ -54,7 +54,7 @@ Your addon needs a `swofty.json` at its root. This is where you give it a name, 
 | `helmets` | Helmets |
 | `shaders` | Shaders |
 
-An addon without a category is listed as Uncategorised. `helmets` needs launcher 1.3.6 or later, and `shaders` 1.3.8 or later. DB Editor addons can't use `shaders`.
+An addon without a category is listed as Uncategorised. `helmets` needs launcher 1.3.6 or later, and `shaders` 1.4.0 or later. DB Editor addons can't use `shaders`.
 
 Launchers from 1.3.6 read the categories of earlier launchers: `liveries` as `cars`, and `drivers-teams`, `database`, `gameplay`, `ui`, `audio`, `tools` and `other` as no category.
 
@@ -90,7 +90,7 @@ The **Addons** page shows the source as Built in, DB Editor, Imported or Install
 | `lut` | string | The `.cube` file, a path inside the addon. <span v-pre>`{{id}}`</span> is replaced with a `db` option's value. |
 | `strength` | number or string? | From 0 to 100, or <span v-pre>`"{{id}}"`</span> naming a `db` slider that stays within 0 to 100. Defaults to 100. |
 
-`shader` needs `"shaders"` in `experimental_features` and launcher 1.3.8 or later. One look applies at a time: with two addons that have a `shader` on, the later one in the load order applies.
+`shader` needs `"shaders"` in `experimental_features` and launcher 1.4.0 or later. One look applies at a time: with two addons that have a `shader` on, the later one in the load order applies.
 
 ## saves
 
@@ -138,6 +138,10 @@ Leave `saves` out for an addon that doesn't affect saves. The launcher shows the
 | `requires` | `[{ id, version }]` | List the addons that must be installed. `version` is a semver range and defaults to `*`. |
 | `conflicts` | `[{ id, touches? }]` | List the addons that must not be enabled together. Use `touches` to narrow the conflict to a shared target; `id` may be `*`. |
 | `load_after` | string[] | Addon ids or `*` patterns to build before your addon. |
+
+A profile with your addon enabled builds only when every addon in `requires` is enabled at a matching version. List as many as your addon needs; `swofty.core` and the other built-in addons are always present.
+
+The [Addon Browser](/using/addon-browser#requirements) reads `requires` when a player installs your addon. It installs each required addon the player lacks, and each one's own `requires`, from the Addon Browser. It refuses the install when a required addon isn't published there, or when no published version matches the range and works with the player's launcher. Publish the addons yours requires before you publish yours.
 
 ## options
 
@@ -192,7 +196,7 @@ Put your data edits in `operations`: the build applies them to the game's files,
 
 A **NativePlugin** is `{ dll, early, files }`. Give it the DLL path, use `early` to load it before the menu, and list the `files` it reads in game.
 
-A **ScreenOp** is `{ name, file, flow, anchor?, view_model }`. Choose `name` and `flow` values that use `[a-z0-9_]` and are unique across the profile's addons. Supply raw `.ui` data in `file`; it gets installed as `swofty/ui/<name>.ui`.
+A **ScreenOp** is `{ name, file, page?, flow, anchor?, view_model }`. Choose `name` and `flow` values that use `[a-z0-9_]` and are unique across the profile's addons. Supply raw `.ui` data in `file`; it gets installed as `swofty/ui/<name>.ui`. Or leave `file` out and set `page` to `options`, and the launcher builds your addon's options page as the screen ([Use your options page](./in-game-ui#use-your-options-page)).
 
 The `flow` defaults to `flow_frontend`. To register after another screen in the same flow, name that screen in `anchor`. Use `view_model` to ask core for a native view model. The names `swofty_settings`, `swofty_addon_<n>` and `swofty_map_<n>` belong to ADDON SETTINGS.
 

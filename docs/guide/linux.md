@@ -30,7 +30,9 @@ You can now start the modded game with either Steam's **Play** button or the lau
 1. Open **Swofty Launcher for F1 25** from the app menu, or `bin/swofty-launcher` in the install folder. The status line next to **Play** reads **Ready** when the launcher has found the game.
 2. [Install your addons](/using/addons) and [mods](/using/mods), then pick a [profile](/using/profiles).
 3. Press **Play**.
-4. On your first launch, you'll see the **Modded play runs offline** dialog. Select **Accept and launch**. For details, see [Offline play](/reference/safety).
+4. On your first Play, the launcher opens a one-time setup. Say whether your game folder holds mods Swofty didn't add, then select **I understand**. Select **Verify game files in Steam**, wait for Steam to finish, then select **I've verified, continue**. On the EA app copy, repair the game in the EA app instead.
+5. On your first launch, you'll see the **Modded play runs offline** dialog. Select **Accept and launch**. For details, see [Offline play](/reference/safety).
+6. The first launch after the setup can take 5 to 8 minutes. Don't press Play in Steam or the EA app while it runs.
 
 If Steam is closed, the launcher starts it and waits for it to sign in first; see [Steam](/reference/launch#steam).
 
@@ -46,12 +48,12 @@ Install the launcher and set the launch option in Desktop Mode. Once that's set,
 
 ## If your game files aren't the ones Steam installed
 
-Before a modded session builds anything, the launcher checks the game against Steam's record of the files it installed. If a file was changed outside the launcher, for example by another mod tool or a manual install, F1 25 is not started and a **Your game files have been edited** modal names the files and lists the fix.
+Before a modded session builds anything, the launcher checks the game against Steam's record of the files it installed. If a file was changed outside the launcher, for example by another mod tool or a manual install, F1 25 is not started and a **Your game files have been edited** modal says how many files changed, names the first six, and lists the fix.
 
 To fix it:
 
-1. In Steam, right-click F1 25 → **Properties** → **Installed Files** → **Verify integrity of game files**.
-2. Press **Play** again.
+1. Select **Verify game files in Steam** in the modal. Steam checks F1 25 and puts its own copies back. In Steam, it's under right-click F1 25 → **Properties** → **Installed Files** → **Verify integrity of game files**.
+2. When Steam has finished, press **Play** again.
 
 The next launch checks the game again and continues once it matches Steam's copy.
 

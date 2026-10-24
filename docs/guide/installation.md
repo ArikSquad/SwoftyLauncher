@@ -12,6 +12,7 @@ Install the launcher with the installer or by hand, then follow the setup steps 
 - F1 25 on Steam, with the F1 2026 season content installed.
 - The EA app version of F1 25 has experimental support; **Play** on it shows a one-time note before starting the game, and `swofty run` and `swofty apply` print the same note and continue. From 1.3.1, the launcher finds the EA app copy on Windows, starts it through the EA app, and switches between it and the Steam copy; see [Steam and EA app copies](/using/game-copies).
 - Windows 10 or 11 (x86-64), or Linux with Steam and Proton. Steam Deck, NixOS and Flatpak Steam work. macOS does not.
+- On Windows 11, Smart App Control off. It blocks the launcher's programs, which aren't code-signed; see [If Windows blocks the launcher](/guide/windows#if-windows-blocks-the-launcher).
 - Free disk space: your content changes copies of the game files, so you'll need room for those copies.
 
 ## Install with the installer
@@ -37,7 +38,24 @@ The installer downloads the latest release, checks it against the release's `SHA
 
 When you browse to a folder that isn't empty, isn't named `SwoftyLauncher` and holds no install, the installer uses a `SwoftyLauncher` folder inside it. With **Flatpak Steam**, choose a folder inside `~/.var/app/com.valvesoftware.Steam/`, such as `~/.var/app/com.valvesoftware.Steam/SwoftyLauncher`.
 
+Under **Install to**, the installer shows the full path it installs to. When that folder already holds the launcher, **Install** updates it in place, and your mods and settings stay.
+
+When Swofty Launcher, Swofty UI or the `swofty` command line is open from that folder, the installer asks to close it first. Select **Close Swofty Launcher and continue**: the installer asks it to close, ends it if it's still open after 10 seconds, then installs. While F1 25 is running, the installer doesn't install; close the game, then select **Try again**.
+
 You only need the installer once. After that, open the launcher from the Start menu or app menu, and it [updates itself](/using/updating).
+
+### Update or move an existing install
+
+The installer finds the launcher you already have: in the default folder, in the folder the Start menu, app menu or desktop shortcut opens, and in the folder of a running launcher. **Install to** shows that folder, and **Install** updates it in place. With more than one install, choose one under **Installed in**.
+
+Choose another folder to move the install there. **Move your existing install from … to …** is ticked, and **Install** then:
+
+1. Moves `bin/`, `loader/`, `share/` and the other release files to the new folder, and checks them there.
+2. Deletes the old folder once it's empty. Files of your own in it stay.
+3. Points the Start menu or app menu entry at the new folder, along with the desktop shortcut if **Add a desktop shortcut** is ticked, and deletes shortcuts to the old folder.
+4. Installs the latest release in the new folder.
+
+Close the launcher and F1 25 before moving it. Your [data folder](#where-your-files-are-stored) stays where it is. Untick **Move your existing install** to install a second copy and keep the first.
 
 ## Install by hand
 

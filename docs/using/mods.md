@@ -44,7 +44,11 @@ The page shows what each import became. **Details** lists every change.
 
 Drop a track zip on the launcher without unpacking it. It becomes a track addon in the **Tracks** category; turn it on to add the track to Grand Prix track selection. You can turn on any number of tracks in one profile.
 
+A track whose package doesn't say which track it replaces or copies can't be used. The launcher warns when you import it, marks its addon **Track left out** on the Addons page, and leaves it out when you play; the rest of the profile still loads. Import a fixed version, or ask the track's author for one.
+
 [How tracks are installed](/reference/installing-tracks) covers what turning a track on changes.
+
+When a track, or an addon that changes a track's AI racing line, ships files with size headers that don't match them, the launcher fixes the headers as it builds the profile. If it can't read a file to fix it, **Play** stops with a message that names the track or addon, such as `Test Ring would crash F1 25: …`. Turn it off in the profile to play. If a career's [Race weekends](/using/db-editor) entry uses that track, set the weekend back to another track first.
 
 ## Mods from an earlier version
 

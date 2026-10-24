@@ -8,7 +8,13 @@ use sha2::{Digest, Sha256};
 use crate::{Error, Result, io_err};
 
 pub fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for &b in bytes {
+        out.push(DIGITS[(b >> 4) as usize] as char);
+        out.push(DIGITS[(b & 15) as usize] as char);
+    }
+    out
 }
 
 pub fn sha256_bytes(data: &[u8]) -> String {

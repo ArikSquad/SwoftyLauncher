@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -9,6 +10,7 @@ use gpui_kit::component::{Icon, Sizable, WindowExt, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use semver::Version;
+use swofty_core::app_control::Block;
 use swofty_core::managed;
 use swofty_core::update::{self, Install, Release};
 use swofty_core::updater::{self, Catalog, Gate, Part, Phase, Plan, Ran, Track};
@@ -128,7 +130,7 @@ fn log_change(part: Part, before: &Option<String>, after: &Option<String>) {
     }
 }
 
-fn sentence(text: &str) -> String {
+pub(crate) fn sentence(text: &str) -> String {
     let mut chars = text.chars();
     match chars.next() {
         Some(c) => c.to_uppercase().chain(chars).collect(),
@@ -399,9 +401,10 @@ impl Shell {
         match command.spawn() {
             Ok(_) => cx.quit(),
             Err(e) => {
-                self.updates.phase = Phase::Failed(format!(
-                    "Updated, but could not restart: {e}. Close and reopen the launcher."
-                ));
+                self.updates.phase = Phase::Failed(match Block::of(Path::new(command.get_program()), &e) {
+                    Some(b) => format!("Updated, but could not restart: {}", b.text()),
+                    None => format!("Updated, but could not restart: {e}. Close and reopen the launcher."),
+                });
                 cx.notify();
             }
         }

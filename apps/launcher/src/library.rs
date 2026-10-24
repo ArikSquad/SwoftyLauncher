@@ -22,6 +22,8 @@ pub struct AddonItem {
     /// Built from the DB Editor (see [`swofty_core::dbedit::package::is_package`]).
     pub package: bool,
     pub source: Source,
+    /// Why builds leave out each track package it adds that can't be used.
+    pub left_out: Vec<String>,
 }
 
 impl AddonItem {
@@ -182,6 +184,16 @@ impl SectionItem {
     pub fn is_importer_tracks(&self) -> bool {
         self.addon == swofty_core::managed::ID && self.spec.id == TRACKS_SECTION
     }
+
+    /// The Simplified Importer's own page.
+    pub fn is_importer(&self) -> bool {
+        self.addon == swofty_core::managed::ID && self.spec.id == IMPORTER_SECTION
+    }
+
+    /// A page of Simplified for Swofty, which the sidebar lists under its own heading.
+    pub fn is_simplified(&self) -> bool {
+        self.addon == swofty_core::managed::ID
+    }
 }
 
 fn tracks_page(sections: &[SectionItem]) -> Option<usize> {
@@ -232,7 +244,6 @@ pub struct Library {
     /// The section with id `tracks` the sidebar shows, which lists track
     /// packages and track addons together.
     pub tracks_page: Option<usize>,
-    pub importer_icon: Option<AddonIcon>,
     pub error: Option<String>,
     pub loaded: Instant,
 }
@@ -263,6 +274,13 @@ impl Library {
                         && swofty_core::tracks::is_track_addon(&store.addons_dir().join(&m.id), m),
                     package,
                     source: Source::of(store, m, package),
+                    left_out: match m.is_builtin() {
+                        true => Vec::new(),
+                        false => swofty_core::tracks::unusable(store, &m.id, m)
+                            .iter()
+                            .map(|u| format!("{}.", crate::update::sentence(&u.text())))
+                            .collect(),
+                    },
                     manifest: m.clone(),
                 }
             })
@@ -302,7 +320,6 @@ impl Library {
         let tracks_page = tracks_page(&sections);
         Self {
             tracks_page,
-            importer_icon: section_icon(store, swofty_core::managed::ID, IMPORTER_SECTION),
             rebuild: profile.rebuild_pending(&manifests),
             profile,
             addons,
@@ -364,6 +381,7 @@ mod tests {
             track,
             package: false,
             source: Source::Installed,
+            left_out: Vec::new(),
         }
     }
 

@@ -57,6 +57,19 @@ An added folder that no longer has the game shows as **Folder not found** in the
 
 To turn this off, select the arrow next to **Play** and clear **Start Steam automatically** or **Start the EA app automatically**. One setting covers both stores.
 
+## Repair the game files
+
+Each store puts its own game files back:
+
+| Copy | Repair |
+|---|---|
+| Steam | **Verify game files in Steam** in the launcher opens `steam://validate/3059520`, Steam's **Verify integrity of game files** for F1 25. In Steam, it's under right-click F1 25 > **Properties** > **Installed Files** |
+| EA app | **EA app** > **Library** > **F1 25** > **Manage** > **Repair**. The EA app has no link that starts a repair |
+
+When files in the Steam copy were changed outside Swofty, the launch stops and **Your game files have been edited** offers **Verify game files in Steam**. See [Game files changed outside Swofty](/reference/launch#game-files-changed-outside-swofty).
+
+An EA app copy is not checked against a list of its files. When the launcher finds files in its folder that it didn't put there, the same modal shows the EA app's repair steps instead.
+
 ## The EA app copy on Linux
 
 On Linux, the launcher hands the EA app a launch link through a command you set. Set `ea_launch_command` under `"launch"` in `$DATA/config.json`, with `{url}` where the link goes. This example is for a script whose `run` starts the EA app in its Proton prefix and whose `wine` runs a program in the running EA app's prefix:
@@ -73,7 +86,7 @@ On Linux, the launcher hands the EA app a launch link through a command you set.
 - `ea_launch_command` runs with `sh -c`. With a link, it must reach the EA app that is already running, in the same Wine prefix.
 - When the EA app is closed, **Play** runs `ea_launch_command` with `{url}` left out to start it, waits up to 90 seconds for `EADesktop.exe`, then 10 seconds more before it hands over the link. When that command exits with an error, the launch link starts the EA app instead.
 - The EA app must keep running after `swofty` exits. A sandbox that ends with its parent, such as `steam-run`, needs `setsid -f` in front of the command that starts the EA app.
-- `ea_prefix` is the EA app's Wine prefix: the folder with `user.reg`, or the Proton folder that holds `pfx`. The launcher writes the in-game loader's DLL setting there.
+- `ea_prefix` is the EA app's Wine prefix: the folder with `user.reg`, or the Proton folder that holds `pfx`. Before it starts the EA app, the launcher writes the in-game loader's DLL setting there and leaves it in place. Wine reads it only when the EA app starts, so the first modded **Play** with the EA app open closes the EA app and starts it again.
 
 Without `ea_launch_command`, **Play** on the EA app copy stops with a message naming the setting.
 

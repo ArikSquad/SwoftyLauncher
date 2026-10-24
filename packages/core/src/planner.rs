@@ -246,6 +246,14 @@ impl<'a> Planner<'a> {
         self
     }
 
+    /// Skips `id`'s failing database ops from now on: an addon whose track a
+    /// build leaves out has ops on that track's rows.
+    pub fn add_lenient(&mut self, id: &str, name: &str) {
+        self.lenient
+            .entry(id.to_owned())
+            .or_insert_with(|| name.to_owned());
+    }
+
     pub fn route(&self, kind: Kind) -> Route {
         match self.delivery(kind) {
             Route::Runtime if kind == Kind::Erp && self.removals > 0 => Route::Build,
@@ -528,6 +536,16 @@ impl<'a> Planner<'a> {
         }
     }
 
+    /// The origin that writes any of `targets` last in load order.
+    pub fn last_writer(&self, targets: &[Target]) -> Option<&Origin> {
+        let rank = |o: &Origin| self.ranks.iter().position(|r| r == o);
+        targets
+            .iter()
+            .filter_map(|t| self.writers.get(t))
+            .flatten()
+            .max_by_key(|o| rank(o))
+    }
+
     pub fn features(&self) -> Vec<Kind> {
         self.features
             .experimental
@@ -601,6 +619,15 @@ impl<'a> Planner<'a> {
             added.extend(owned::added(db, &origin.addon, &before));
         }
         Ok(added)
+    }
+
+    /// The addon whose write of the record `key` wins, the last in load order.
+    pub fn record_writer(&self, key: u64) -> Option<&str> {
+        self.writers
+            .get(&Target::Record(key))?
+            .iter()
+            .max_by_key(|w| self.ranks.iter().position(|o| o == *w))
+            .map(|w| w.addon.as_str())
     }
 
     /// Lenient addons' changes the last `apply_db` could not apply.
@@ -773,6 +800,34 @@ mod tests {
         );
         let shown: Vec<String> = planned.conflicts.iter().map(Conflict::to_string).collect();
         assert_eq!(shown, ["r in a.erp: c overrides a, b", "x/y.dds: d overrides c"]);
+    }
+
+    #[test]
+    fn the_last_writer_of_a_resource_or_its_archive_comes_last_in_load_order() {
+        let features = Features::default();
+        let opt_in = BTreeSet::new();
+        let put = r#"{"op":"erp.put-resource","erp":"a.erp","resource":"r","source":"x.erp"}"#;
+        let file = |erp: &str| format!(r#"{{"op":"file.put","source":"f","target":"{erp}"}}"#);
+        let both = |erp: &str| {
+            [
+                Target::Resource {
+                    erp: erp.into(),
+                    uri: "r".into(),
+                },
+                Target::File(erp.into()),
+            ]
+        };
+        let mut p = Planner::new(&features, &opt_in);
+        p.push(op("a", put));
+        p.push(op("b", &file("b.erp")));
+        p.push(op("c", put));
+        assert_eq!(p.last_writer(&both("a.erp")), Some(&origin("c")));
+        assert_eq!(p.last_writer(&both("b.erp")), Some(&origin("b")));
+        assert_eq!(p.last_writer(&both("c.erp")), None);
+        p.push(op("d", &file("a.erp")));
+        assert_eq!(p.last_writer(&both("a.erp")), Some(&origin("d")));
+        p.push(op("a", &file("b.erp")));
+        assert_eq!(p.last_writer(&both("b.erp")), Some(&origin("b")));
     }
 
     #[test]
