@@ -7089,7 +7089,7 @@ dependencies = [
 
 [[package]]
 name = "swofty-addon"
-version = "1.6.0"
+version = "1.5.9"
 dependencies = [
  "semver",
  "serde",
@@ -7101,14 +7101,14 @@ dependencies = [
 
 [[package]]
 name = "swofty-builtins"
-version = "1.6.0"
+version = "1.5.9"
 dependencies = [
  "swofty-addon",
 ]
 
 [[package]]
 name = "swofty-cli"
-version = "1.6.0"
+version = "1.5.9"
 dependencies = [
  "anyhow",
  "clap",
@@ -7124,7 +7124,7 @@ dependencies = [
 
 [[package]]
 name = "swofty-core"
-version = "1.6.0"
+version = "1.5.9"
 dependencies = [
  "flate2",
  "libc",
@@ -7147,7 +7147,7 @@ dependencies = [
 
 [[package]]
 name = "swofty-formats"
-version = "1.6.0"
+version = "1.5.9"
 dependencies = [
  "aes 0.9.3",
  "bcdec_rs",
@@ -7158,7 +7158,7 @@ dependencies = [
 
 [[package]]
 name = "swofty-launcher"
-version = "1.6.0"
+version = "1.5.9"
 dependencies = [
  "gpui-kit",
  "semver",
@@ -7185,7 +7185,7 @@ dependencies = [
 
 [[package]]
 name = "swofty-sdk"
-version = "1.6.0"
+version = "1.5.9"
 
 [[package]]
 name = "syn"
