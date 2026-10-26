@@ -294,6 +294,62 @@
     "2025_asset_groups/character_package/drivers/male/cs16-haas_kevin_magnussen/kevin_magnussen_helmet.erp"
    ],
    "template": "asset_groups/character_package/drivers/male/2024-haas_kevin_magnussen/kevin_magnussen_helmet.assetgroup"
+  },
+  {
+   "op": "file.put",
+   "source": "helmets/cs17-f2-artgp_zak_osullivan/zak_osullivan_helmet.erp",
+   "target": "2025_asset_groups/character_package/drivers/male/cs17-f2-artgp_zak_osullivan/zak_osullivan_helmet.erp"
+  },
+  {
+   "op": "group.register",
+   "group": "asset_groups/character_package/drivers/male/cs17-f2-artgp_zak_osullivan/zak_osullivan_helmet.assetgroup",
+   "erps": [
+    "2025_asset_groups/character_package/drivers/male/2024-f2-artgp_zak_osullivan/zak_osullivan_helmet.erp",
+    "2025_asset_groups/character_package/drivers/male/cs17-f2-artgp_zak_osullivan/zak_osullivan_helmet.erp"
+   ],
+   "template": "asset_groups/character_package/drivers/male/2024-f2-artgp_zak_osullivan/zak_osullivan_helmet.assetgroup"
+  },
+  {
+   "op": "file.put",
+   "source": "helmets/cs17-f2-invictaracing_kush_maini/kush_maini_helmet.erp",
+   "target": "2025_asset_groups/character_package/drivers/male/cs17-f2-invictaracing_kush_maini/kush_maini_helmet.erp"
+  },
+  {
+   "op": "group.register",
+   "group": "asset_groups/character_package/drivers/male/cs17-f2-invictaracing_kush_maini/kush_maini_helmet.assetgroup",
+   "erps": [
+    "2025_asset_groups/character_package/drivers/male/2024-f2-invictaracing_kush_maini/kush_maini_helmet.erp",
+    "2025_asset_groups/character_package/drivers/male/cs17-f2-invictaracing_kush_maini/kush_maini_helmet.erp"
+   ],
+   "template": "asset_groups/character_package/drivers/male/2024-f2-invictaracing_kush_maini/kush_maini_helmet.assetgroup"
+  },
+  {
+   "op": "file.put",
+   "source": "helmets/cs18-williams_logan_sargeant/logan_sargeant_helmet.erp",
+   "target": "2025_asset_groups/character_package/drivers/male/cs18-williams_logan_sargeant/logan_sargeant_helmet.erp"
+  },
+  {
+   "op": "group.register",
+   "group": "asset_groups/character_package/drivers/male/cs18-williams_logan_sargeant/logan_sargeant_helmet.assetgroup",
+   "erps": [
+    "2025_asset_groups/character_package/drivers/male/2024-williams_logan_sargeant/logan_sargeant_helmet.erp",
+    "2025_asset_groups/character_package/drivers/male/cs18-williams_logan_sargeant/logan_sargeant_helmet.erp"
+   ],
+   "template": "asset_groups/character_package/drivers/male/2024-williams_logan_sargeant/logan_sargeant_helmet.assetgroup"
+  },
+  {
+   "op": "file.put",
+   "source": "helmets/cs22-f2-artgp_zak_osullivan/zak_osullivan_helmet.erp",
+   "target": "2025_asset_groups/character_package/drivers/male/cs22-f2-artgp_zak_osullivan/zak_osullivan_helmet.erp"
+  },
+  {
+   "op": "group.register",
+   "group": "asset_groups/character_package/drivers/male/cs22-f2-artgp_zak_osullivan/zak_osullivan_helmet.assetgroup",
+   "erps": [
+    "2025_asset_groups/character_package/drivers/male/2024-f2-artgp_zak_osullivan/zak_osullivan_helmet.erp",
+    "2025_asset_groups/character_package/drivers/male/cs22-f2-artgp_zak_osullivan/zak_osullivan_helmet.erp"
+   ],
+   "template": "asset_groups/character_package/drivers/male/2024-f2-artgp_zak_osullivan/zak_osullivan_helmet.assetgroup"
   }
  ]
 }
