@@ -24,6 +24,11 @@ whose resource_path names its car's archive outright, with a car_setup.presets r
 names the slot. Every vehicle sets performance_tier and tyre_wear_scale by its team's rank (aislots.ranked) instead of
 keeping the stock team's.
 
+Engine sounds (sounds.py, the season's sounds/meta.json): a season ships its bundles that the game lacks in
+assets/sounds.json, adds an audio.audio_bundle_settings row for each, a copy of its maker's 2025 row, and puts each
+car's audio.audio_car_data records under the case variant of its donor label that its carmodel layer's switchName
+holds, with bundle_name the season bundle of the team's engine maker.
+
 Suits of 2016 to 2023 (suit_sources.py): each driver's look wears the suit and gloves suit_sources.pick chooses, a
 real suit (a mod's or F1 23's, built by build_real_suits.py into this addon's suits/, or a stock F1 25 one) or, for
 2016 to 2021, the team's generated suit (build_suits.py, the season's suits/meta.json). A 2022 or 2023 look with no
@@ -67,7 +72,7 @@ import heads
 import ratings
 import suit_sources
 from layout import (ROOT, SUIT_YEARS, asset_ops, built, extra_package, helmet_asset_ops, helmets, real_suit_asset_ops,
-                    real_suits, suit_asset_ops, suits, year_dir)
+                    real_suits, sound_asset_ops, sound_cars, sounds, suit_asset_ops, suits, year_dir)
 
 DATA = json.loads((ROOT / "data" / "seasons.json").read_text())
 STOCK = json.loads((ROOT / "data" / "stock_looks.json").read_text())
@@ -96,7 +101,7 @@ HOST_MODE = "swofty_f1"
 SETUP_ROW = "entrants.entrant_setup_modes.entrant_setup_mode"
 SETUP_PRESETS = "car_setup.presets.vehicle_package_setups"
 SEASON_LAUNCHER = ">=1.5.1"
-SEASON_VERSION = "0.6.1"
+SEASON_VERSION = "0.6.2"
 SEASON_CORE = "0.6.1"
 DIRECT_SUITS = [e for e in suit_sources.REAL["suits"] if "transfer" not in suit_sources.REAL["mods"][e["mod"]]]
 TRANSFERRED_SUITS = [e for e in suit_sources.REAL["suits"] if "transfer" in suit_sources.REAL["mods"][e["mod"]]]
@@ -106,6 +111,8 @@ SUIT_IDS = range(REAL_SUIT_IDS.stop, REAL_SUIT_IDS.stop + sum(len(s["teams"]) fo
 TRANSFER_SUIT_IDS = range(SUIT_IDS.stop, SUIT_IDS.stop + len(TRANSFERRED_SUITS))
 HELMET_IDS = range(868, 868 + sum(1 for e in suit_sources.REAL["suits"] if e.get("helmet")))
 HELMETS = "customisation.custom_avatar.helmets"
+AUDIO_BUNDLES = "audio.audio_bundle_settings.audio_bundle_settings"
+AUDIO_BUNDLE_FIELDS = ["_metadata_", "bundle_name", "era", "engine", "exhaust", "cabin"]
 SEASON_HELMETS = json.loads((ROOT / "data" / "helmets.json").read_text())["helmets"]
 FIRST_SEASON_HELMETS = 26
 DESIGNS = json.loads((ROOT / "data" / "helmets.json").read_text())["designs"]
@@ -364,6 +371,12 @@ def build():
         ops, text = [], []
         seasons.append((year, ops, text))
         text.append(lang(f"lng_cs_f1_{year}", f"F1 {year}"))
+        for m in sounds(year):
+            ops.append({"op": "add-row", "table": "audio.audio_bundle_settings",
+                        "from": f"{AUDIO_BUNDLES}[_metadata_={m['maker']}_2025]",
+                        "set": {"_metadata_": m["name"], "bundle_name": m["name"]}})
+        for car in sound_cars(year):
+            ops += [{"op": "put-record", **record} for record in car["records"]]
         cars = built(year)
         if cars:
             pkg = f"cs_{year}_vehicle_package"
@@ -530,13 +543,16 @@ def build():
           f"unique ids")
     for year, ops, text in seasons:
         folder = year_dir(year)
-        assets = ["assets/cars.json"] + (["assets/suits.json"] if suits(year) else [])
+        assets = ["assets/cars.json"] + (["assets/suits.json"] if suits(year) else []) + \
+            (["assets/sounds.json"] if sounds(year) else [])
         write_json(folder / "swofty.json", season_manifest(core, year, assets))
         write_json(folder / "db" / "season.json",
                    {"schema_version": 1, "fields": {**fields, SETUP_PRESETS: SETUP_PRESET_FIELDS,
-                                                    **(ITEM_FIELDS if suits(year) else {})}, "ops": ops})
+                                                    **(ITEM_FIELDS if suits(year) else {}),
+                                                    **({AUDIO_BUNDLES: AUDIO_BUNDLE_FIELDS} if sounds(year) else {})},
+                    "ops": ops})
         write_json(folder / "lang" / "season.json", {"schema_version": 1, "ops": text})
-        (folder / ".gitignore").write_text("cars/\nsuits/\nhelmets/\n")
+        (folder / ".gitignore").write_text("cars/\nsuits/\nhelmets/\nsounds/\n")
         cars = built(year)
         if cars:
             write_json(folder / "assets" / "cars.json", asset_ops(year))
@@ -546,9 +562,13 @@ def build():
             (folder / "assets" / "suits.json").unlink()
         if (folder / "assets" / "helmets.json").exists():
             (folder / "assets" / "helmets.json").unlink()
+        if sounds(year):
+            write_json(folder / "assets" / "sounds.json", sound_asset_ops(year))
+        elif (folder / "assets" / "sounds.json").exists():
+            (folder / "assets" / "sounds.json").unlink()
         adds = sum(1 for o in ops if o["op"] == "add-row")
         print(f"{year}: {len(ops)} db ops ({adds} add-row), {len(text)} strings, cars {'built' if cars else 'missing'}, "
-              f"{len(suits(year))} suits")
+              f"{len(suits(year))} suits, {len(sounds(year))} sound bundles")
 
 
 if __name__ == "__main__":
