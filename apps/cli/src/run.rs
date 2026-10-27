@@ -371,6 +371,10 @@ fn wrapper(store: &Store, profile: &str, args: &RunArgs, g: &Game) -> Result<Exi
     let lock = crate::recover::lock(store, &info)?;
     crate::recover::stale(store, &lock, g, Scope::All, &info)?;
     crate::offline::gate(store, false)?;
+    let version = swofty_core::exe_version::read(&g.dir.join(GAME_EXE));
+    if let Some(d) = swofty_core::known_problems::outdated_exe(version.as_deref()) {
+        say("warning", &format!("{}: {}", d.title, d.text()));
+    }
     if let Some(reason) = swofty_core::compat::elevation_blocker(&g.dir) {
         bail!("{reason}");
     }
@@ -392,6 +396,24 @@ fn wrapper(store: &Store, profile: &str, args: &RunArgs, g: &Game) -> Result<Exi
         request.netplay = None;
     }
     let profile = request.profile.clone().unwrap_or_else(|| profile.to_owned());
+    if let (Ok(p), Ok(installed)) = (store.profile(&profile), store.addons()) {
+        let catalog = swofty_core::catalog::cached(&store.root).unwrap_or_default();
+        for (base, family) in swofty_core::resolver::lonely_bases(&p, &installed, &catalog) {
+            if installed
+                .values()
+                .any(|m| m.name == base && store.is_builtin(&m.id))
+            {
+                continue;
+            }
+            say(
+                "warning",
+                &format!(
+                    "{base} is on without any of its addons, so it adds nothing; install at least one, such as {}",
+                    family.join(", ")
+                ),
+            );
+        }
+    }
     if let Some(cpus) = config.launch.cpu_affinity.as_deref().and_then(parse_cpu_list) {
         set_affinity(&cpus);
     }

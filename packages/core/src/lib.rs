@@ -101,6 +101,11 @@ pub enum Error {
         stock::STEAM_VERIFY_URL
     )]
     NotStock(Vec<String>),
+    #[error("{}", stock::missing_text(files, version.as_deref()))]
+    MissingStock {
+        files: Vec<String>,
+        version: Option<String>,
+    },
     #[error("{}", .0.text())]
     Blocked(app_control::Block),
     #[error("{0}")]
@@ -150,6 +155,18 @@ pub(crate) fn worked() {
 pub(crate) fn io_err(path: impl Into<std::path::PathBuf>) -> impl FnOnce(std::io::Error) -> Error {
     let path = path.into();
     move |source| Error::Io { path, source }
+}
+
+/// A formats error from reading `path`, with a read error that doesn't name
+/// its file named with it.
+pub(crate) fn formats_at(path: &std::path::Path) -> impl FnOnce(swofty_formats::Error) -> Error + '_ {
+    move |e| match e {
+        swofty_formats::Error::Io(source) => Error::Formats(swofty_formats::Error::IoAt {
+            path: path.to_path_buf(),
+            source,
+        }),
+        e => Error::Formats(e),
+    }
 }
 
 /// A filesystem error worth retrying: a freshly unloaded DLL stays briefly

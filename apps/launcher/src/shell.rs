@@ -680,7 +680,11 @@ impl Shell {
                         .mods_blocked
                         .as_ref()
                         .is_some_and(|r| r.stage == quarantine::Stage::BeforeLaunch && r.at >= launch.at);
-                    let not_stock = probe.not_stock.as_ref().is_some_and(|r| r.at >= launch.at);
+                    let not_stock = probe
+                        .not_stock
+                        .as_ref()
+                        .filter(|r| r.at >= launch.at)
+                        .map(|r| crate::game_edited::notice(r, self.install.as_ref().map(|i| i.source)));
                     let failed = probe
                         .launch_failed
                         .as_ref()
@@ -688,13 +692,7 @@ impl Shell {
                         .map(|f| f.headline().to_owned());
                     self.notice = Some(match &self.blocked {
                         _ if refused => "an antivirus removed mod files, so F1 25 was not started".to_owned(),
-                        _ if not_stock => match self.install.as_ref().map(|i| i.source) {
-                            Some(Source::EaApp) => {
-                                "your game files aren't the ones the EA app installed; repair them in the EA app"
-                                    .to_owned()
-                            }
-                            _ => "your game files aren't the ones Steam installed; verify them in Steam".to_owned(),
-                        },
+                        _ if not_stock.is_some() => not_stock.unwrap_or_default(),
                         Some(b) if b.files.len() == 1 => {
                             "a file Swofty did not put in the game folder is in the way".to_owned()
                         }
@@ -868,6 +866,9 @@ impl Shell {
         self.blocked_seen = game::blocked_at(&self.store.root).unwrap_or(0.0);
         self.dismissed = self.session.as_ref().map(|s| s.dir.clone());
         self.note_lonely_bases(window, cx);
+        if let Some(d) = swofty_core::known_problems::outdated_exe(install.version().as_deref()) {
+            window.push_notification(Notification::warning(d.text()).title(d.title).autohide(false), cx);
+        }
         match Launch::start(
             &self.store,
             &self.library.profile.name,
@@ -915,8 +916,8 @@ impl Shell {
             };
             window.push_notification(
                 Notification::warning(format!(
-                    "{base} is on, but none of the addons that build on it are, so it adds nothing to pick on its \
-                     own. Install one in the Addon Browser, such as {shown}{more}."
+                    "{base} is on, but none of its addons are, so it adds nothing to pick on its own. Install at \
+                     least one in the Addon Browser, such as {shown}{more}, and turn it on."
                 ))
                 .title(format!("{base} needs one of its addons"))
                 .autohide(false),

@@ -172,6 +172,7 @@ pub fn install(store: &Store, profile: &str, g: &Game, session: bool, out: &dyn 
     std::thread::scope(|s| {
         s.spawn(|| heartbeat(&done));
         let r = install_checked(store, profile, g, session, out)
+            .map_err(|e| named(store, g, e))
             .map_err(|e| denied(e, &g.dir))
             .map_err(|e| outdated(store, g, e));
         done.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -206,6 +207,15 @@ fn heartbeat(done: &std::sync::atomic::AtomicBool) {
             );
             last = now;
         }
+    }
+}
+
+/// Names the addon or game file a build stopped on when it is missing or cut
+/// short, and what to do about it.
+fn named(store: &Store, g: &Game, e: anyhow::Error) -> anyhow::Error {
+    match e.downcast::<swofty_core::Error>() {
+        Ok(e) => swofty_core::build::named(store, &g.dir, e).into(),
+        Err(e) => e,
     }
 }
 
@@ -360,10 +370,19 @@ fn heal_launcher(
 }
 
 /// An original that turned out not to be Steam's while the install backed it
-/// up stops the launch the same way as the check before the build.
+/// up, or one missing from the game folder with no backup, stops the launch
+/// the same way as the check before the build.
 fn not_stock(store: &Store, g: &Game, r: swofty_core::Result<()>) -> swofty_core::Result<()> {
-    if let Err(swofty_core::Error::NotStock(files)) = &r {
-        stock::Report::new(files.clone(), &g.dir).write(&store.root).ok();
+    match &r {
+        Err(swofty_core::Error::NotStock(files)) => {
+            stock::Report::new(files.clone(), &g.dir).write(&store.root).ok();
+        }
+        Err(swofty_core::Error::MissingStock { files, version }) => {
+            stock::Report::missing(files.clone(), &g.dir, version.clone())
+                .write(&store.root)
+                .ok();
+        }
+        _ => {}
     }
     r
 }
