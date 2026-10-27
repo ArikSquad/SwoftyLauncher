@@ -65,13 +65,42 @@ pub struct Built {
     pub report: Report,
 }
 
+/// The recorded originals of the last baseline read, by its path and when it
+/// was written: a build looks originals up dozens of times.
+type Originals = (
+    PathBuf,
+    (std::time::SystemTime, u64),
+    std::sync::Arc<BTreeMap<String, String>>,
+);
+static ORIGINALS: std::sync::Mutex<Option<Originals>> = std::sync::Mutex::new(None);
+
+fn originals(data: &Path, game: &Game) -> std::sync::Arc<BTreeMap<String, String>> {
+    let path = Baseline::path(data, &game.identity);
+    let stamp = std::fs::metadata(&path)
+        .and_then(|m| Ok((m.modified()?, m.len())))
+        .ok();
+    let mut cached = ORIGINALS.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((p, s, files)) = cached.as_ref()
+        && *p == path
+        && Some(*s) == stamp
+    {
+        return files.clone();
+    }
+    let files: std::sync::Arc<BTreeMap<String, String>> = std::sync::Arc::new(
+        Baseline::load_or_new(data, &game.identity)
+            .map(|b| b.files.into_iter().map(|(rel, rec)| (rel, rec.sha256)).collect())
+            .unwrap_or_default(),
+    );
+    *cached = stamp.map(|stamp| (path, stamp, files.clone()));
+    files
+}
+
 pub fn original(data: &Path, game: &Game, rel: &str) -> PathBuf {
-    let baseline = Baseline::load_or_new(data, &game.identity).ok();
-    match baseline.and_then(|b| b.files.get(rel).cloned()) {
-        Some(rec) => Objects {
+    match originals(data, game).get(rel) {
+        Some(sha256) => Objects {
             root: data.join("baseline/objects"),
         }
-        .path(&rec.sha256),
+        .path(sha256),
         None => game.dir.join(rel),
     }
 }
@@ -306,11 +335,13 @@ fn hash_unread(
     resolve: &dyn Fn(&str) -> PathBuf,
 ) -> Result<()> {
     hasher.update(format!("game {};", game.identity.key()));
-    if let Ok(exe) = std::env::current_exe() {
-        stamp(hasher, env!("CARGO_PKG_VERSION"), &exe);
-    }
+    hasher.update(format!("pipeline {};", env!("SWOFTY_PIPELINE")));
     if let Some(dir) = loader_dir() {
-        stamp_tree(hasher, "loader", &dir)?;
+        stamp(
+            hasher,
+            "loader features",
+            &dir.join(crate::planner::FEATURES_FILE),
+        );
     }
     for m in order.iter().filter(|m| !store.is_builtin(&m.id)) {
         let dir = store.addons_dir().join(&m.id);
@@ -356,7 +387,7 @@ struct Saved {
 impl Saved {
     fn of(built: &Built, lines: usize, warnings: usize) -> Result<Self> {
         let mut sizes = BTreeMap::new();
-        for src in [&built.plan.data, &built.plan.added, &built.plan.loader]
+        for src in [&built.plan.data, &built.plan.added]
             .into_iter()
             .flat_map(|m| m.values())
         {
@@ -409,10 +440,15 @@ impl Saved {
             .all(|rel| baseline.files.contains_key(rel) || game.dir.join(rel).is_file())
     }
 
-    fn restore(self, built: &mut Built) {
+    /// The loader files come from the launcher's loader folder as it is now:
+    /// a launcher update changes them without changing what the build wrote.
+    fn restore(self, built: &mut Built) -> Result<()> {
         built.plan.data = self.data;
         built.plan.added = self.added;
-        built.plan.loader = self.loader;
+        built.plan.loader = match loader_dir() {
+            Some(dir) => loader_files(&dir)?,
+            None => BTreeMap::new(),
+        };
         built.plan.registry_override = self.registry_override;
         built.settings = self.settings;
         built.lines.push(format!(
@@ -428,6 +464,7 @@ impl Saved {
         built.report.built_at = crate::conflicts::now();
         built.conflicts = self.conflicts;
         built.waiting = self.waiting;
+        Ok(())
     }
 }
 
@@ -847,7 +884,7 @@ pub(crate) fn build_as(store: &Store, profile: &str, game: &Game, checking: bool
     built.overlay = store.overlay_dir(profile, &built.buildhash);
     let (lines_at, warnings_at) = (built.lines.len(), built.warnings.len());
     if let Some(saved) = Saved::load(&built.overlay, &built.buildhash).filter(|s| s.usable(store, game)) {
-        saved.restore(&mut built);
+        saved.restore(&mut built)?;
         built.report.order = p.enabled().map(str::to_owned).collect();
         crate::write_json(&crate::conflicts::path(store, profile), &built.report)?;
         return Ok(built);
