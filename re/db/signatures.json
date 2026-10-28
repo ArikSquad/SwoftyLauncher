@@ -11419,7 +11419,7 @@
    "target": "0x14360aff0",
    "kind": "func_start",
    "names": [
-    "Sess_SafetyCarTether_Attach"
+    "Sess_SafetyCarTether_UpdateTarget"
    ],
    "verified": [
     {
@@ -11443,7 +11443,7 @@
    "target": "0x14360b550",
    "kind": "func_start",
    "names": [
-    "Sess_SafetyCarTether_Detach"
+    "Sess_SafetyCarTether_UpdateProgress"
    ],
    "verified": [
     {
@@ -73351,7 +73351,7 @@
    "target": "0x140669790",
    "kind": "func_start",
    "names": [
-    "Ai_ScDeltaPace"
+    "Ai_Apply_TetherSpeedCap"
    ],
    "verified": [
     {
