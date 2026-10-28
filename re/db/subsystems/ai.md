@@ -155,3 +155,4 @@ tables evaluated by `Ai_Eval_LookaheadGraph`.)
   live `AiHandlingConfig` table.
 
 ## Inbox
+- 2026-10-28 01:28 engine-re: 0x1406b3110 Ai_Handle_PitStateChanged_Thunk L2 candidate (engine-re, decomp re/decomp/1406b3110.c, xref lea 0x1406b2944,0x1406b34ed): for event.state 15/2 finds the AI entry for event.car in self+0x98 (stride 0x28), refreshes +0x14, sets +0x13 tyre-change flag, +0x16=1, +0x17=+0x18=0. Needs ai-re owner to raise.
