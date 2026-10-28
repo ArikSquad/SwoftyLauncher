@@ -10758,7 +10758,7 @@
    "target": "0x1435676a0",
    "kind": "func_start",
    "names": [
-    "Sess_RuleManager_OnSessionEnter"
+    "Sess_RuleManager_Initialise"
    ],
    "verified": [
     {
