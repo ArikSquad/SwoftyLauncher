@@ -1,7 +1,7 @@
 id	prefix	owner	status	description
-ai	Ai	ai-re	open	driver/team race AI: difficulty scaling, pace/consistency, overtaking/defending, racing line/corners, strategy (pit/tyre/fuel), mistakes/DNFs, AI vehicle config vocabulary
+ai	Ai	engine-re	open	driver/team race AI: difficulty scaling, pace/consistency, overtaking/defending, racing line/corners, strategy (pit/tyre/fuel), mistakes/DNFs, AI vehicle config vocabulary
 assets	Asset	-	open	eaid:// resolution, asset groups, world/WEP paths, textures
-car	Car	car-re	open	per-car performance: vehicle object + attribute array, R&D apply, setup, ERS/fuel, engine/PU, tyre model, damage/reliability
+car	Car	engine-re	open	per-car performance: vehicle object + attribute array, R&D apply, setup, ERS/fuel, engine/PU, tyre model, damage/reliability
 career	Career	career-re	open	career / My Team: R&D upgrade trees + departments, resource points, facilities, contracts, driver development/market, season/weekend flow
 core	Ne	-	open	neon engine basics: NeStr, allocators, formatting, feature flags
 entrants	Ent	entrants-re	open	entrant/team/driver identity object model, grid participant roster, liveries/decals, vehicle-package selection, engine-supplier mapping (24-26 car grid identity surface)
