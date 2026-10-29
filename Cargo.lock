@@ -7137,6 +7137,7 @@ dependencies = [
  "md-5 0.11.0",
  "png 0.18.1",
  "rars",
+ "regex",
  "ring",
  "rustls",
  "semver",
@@ -8613,6 +8614,13 @@ dependencies = [
  "raw-window-handle",
  "static_assertions",
  "web-sys",
+]
+
+[[package]]
+name = "whatif"
+version = "1.0.0"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]
